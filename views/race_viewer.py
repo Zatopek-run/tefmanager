@@ -11,7 +11,7 @@ import zlib
 from typing import List, Optional, Sequence
 
 from PyQt6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -25,7 +25,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from models.entities import EVENTS, CompetitionSummary, EventResult, EventStanding
+from models.entities import (
+    EVENTS,
+    CompetitionSummary,
+    CompetitionTier,
+    EventResult,
+    EventStanding,
+    SeasonPhase,
+    WeatherCondition,
+)
 
 # Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
 TRACK_DISTANCES = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
@@ -132,20 +140,43 @@ def _short(name: str, limit: int = 22) -> str:
 
 
 def make_crowd(width: int, height: int, seed: object) -> QPixmap:
-    """Tribune con la folla, disegnate una volta sola e in modo deterministico."""
+    """Tribune realistiche con gradinate, corrimano, cartelloni e spettatori."""
     pm = QPixmap(max(1, width), height)
-    pm.fill(QColor("#0b1220"))
+    pm.fill(QColor("#1e293b"))
     q = QPainter(pm)
     rng = _rng("crowd", seed, width)
-    for tier in range(max(1, (height - 6) // 17)):
-        y0 = 8 + tier * 17
-        q.fillRect(0, y0 + 11, width, 6, QColor("#1b2638"))
-        x = rng.randint(0, 5)
-        while x < width:
-            col = QColor.fromHsv(rng.randint(0, 359), rng.randint(60, 200), rng.randint(110, 230))
-            q.fillRect(x, y0, 5, 5, QColor("#e2b48f" if rng.random() < 0.6 else "#8a5a3c"))  # testa
-            q.fillRect(x - 1, y0 + 5, 7, 6, col)  # busto
-            x += rng.randint(7, 10)
+    tiers = max(2, (height - 16) // 16)
+    skins = ("#f1c7a0", "#dfb086", "#b87e56", "#7a4e30", "#4b2e1e")
+    for tier in range(tiers):
+        y0 = 6 + tier * 15
+        # gradone in cemento con leggero stacco tonale
+        q.fillRect(0, y0, width, 15, QColor("#293548" if tier % 2 == 0 else "#334155"))
+        q.fillRect(0, y0 + 13, width, 2, QColor("#0f172a"))
+        x = rng.randint(1, 5)
+        while x < width - 4:
+            col = QColor.fromHsv(rng.randint(0, 359), rng.randint(45, 180), rng.randint(105, 220))
+            skin = QColor(rng.choice(skins))
+            q.fillRect(x, y0 + 2, 4, 4, skin)
+            q.fillRect(x, y0 + 1, 4, 2, QColor("#111827" if rng.random() < 0.75 else "#78350f"))
+            q.fillRect(x - 1, y0 + 6, 6, 7, col)
+            x += rng.randint(6, 9)
+    # muretto inferiore con cartelloni sponsor di fantasia
+    wall_y = height - 16
+    q.fillRect(0, wall_y, width, 16, QColor("#0f172a"))
+    q.fillRect(0, wall_y, width, 2, QColor("#94a3b8"))
+    boards = [("TEF SPORT", "#b91c1c"), ("AURORA", "#1d4ed8"), ("VELOCITÀ", "#047857"), ("FASTLANE", "#c2410c"), ("CRONO LAB", "#0e7490")]
+    f = QFont("Arial", 8)
+    f.setBold(True)
+    q.setFont(f)
+    bx, idx = 6, 0
+    while bx < width - 20:
+        txt, bcol = boards[idx % len(boards)]
+        bw = 96
+        q.fillRect(bx, wall_y + 3, bw, 12, QColor(bcol))
+        q.setPen(QColor("#f8fafc"))
+        q.drawText(bx, wall_y + 3, bw, 12, Qt.AlignmentFlag.AlignCenter, txt)
+        bx += bw + 6
+        idx += 1
     q.end()
     return pm
 
@@ -168,6 +199,30 @@ class TrackRaceWidget(QWidget):
         self._scale = 1.0  # secondi di gara per secondo di animazione
         self._t = 0.0  # secondi di animazione dall'inizio (compresa la sequenza di partenza)
         self._done = False
+        self._weather = WeatherCondition.SERENO
+        self._surface = "Tartan"
+        self._tier = CompetitionTier.REGIONALE
+        self._season_phase = SeasonPhase.OUTDOOR
+        self._spectators = 800
+
+    def set_environment(
+        self,
+        weather: Optional[WeatherCondition] = None,
+        track_surface: str = "",
+        tier: Optional[CompetitionTier] = None,
+        season_phase: Optional[SeasonPhase] = None,
+        spectators: int = 800,
+    ) -> None:
+        if weather is not None:
+            self._weather = weather
+        if track_surface:
+            self._surface = track_surface
+        if tier is not None:
+            self._tier = tier
+        if season_phase is not None:
+            self._season_phase = season_phase
+        self._spectators = spectators
+        self.update()
 
     def set_race(self, event_name: str, result: EventResult, seed: object) -> None:
         self._event = event_name
@@ -291,71 +346,121 @@ class TrackRaceWidget(QWidget):
             self._crowd_cache = make_crowd(width, self.CROWD_H, self._event)
         return self._crowd_cache
 
+    def _track_lane_colors(self) -> tuple[str, str]:
+        surf = (self._surface or "").lower()
+        blue = self._tier == CompetitionTier.INTERNAZIONALE or "mondo" in surf or "blu" in surf
+        rain = self._weather == WeatherCondition.PIOGGIA
+        if blue:
+            return ("#1a4f96", "#1e59a8") if rain else ("#1f62b5", "#246bc4")
+        return ("#8f3220", "#9c3925") if rain else ("#a84020", "#b84826")
+
+    @staticmethod
+    def _draw_tapered_2d(p: QPainter, a: QPointF, b: QPointF, r0: float, r1: float, col: QColor) -> None:
+        dx, dy = b.x() - a.x(), b.y() - a.y()
+        dist = math.hypot(dx, dy)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(col)
+        if dist < 0.4:
+            p.drawEllipse(a, r0, r0)
+            return
+        nx, ny = -dy / dist, dx / dist
+        p.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(a.x() + nx * r0, a.y() + ny * r0),
+                    QPointF(b.x() + nx * r1, b.y() + ny * r1),
+                    QPointF(b.x() - nx * r1, b.y() - ny * r1),
+                    QPointF(a.x() - nx * r0, a.y() - ny * r0),
+                ]
+            )
+        )
+        p.drawEllipse(a, r0, r0)
+        p.drawEllipse(b, r1, r1)
+
     @staticmethod
     def _draw_runner(
         p: QPainter, x: float, ground: float, h: float, phase: float, ratio: float,
         kit: QColor, skin: QColor, crouch: bool, is_player: bool,
+        set_blend: float = 1.0,
     ) -> None:
         u = h / 10.0
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 70))
-        p.drawEllipse(QPointF(x, ground), 3.2 * u, 0.7 * u)
+        p.setBrush(QColor(0, 0, 0, 75))
+        p.drawEllipse(QPointF(x, ground), 2.8 * u, 0.55 * u)
 
-        lean = 0.95 if crouch else 0.12 + 0.30 * ratio
-        hip = QPointF(x, ground - (3.4 if crouch else 4.7) * u)
-        sh = QPointF(hip.x() + 3.0 * u * math.sin(lean), hip.y() - 3.0 * u * math.cos(lean))
-        head = QPointF(sh.x() + 1.2 * u * math.sin(lean + 0.1), sh.y() - 1.2 * u * math.cos(lean + 0.1))
+        if crouch:
+            lean = 1.15 + 0.08 * set_blend
+            hip = QPointF(x - (2.2 - 0.5 * set_blend) * u, ground - (2.7 + 1.1 * set_blend) * u)
+        else:
+            lean = 0.14 + 0.28 * ratio
+            bounce = 0.25 * abs(math.sin(phase)) * ratio
+            hip = QPointF(x, ground - (4.7 + bounce) * u)
+        sh = QPointF(hip.x() + 2.95 * u * math.sin(lean), hip.y() - 2.95 * u * math.cos(lean))
+        neck = QPointF(sh.x() + 0.55 * u * math.sin(lean), sh.y() - 0.55 * u * math.cos(lean))
+        head = QPointF(neck.x() + 0.65 * u * math.sin(lean + 0.08), neck.y() - 0.65 * u * math.cos(lean + 0.08))
 
         def limb(a: QPointF, ang1: float, l1: float, ang2: float, l2: float):
             b = QPointF(a.x() + l1 * math.sin(ang1), a.y() + l1 * math.cos(ang1))
             c = QPointF(b.x() + l2 * math.sin(ang2), b.y() + l2 * math.cos(ang2))
             return b, c
 
-        def draw_limb(a, b, c, col, w) -> None:
-            pen = QPen(col, w)
-            pen.setCapStyle(Qt.PenCapStyle.SquareCap)
-            p.setPen(pen)
-            p.drawLine(a, b)
-            p.drawLine(b, c)
-
-        amp = 0.45 + 0.55 * ratio
-        shorts = QColor("#1e293b")
+        amp = 0.50 + 0.56 * ratio
+        shorts = QColor("#0f172a")
+        spike_col = kit.lighter(135) if is_player else QColor("#f8fafc")
         for k in (1, 0):  # prima il lato lontano, poi quello vicino
             ph = phase + k * math.pi
+            col_s = skin.darker(132) if k else skin
+            col_sh = shorts.darker(125) if k else shorts
             if crouch:
-                leg_a, knee_flex = (0.9, 0.4) if k == 0 else (-0.3, 1.5)
+                if k == 0:
+                    kn = QPointF(x - 1.2 * u, ground - (1.3 + 0.9 * set_blend) * u)
+                    ft = QPointF(x - 2.2 * u, ground - 0.4 * u)
+                else:
+                    kn = QPointF(x - 1.8 * u, ground - (0.6 + 1.0 * set_blend) * u)
+                    ft = QPointF(x - 3.4 * u, ground - 0.4 * u)
+                el = QPointF((sh.x() + x - 0.3 * u) * 0.5, (sh.y() + ground) * 0.5)
+                hand = QPointF(x - 0.3 * u, ground - 0.15 * u)
             else:
                 leg_a = amp * math.sin(ph)
-                knee_flex = 0.35 + 1.25 * ratio * max(0.0, math.sin(ph + 1.3))
-            kn, ft = limb(hip, leg_a, 2.4 * u, leg_a - knee_flex, 2.3 * u)
-            draw_limb(hip, kn, ft, skin.darker(130) if k else skin, 1.1 * u)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor("#f8fafc"))
-            p.drawRect(QRectF(ft.x() - 0.2 * u, ft.y() - 0.3 * u, 1.1 * u, 0.6 * u))  # scarpa
+                knee_flex = 0.30 + 1.50 * ratio * max(0.0, math.sin(ph + 1.25))
+                kn, ft = limb(hip, leg_a, 2.45 * u, leg_a - knee_flex, 2.35 * u)
+                arm_a = -amp * 1.15 * math.sin(ph + math.pi)
+                el, hand = limb(sh, arm_a, 1.55 * u, arm_a + 1.35, 1.45 * u)
+            mid_thigh = QPointF(hip.x() + (kn.x() - hip.x()) * 0.52, hip.y() + (kn.y() - hip.y()) * 0.52)
+            TrackRaceWidget._draw_tapered_2d(p, hip, kn, 0.56 * u, 0.38 * u, col_s)
+            TrackRaceWidget._draw_tapered_2d(p, hip, mid_thigh, 0.64 * u, 0.54 * u, col_sh)
+            TrackRaceWidget._draw_tapered_2d(p, kn, ft, 0.38 * u, 0.22 * u, col_s)
+            TrackRaceWidget._draw_tapered_2d(p, ft, QPointF(ft.x() + 0.85 * u, ft.y() + 0.12 * u), 0.24 * u, 0.16 * u, spike_col)
             if k == 1:
-                arm_a = -amp * 1.1 * math.sin(ph + math.pi)
-                el, hand = limb(sh, arm_a if not crouch else 0.3, 1.6 * u, (arm_a if not crouch else 0.2) + 1.2, 1.5 * u)
-                draw_limb(sh, el, hand, skin.darker(130), 0.9 * u)
-        # busto e calzoncini
-        pen = QPen(kit, 1.9 * u)
-        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-        p.setPen(pen)
-        p.drawLine(hip, sh)
-        pen = QPen(shorts, 1.9 * u)
-        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
-        p.setPen(pen)
-        p.drawLine(hip, QPointF(hip.x() + 0.9 * u * math.sin(lean), hip.y() - 0.9 * u * math.cos(lean)))
-        for k in (0,):
-            ph = phase
-            arm_a = -amp * 1.1 * math.sin(ph + math.pi) if not crouch else -0.2
-            el, hand = limb(sh, arm_a, 1.6 * u, arm_a + 1.2, 1.5 * u)
-            draw_limb(sh, el, hand, skin, 0.9 * u)
-        p.setPen(Qt.PenStyle.NoPen)
+                TrackRaceWidget._draw_tapered_2d(p, sh, el, 0.36 * u, 0.28 * u, col_s)
+                TrackRaceWidget._draw_tapered_2d(p, el, hand, 0.27 * u, 0.18 * u, col_s)
+
+        # busto sagomato e canotta
+        TrackRaceWidget._draw_tapered_2d(p, hip, sh, 0.72 * u, 0.92 * u, kit)
+        TrackRaceWidget._draw_tapered_2d(p, hip, QPointF(hip.x() + 0.95 * u * math.sin(lean), hip.y() - 0.95 * u * math.cos(lean)), 0.76 * u, 0.74 * u, shorts)
+        # pettorale bianco sul torace
+        bib_c = QPointF((hip.x() + sh.x() * 1.4) / 2.4 + 0.35 * u, (hip.y() + sh.y() * 1.4) / 2.4)
+        p.setBrush(QColor("#f8fafc"))
+        p.drawRect(QRectF(bib_c.x() - 0.28 * u, bib_c.y() - 0.35 * u, 0.55 * u, 0.68 * u))
+        # collo e braccio vicino
+        TrackRaceWidget._draw_tapered_2d(p, sh, neck, 0.36 * u, 0.30 * u, skin.darker(108))
+        if crouch:
+            el = QPointF((sh.x() + x - 0.2 * u) * 0.5, (sh.y() + ground) * 0.5)
+            hand = QPointF(x - 0.2 * u, ground - 0.12 * u)
+        else:
+            arm_a = -amp * 1.15 * math.sin(phase + math.pi)
+            el, hand = limb(sh, arm_a, 1.55 * u, arm_a + 1.35, 1.45 * u)
+        TrackRaceWidget._draw_tapered_2d(p, sh, el, 0.36 * u, 0.28 * u, skin)
+        TrackRaceWidget._draw_tapered_2d(p, el, hand, 0.27 * u, 0.18 * u, skin)
+        # testa arrotondata con capelli
         p.setBrush(skin)
-        p.drawRect(QRectF(head.x() - 0.8 * u, head.y() - 0.9 * u, 1.7 * u, 1.7 * u))
-        p.setBrush(QColor("#fbbf24") if is_player else QColor("#111827"))
-        p.drawRect(QRectF(head.x() - 0.9 * u, head.y() - 1.0 * u, 1.9 * u, 0.7 * u))  # capelli / fascia
+        p.drawEllipse(head, 0.72 * u, 0.82 * u)
+        p.setBrush(QColor("#111827"))
+        p.drawChord(QRectF(head.x() - 0.75 * u, head.y() - 0.88 * u, 1.50 * u, 1.40 * u), 20 * 16, 155 * 16)
+        if is_player:
+            p.setBrush(QColor("#fbbf24"))
+            p.drawChord(QRectF(head.x() - 0.75 * u, head.y() - 0.82 * u, 1.50 * u, 1.25 * u), 18 * 16, 144 * 16)
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
@@ -393,13 +498,14 @@ class TrackRaceWidget(QWidget):
         def sx(m: float) -> float:
             return x_left + (m - cam) * px
 
-        # corsie
+        # corsie con colore coerente con superficie e categoria
+        c_even, c_odd = self._track_lane_colors()
         for i in range(n):
             y = track_top + i * lane_h
             p.fillRect(int(x_left), int(y), int(x_right - x_left), int(lane_h) + 1,
-                       QColor("#a8431c" if i % 2 else "#b84d22"))
-            p.fillRect(int(x_left), int(y), int(x_right - x_left), 2, QColor("#f1f5f9"))
-        p.fillRect(int(x_left), int(track_bottom), int(x_right - x_left), 2, QColor("#f1f5f9"))
+                       QColor(c_odd if i % 2 else c_even))
+            p.fillRect(int(x_left), int(y), int(x_right - x_left), 2, QColor("#f8fafc"))
+        p.fillRect(int(x_left), int(track_bottom), int(x_right - x_left), 2, QColor("#f8fafc"))
 
         # zone cambio staffetta
         if self._event.startswith("4x"):
@@ -419,10 +525,13 @@ class TrackRaceWidget(QWidget):
                 p.drawText(int(xx - 14), int(track_bottom + 15), 28, 14, Qt.AlignmentFlag.AlignCenter, f"{mt}")
                 p.setPen(QColor(255, 255, 255, 70))
 
-        # linea di partenza
+        # linea di partenza e blocchi
         sxs = sx(0)
         if x_left <= sxs <= x_right:
             p.fillRect(int(sxs - 1), int(track_top), 3, int(track_bottom - track_top), QColor("#f8fafc"))
+            for i in range(n):
+                by = track_top + i * lane_h + lane_h * 0.52
+                p.fillRect(int(sxs - 2.2 * px), int(by), int(1.9 * px), 4, QColor("#334155"))
 
         # traguardo + nastro
         fx = sx(d)
@@ -449,18 +558,19 @@ class TrackRaceWidget(QWidget):
             else (1, -meters[i]),
         )
         crouch = self.race_time <= 0.0
+        set_blend = max(0.0, min(1.0, (self._t - GUN_AT * 0.45) / 0.38))
         for i, r in enumerate(self._runners):
             s: EventStanding = r["s"]
             y = track_top + i * lane_h + lane_h / 2
             ratio = self._speed_ratio(r)
-            cycle = 0.7 + 1.6 * ratio
+            cycle = 0.75 + 1.65 * ratio
             phase = 2 * math.pi * cycle * max(0.0, self._t - GUN_AT) + r["phase"]
             xx = sx(meters[i])
             sprite_h = min(lane_h * 0.92, 54)
-            kit = QColor("#fbbf24") if s.is_player else self._kit(s.team_name)
+            kit = QColor("#f59e0b") if s.is_player else self._kit(s.team_name)
             if x_left - 20 <= xx <= x_right + 20:
                 self._draw_runner(p, xx, y + sprite_h * 0.42, sprite_h, phase, ratio, kit,
-                                  self._skin(s.athlete_name), crouch, s.is_player)
+                                  self._skin(s.athlete_name), crouch, s.is_player, set_blend=set_blend)
             else:  # fuori inquadratura
                 p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
                 p.setPen(QColor("#fbbf24" if s.is_player else "#94a3b8"))
@@ -468,7 +578,7 @@ class TrackRaceWidget(QWidget):
             # numero corsia sul blocco di partenza
             if x_left <= sx(0) <= x_right:
                 p.setPen(QColor("#fde68a"))
-                p.drawText(int(sx(0) - 18), int(y + 4), str(i + 1))
+                p.drawText(int(sx(0) - 24), int(y + 4), str(i + 1))
 
         # pannello a sinistra: classifica live
         p.fillRect(0, int(track_top), self.LEFT_W - 6, int(track_bottom - track_top), QColor("#0f172a"))
@@ -543,10 +653,12 @@ class TrackRaceWidget(QWidget):
         # vento
         if res is not None and res.wind_ms is not None:
             p.setFont(font)
-            p.fillRect(w - 156, 4, 148, 20, QColor(11, 18, 32, 220))
+            p.setBrush(QColor(11, 18, 32, 230))
+            p.setPen(QPen(QColor(51, 65, 85, 200), 1))
+            p.drawRoundedRect(QRectF(w - 158, 4, 150, 22), 5, 5)
             p.setPen(QColor("#fca5a5" if res.wind_illegal else "#e2e8f0"))
             arrow = "→" if res.wind_ms >= 0 else "←"
-            p.drawText(w - 152, 6, 140, 16, Qt.AlignmentFlag.AlignRight, f"Vento {arrow} {res.wind_ms:+.1f} m/s")
+            p.drawText(w - 154, 5, 142, 20, Qt.AlignmentFlag.AlignCenter, f"Vento {arrow} {res.wind_ms:+.1f} m/s")
         p.end()
 
     def _done_all(self) -> bool:
@@ -655,6 +767,24 @@ class FieldSceneWidget(QWidget):
         self.cur: Optional[dict] = None
         self.t = 0.0
         self.dur = 1.0
+        self._crowd_cache: Optional[QPixmap] = None
+        self._weather = WeatherCondition.SERENO
+        self._surface = "Tartan"
+        self._tier = CompetitionTier.REGIONALE
+
+    def set_environment(
+        self,
+        weather: Optional[WeatherCondition] = None,
+        track_surface: str = "",
+        tier: Optional[CompetitionTier] = None,
+    ) -> None:
+        if weather is not None:
+            self._weather = weather
+        if track_surface:
+            self._surface = track_surface
+        if tier is not None:
+            self._tier = tier
+        self.update()
 
     def configure(self, event_name: str, marks: Sequence[float]) -> None:
         self.kind = "lj" if event_name == "Salto in Lungo" else "sp"
@@ -662,6 +792,7 @@ class FieldSceneWidget(QWidget):
         self.lo = min(good) if good else 1.0
         self.hi = max(good) if good else 8.0
         self.cur = None
+        self._crowd_cache = None
         self.update()
 
     def begin(self, name: str, team: str, is_player: bool, dist: float, foul: bool, animate: bool, n: int, total: int) -> None:
@@ -686,11 +817,15 @@ class FieldSceneWidget(QWidget):
             return -9.0, self.hi + 1.6
         return -3.0, self.hi + 3.0
 
+    def _crowd(self, width: int) -> QPixmap:
+        if self._crowd_cache is None or self._crowd_cache.width() != width:
+            self._crowd_cache = make_crowd(width, self.CROWD_H, self.kind)
+        return self._crowd_cache
+
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
         w, h = self.width(), self.height()
         p.fillRect(self.rect(), QColor("#0b1220"))
-        p.drawPixmap(0, 0, make_crowd(w, self.CROWD_H, self.kind))
         ground = h - 44
         wx0, wx1 = self._world()
         left, right = 14, w - 14
@@ -702,29 +837,64 @@ class FieldSceneWidget(QWidget):
         font = QFont(self.font())
         font.setPointSize(9)
         p.setFont(font)
-        # sfondo: muretto con cartelloni, poi terreno
-        p.fillRect(0, self.CROWD_H, w, int(ground - self.CROWD_H), QColor("#111c33"))
-        p.fillRect(0, int(ground - 26), w, 22, QColor("#1e3a5f"))
-        for k in range(0, w, 70):
-            p.fillRect(k + 6, int(ground - 22), 54, 14, QColor("#0f172a"))
-        if self.kind == "lj":
-            p.fillRect(left, int(ground), int(sx(0) - left), int(h - ground), QColor("#a8431c"))  # rincorsa
-            p.fillRect(int(sx(0)), int(ground), int(sx(1.0) - sx(0)), int(h - ground), QColor("#a8431c"))
-            p.fillRect(int(sx(1.0)), int(ground - 4), int(right - sx(1.0)), int(h - ground + 4), QColor("#e7d3a1"))  # sabbia
-            p.fillRect(int(sx(0) - 1), int(ground - 2), 5, 4, QColor("#f8fafc"))  # asse di battuta
+
+        # cielo realistico in alto, poi tribuna dello stadio, cartelloni e pedana
+        rain = self._weather == WeatherCondition.PIOGGIA
+        stand_h = min(self.CROWD_H, max(44, int((ground - 22) * 0.36)))
+        sky_h = max(30, int(ground - 22 - stand_h - 10))
+        sky = QLinearGradient(0, 0, 0, sky_h)
+        if rain:
+            sky.setColorAt(0.0, QColor("#475569"))
+            sky.setColorAt(1.0, QColor("#94a3b8"))
         else:
-            p.fillRect(left, int(ground), right - left, int(h - ground), QColor("#1f5130"))
+            sky.setColorAt(0.0, QColor("#1d4ed8"))
+            sky.setColorAt(0.65, QColor("#60a5fa"))
+            sky.setColorAt(1.0, QColor("#dbeafe"))
+        p.fillRect(0, 0, w, sky_h, QBrush(sky))
+        # tribuna con folla (senza duplicare i cartelloni) e prato sullo sfondo
+        crowd_pm = self._crowd(w)
+        crowd_top = sky_h
+        p.drawPixmap(0, crowd_top, crowd_pm, 0, 0, w, min(stand_h, crowd_pm.height() - 16))
+        p.fillRect(0, int(ground - 32), w, 10, QColor("#2a6f37" if not rain else "#22572c"))
+        p.fillRect(0, int(ground - 22), w, 22, QColor("#1e293b"))
+        p.fillRect(0, int(ground - 22), w, 2, QColor("#94a3b8"))
+        boards = [("TEF SPORT", "#b91c1c"), ("AURORA", "#1d4ed8"), ("VELOCITÀ", "#047857"), ("FASTLANE", "#c2410c")]
+        for idx, k in enumerate(range(0, w, 110)):
+            btxt, bcol = boards[idx % len(boards)]
+            p.fillRect(k + 4, int(ground - 18), 100, 14, QColor(bcol))
+            p.setPen(QColor("#f8fafc"))
+            p.drawText(k + 4, int(ground - 18), 100, 14, Qt.AlignmentFlag.AlignCenter, btxt)
+
+        surf = (self._surface or "").lower()
+        blue = self._tier == CompetitionTier.INTERNAZIONALE or "mondo" in surf or "blu" in surf
+        tartan_col = "#1f62b5" if blue else "#b34128"
+        if self.kind == "lj":
+            # rincorsa in tartan, asse di battuta in legno + plastilina rossa, fossa di sabbia stratificata
+            p.fillRect(left, int(ground), int(sx(1.0) - left), int(h - ground), QColor(tartan_col))
+            p.fillRect(left, int(ground), int(sx(1.0) - left), 3, QColor("#e2e8f0"))
+            p.fillRect(int(sx(1.0)), int(ground - 3), int(right - sx(1.0)), int(h - ground + 3), QColor("#cbb27c"))
+            p.fillRect(int(sx(1.0)), int(ground - 2), int(right - sx(1.0)), int(h - ground - 6), QColor("#e7d3a1"))
+            p.fillRect(int(sx(1.0)), int(ground - 4), 4, int(h - ground + 4), QColor("#94a3b8"))  # bordo fossa
+            p.fillRect(int(sx(0) - 3), int(ground - 2), 8, 5, QColor("#f8fafc"))  # asse di battuta
+            p.fillRect(int(sx(0) + 5), int(ground - 2), 3, 4, QColor("#dc2626"))  # plastilina fallo
+        else:
+            # pedana di lancio + settore in erba rasata a bande
+            band_w = max(24, int(2.0 * px))
+            for bx in range(left, right, band_w):
+                col = "#2f7d3d" if ((bx - left) // band_w) % 2 == 0 else "#358943"
+                p.fillRect(bx, int(ground), min(band_w, right - bx), int(h - ground), QColor(col))
             p.setBrush(QColor("#cbd5e1"))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(sx(-1.0), ground + 8), 1.6 * px, 7)  # cerchio di lancio
-        p.fillRect(left, int(ground), right - left, 2, QColor("#f1f5f9"))
-        # righello
+            p.setPen(QPen(QColor("#475569"), 2))
+            p.drawEllipse(QPointF(sx(-1.0), ground + 9), 1.5 * px, 7)  # cerchio di lancio
+            p.fillRect(int(sx(0.35)), int(ground - 3), 5, 5, QColor("#f8fafc"))  # fermapiedi
+        p.fillRect(left, int(ground), right - left, 2, QColor("#f8fafc"))
+        # righello delle misure
         step = 1 if self.kind == "lj" else 2
         start = int(math.ceil(max(1.0, self.lo * 0.7) / step) * step)
-        p.setPen(QColor(15, 23, 42, 200) if self.kind == "lj" else QColor(255, 255, 255, 160))
+        p.setPen(QColor(15, 23, 42, 210) if self.kind == "lj" else QColor(248, 250, 252, 200))
         for mt in range(start, int(wx1), step):
             xx = sx(mt)
-            p.drawLine(int(xx), int(ground), int(xx), int(ground + 8))
+            p.drawLine(int(xx), int(ground), int(xx), int(ground + 9))
             p.drawText(int(xx - 16), int(ground + 24), 32, 14, Qt.AlignmentFlag.AlignCenter, f"{mt}m")
 
         cur = self.cur
@@ -732,17 +902,20 @@ class FieldSceneWidget(QWidget):
             p.end()
             return
         t, dur = self.t, self.dur
+        _ = dur
         d = cur["dist"]
-        sprite_h = min(70.0, (ground - self.CROWD_H) * 0.55)
-        kit = QColor("#fbbf24") if cur["player"] else QColor.fromHsv(zlib.crc32(cur["team"].encode()) % 360, 170, 215)
+        sprite_h = min(72.0, (ground - self.CROWD_H) * 0.56)
+        kit = QColor("#f59e0b") if cur["player"] else QColor.fromHsv(zlib.crc32(cur["team"].encode()) % 360, 170, 215)
         skin = TrackRaceWidget._skin(cur["name"])
 
         def flag(x: float, label: str, col: str) -> None:
-            p.setPen(QPen(QColor("#e2e8f0"), 2))
-            p.drawLine(int(x), int(ground), int(x), int(ground - 34))
-            p.fillRect(int(x), int(ground - 34), 62, 16, QColor(col))
+            p.setPen(QPen(QColor("#f8fafc"), 2))
+            p.drawLine(int(x), int(ground), int(x), int(ground - 36))
+            p.setBrush(QColor(col))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(QRectF(x, ground - 36, 62, 18), 3, 3)
             p.setPen(QColor("#0f172a"))
-            p.drawText(int(x + 3), int(ground - 34), 58, 16, Qt.AlignmentFlag.AlignCenter, label)
+            p.drawText(int(x + 2), int(ground - 36), 58, 18, Qt.AlignmentFlag.AlignCenter, label)
 
         label = "NULLO" if cur["foul"] else f"{d:.2f}"
         colour = "#f87171" if cur["foul"] else "#34d399"
@@ -760,17 +933,17 @@ class FieldSceneWidget(QWidget):
                 s_ = (t - run_end) / (jump_end - run_end)
                 x_m = d * s_
                 air = 4.0 * (0.35 * (d / 7.0) + 1.0) * s_ * (1.0 - s_)
-                TrackRaceWidget._draw_runner(p, sx(x_m), ground - air * px * 0.55, sprite_h, 1.2, 1.0, kit, skin, False, cur["player"])
+                TrackRaceWidget._draw_runner(p, sx(x_m), ground - air * px * 0.55, sprite_h, 1.3 + 0.8 * s_, 1.0, kit, skin, False, cur["player"])
             else:
-                # atterraggio: sabbia che schizza e bandierina con la misura
-                TrackRaceWidget._draw_runner(p, sx(d), ground, sprite_h, 0.0, 0.0, kit, skin, True, cur["player"])
+                # atterraggio nella sabbia con spruzzo e impronta
+                TrackRaceWidget._draw_runner(p, sx(d), ground + 2, sprite_h, 0.3, 0.0, kit, skin, True, cur["player"], set_blend=0.2)
                 age = t - jump_end
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor("#e7d3a1"))
-                for k in range(8):
-                    a_ = k * 0.8
-                    r_ = min(1.0, age * 2.5)
-                    p.drawRect(QRectF(sx(d) + math.cos(a_) * 22 * r_, ground - 6 - abs(math.sin(a_)) * 26 * r_, 4, 4))
+                for k in range(12):
+                    a_ = k * 0.55
+                    r_ = min(1.0, age * 2.4)
+                    p.drawEllipse(QPointF(sx(d) + math.cos(a_) * 26 * r_, ground - 4 - abs(math.sin(a_)) * 28 * r_), 2.5, 2.5)
                 if age > 0.25:
                     flag(flag_x, label, colour)
         else:  # getto del peso
@@ -778,27 +951,40 @@ class FieldSceneWidget(QWidget):
             ring_x = sx(-1.0)
             if t < wind_end:
                 spin = 2 * math.pi * 1.6 * t
-                TrackRaceWidget._draw_runner(p, ring_x, ground, sprite_h, spin, 0.25 + 0.4 * t, kit, skin, t < 0.35, cur["player"])
+                TrackRaceWidget._draw_runner(p, ring_x, ground, sprite_h, spin, 0.25 + 0.4 * t, kit, skin, t < 0.35, cur["player"], set_blend=0.35)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#94a3b8"))
-                p.drawEllipse(QPointF(ring_x + 6, ground - sprite_h * 0.78), 4.5, 4.5)
+                p.setBrush(QColor("#64748b"))
+                p.drawEllipse(QPointF(ring_x + 7, ground - sprite_h * 0.78), 5.0, 5.0)
+                p.setBrush(QColor("#e2e8f0"))
+                p.drawEllipse(QPointF(ring_x + 5.5, ground - sprite_h * 0.78 - 1.5), 1.8, 1.8)
             else:
                 TrackRaceWidget._draw_runner(p, ring_x, ground, sprite_h, 1.0, 0.1, kit, skin, False, cur["player"])
                 s_ = min(1.0, (t - wind_end) / (fly_end - wind_end))
                 bx = 0.3 + (d - 0.3) * s_
                 apex = 3.2 + 0.14 * d
                 by = 2.0 * (1 - s_) + 4.0 * apex * s_ * (1.0 - s_)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                 p.setPen(Qt.PenStyle.NoPen)
+                # ombra sul prato sotto la sfera
+                p.setBrush(QColor(0, 0, 0, 75))
+                p.drawEllipse(QPointF(sx(bx), ground + 2), 6, 2)
+                # sfera metallica con riflesso
+                shot_pos = QPointF(sx(bx), ground - by * px * 0.6 - 4)
+                p.setBrush(QColor("#475569"))
+                p.drawEllipse(shot_pos, 5.5, 5.5)
                 p.setBrush(QColor("#e2e8f0"))
-                p.drawEllipse(QPointF(sx(bx), ground - by * px * 0.6 - 4), 5, 5)
+                p.drawEllipse(QPointF(shot_pos.x() - 1.6, shot_pos.y() - 1.6), 2.0, 2.0)
                 if t >= fly_end:
                     flag(flag_x, label, colour)
 
         # etichetta attuale
         p.setFont(font)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(9, 15, 29, 215))
+        p.drawRoundedRect(QRectF(left, 8, 340, 22), 5, 5)
         p.setPen(QColor("#fbbf24" if cur["player"] else "#e2e8f0"))
-        p.fillRect(left, self.CROWD_H + 6, 330, 20, QColor(11, 18, 32, 210))
-        p.drawText(left + 6, self.CROWD_H + 6, 322, 20, Qt.AlignmentFlag.AlignVCenter,
+        p.drawText(left + 8, 8, 324, 22, Qt.AlignmentFlag.AlignVCenter,
                    f"Prova {cur['n']}/{cur['total']} — {cur['name']} ({cur['team']})")
         p.end()
 
@@ -827,6 +1013,14 @@ class FieldEventWidget(QWidget):
         self._started = False
         self._done = False
         self._event = "Salto in Lungo"
+
+    def set_environment(
+        self,
+        weather: Optional[WeatherCondition] = None,
+        track_surface: str = "",
+        tier: Optional[CompetitionTier] = None,
+    ) -> None:
+        self.scene.set_environment(weather, track_surface, tier)
 
     def set_race(self, event_name: str, result: EventResult, seed: object) -> None:
         self._event = event_name
@@ -993,9 +1187,14 @@ class RaceViewerDialog(QDialog):
         self.clock.setText("")
         self._race_done = False
         if is_field_event(res.event_name):
+            self.field.set_environment(self.summary.weather, self.summary.track_surface, self.summary.tier)
             self.field.set_race(res.event_name, res, self._seed())
             self.stack.setCurrentWidget(self.field)
         else:
+            self.track.set_environment(
+                self.summary.weather, self.summary.track_surface, self.summary.tier,
+                self.summary.season_phase, self.summary.spectators,
+            )
             self.track.set_race(res.event_name, res, self._seed())
             self.stack.setCurrentWidget(self.track)
         self.btn_next.setEnabled(False)
@@ -1021,6 +1220,10 @@ class RaceViewerDialog(QDialog):
         new = self.track2d if old is self.track3d else self.track3d
         if self.stack.currentWidget() is old and 0 <= self._index < len(self.summary.event_results):
             res = self.summary.event_results[self._index]
+            new.set_environment(
+                self.summary.weather, self.summary.track_surface, self.summary.tier,
+                self.summary.season_phase, self.summary.spectators,
+            )
             new.set_race(res.event_name, res, self._seed())
             new._t, new._done = old._t, old._done
             self.stack.setCurrentWidget(new)
