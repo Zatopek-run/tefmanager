@@ -10,6 +10,8 @@ from models.entities import (
     COACH_STATS,
     EVENTS,
     VERTICAL_SLICE_EVENTS,
+    RIVAL_SEASON_INFLATION,
+    TIER_CONFIG,
     Athlete,
     Coach,
     CompetitionTier,
@@ -17,6 +19,8 @@ from models.entities import (
     GameState,
     PeriodizationPhase,
     Personality,
+    RivalAthlete,
+    RivalClub,
     SeasonObjective,
     Specialty,
     StaffMember,
@@ -439,6 +443,44 @@ def get_meet_name(week: int, tier: CompetitionTier, season_phase_label: str = "O
 
 def get_rival_teams(tier: CompetitionTier) -> List[str]:
     return RIVAL_TEAMS.get(tier, RIVAL_TEAMS[CompetitionTier.PROVINCIALE])
+
+
+def generate_rival_athlete(
+    event: str,
+    tier: CompetitionTier,
+    club_offset: float,
+    season: int = 1,
+    rng: Optional[random.Random] = None,
+    age_range: tuple[int, int] = (19, 32),
+) -> RivalAthlete:
+    """A rival club athlete; later seasons produce slightly stronger recruits."""
+    r = rng or random.Random()
+    base = TIER_CONFIG[tier]["opponent_skill"] + club_offset + RIVAL_SEASON_INFLATION * (season - 1)
+    return RivalAthlete(
+        name=f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}",
+        event=event,
+        age=r.randint(*age_range),
+        skill=round(r.gauss(base, 5.5), 2),
+    )
+
+
+def create_rival_clubs(rng: Optional[random.Random] = None) -> List[RivalClub]:
+    """Seven persistent rival clubs per category, each with one athlete per discipline."""
+    r = rng or random.Random()
+    clubs: List[RivalClub] = []
+    for tier, names in RIVAL_TEAMS.items():
+        for name in names:
+            club = RivalClub(
+                name=name,
+                tier=tier,
+                ambition=round(r.uniform(0.8, 1.25), 2),
+                offset=round(r.gauss(0.0, 3.0), 2),
+            )
+            for event in EVENTS:
+                club.athletes[event] = generate_rival_athlete(event, tier, club.offset, rng=r)
+            club.history.append(round(club.level(), 2))
+            clubs.append(club)
+    return clubs
 
 
 def get_recruitment_fee(athlete: Athlete) -> int:

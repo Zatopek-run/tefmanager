@@ -21,7 +21,7 @@ tefmanager/
 │   ├── __init__.py
 │   ├── styles.py                  # Dark sports-management QSS theme
 │   ├── dialogs.py                 # Risultati gara, Mercato, Assumi Allenatore, Dilemmi Etici, Nuova Stagione
-│   ├── tabs.py                    # Dashboard, Rosa, Vivaio, Calendario & Gare, Staffette, Staff & Impianto, Finanze
+│   ├── tabs.py                    # Dashboard, Rosa, Vivaio, Calendario & Gare, Staffette, Rivali, Staff & Impianto, Finanze
 │   └── main_window.py             # QMainWindow & HUD
 └── tests/
     └── test_game.py               # Unit and offscreen PyQt6 smoke tests
@@ -48,7 +48,9 @@ Meccaniche da gestionale di atletica online, adattate alla scala del gioco:
 - **Allenatori con abilità proprie**: ogni allenatore ha un valore (1-100) in Velocità, Resistenza, Forza e Tecnica. Quando un atleta allena una qualità, cresce tanto più quanto l'allenatore è bravo in quella qualità; senza un allenatore adatto cresce molto più lentamente. Gli specializzati (max 6) seguono solo la propria disciplina; quelli del vivaio (max 2) solo i ragazzi 14-17. Si assumono scegliendo abilità principale, secondaria e livello di ingaggio ($1.500-$7.500; più abilità = stipendio più alto). Uno a settimana. Oltre 6 atleti a testa l'effetto cala, e le abilità calano lentamente col tempo.
 - **Staffette 4x100m e 4x400m**: 4 frazionisti in ordine più una riserva; ogni atleta corre in una sola staffetta. La 4x400 si corre in Carriera (serve la gara dei 400m), la 4x100 non si corre indoor e in Cross non si corrono staffette. Il tempo dipende dai frazionisti (l'ultima frazione pesa di più) e dall'affiatamento (E … A++). L'affiatamento cresce ogni settimana coi titolari sani e di più quando si gareggia; se è basso aumenta il rischio di squalifica per cambio fuori zona. Riordinare è gratis; sostituire un titolare sano costa il 25% dell'affiatamento ed è possibile una volta ogni 4 settimane. Un titolare infortunato viene sostituito dalla riserva. Le staffette contano nella classifica a squadre e hanno record sociali propri, ma non consumano forma e non danno fan.
 
-I salvataggi v2 e v3 vengono migrati in automatico a v4 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri.
+- **Rivali che migliorano nel tempo**: ogni categoria ha 7 società rivali fisse, ognuna con un atleta per gara (nome, età, livello, PB) che incontri meeting dopo meeting. Ogni settimana anche loro si allenano: gli under 24 crescono, i 24-27 crescono poco, dai 30 anni calano. A ogni nuova stagione invecchiano, i veterani si ritirano e arrivano giovani reclute, ogni anno un po' più forti. Le società che batti diventano più ambiziose e crescono più in fretta (e a fine stagione reclutano meglio); quelle che ti staccano di molto si rilassano. Le staffette rivali valgono quanto i loro velocisti. La scheda **Rivali** mostra livello e tendenza di ogni società, i suoi atleti e un confronto gara per gara con il valore atteso dei tuoi convocati.
+
+I salvataggi v2, v3 e v4 vengono migrati in automatico a v5 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri e le partite senza rivali ricevono le società rivali.
 
 ## How to Run
 

@@ -13,6 +13,10 @@ from models.entities import (
     COACH_COMFORT_LOAD,
     COACH_NO_COACH_MULT,
     RELAY_DQ_MARK,
+    RIVAL_RACE_SIGMA,
+    RIVAL_RETIREMENT_AGE,
+    RIVAL_TREND_SNAPSHOTS,
+    RivalClub,
     RELAY_LEG_WEIGHTS,
     RELAYS,
     Coach,
@@ -48,13 +52,12 @@ from models.entities import (
     WeatherCondition,
 )
 from models.generator import (
-    FIRST_NAMES,
-    LAST_NAMES,
     clamp_stat,
     get_meet_name,
-    get_rival_teams,
     SPECIALTY_COACH_FOCUS,
+    create_rival_clubs,
     generate_coach,
+    generate_rival_athlete,
     maybe_generate_dilemma,
     senior_wage,
 )
@@ -432,16 +435,6 @@ def _compute_athlete_event_score(
     rng: random.Random,
 ) -> float:
     """Calculate simulated performance score from attributes, form, personality, weather & track."""
-    base_skill = (
-        athlete.speed * event_def.weights["speed"]
-        + athlete.stamina * event_def.weights["stamina"]
-        + athlete.strength * event_def.weights["strength"]
-        + athlete.technique * event_def.weights["technique"]
-    )
-    specialty_bonus = 4.0 if athlete.specialty == event_def.specialty else -3.5
-    form_modifier = (athlete.form - 60) * 0.24
-    fatigue_penalty = max(0, athlete.fatigue - 62) * 0.26
-    track_mod = (track_condition - 75) * 0.06
     weather_mod = -1.8 if weather == WeatherCondition.PIOGGIA else (-0.8 if weather == WeatherCondition.CALDO else 0.0)
     doping_mod = 6.5 if athlete.doping_boost_weeks > 0 else 0.0
 
@@ -451,7 +444,18 @@ def _compute_athlete_event_score(
         sigma = 3.0
     variance = rng.gauss(0.0, sigma)
 
-    return base_skill + specialty_bonus + form_modifier - fatigue_penalty + track_mod + weather_mod + doping_mod + variance
+    expected = expected_event_score(athlete, event_def, track_condition)
+    return expected + weather_mod + doping_mod + variance
+
+
+def expected_event_score(athlete: Athlete, event_def: EventDefinition, track_condition: int = 75) -> float:
+    """Race score an athlete would post on an average day (same scale as rival levels)."""
+    base_skill = sum(getattr(athlete, k) * w for k, w in event_def.weights.items())
+    specialty_bonus = 4.0 if athlete.specialty == event_def.specialty else -3.5
+    form_modifier = (athlete.form - 60) * 0.24
+    fatigue_penalty = max(0, athlete.fatigue - 62) * 0.26
+    track_mod = (track_condition - 75) * 0.06
+    return base_skill + specialty_bonus + form_modifier - fatigue_penalty + track_mod
 
 
 def _roll_meet_wind(weather: WeatherCondition, season_phase: SeasonPhase, rng: random.Random) -> float:
@@ -509,12 +513,81 @@ def _compute_ticket_income(
     return spectators, spectators * TICKET_PRICE[state.tier.value]
 
 
-def _rival_only_points(rivals: List[str], team_points: Dict[str, int], rng: random.Random) -> None:
+def _rival_only_points(
+    clubs: List[RivalClub], event: str, team_points: Dict[str, int], rng: random.Random
+) -> None:
     """When the club enters nobody in an event, the rivals still score among themselves."""
-    order = list(rivals)
-    rng.shuffle(order)
-    for place, team in enumerate(order, start=1):
-        team_points[team] = team_points.get(team, 0) + TEAM_POINTS.get(place, 0)
+    def day_score(club: RivalClub) -> float:
+        athlete = club.athletes.get(event)
+        return rng.gauss(athlete.skill if athlete else 0.0, RIVAL_RACE_SIGMA)
+
+    order = sorted(clubs, key=day_score, reverse=True)
+    for place, club in enumerate(order, start=1):
+        team_points[club.name] = team_points.get(club.name, 0) + TEAM_POINTS.get(place, 0)
+
+
+# ---------------------------------------------------------------- rival development
+def _weekly_rival_drift(age: int) -> float:
+    """Typical weekly change of a rival's level by age: youngsters grow, veterans fade."""
+    if age <= 23:
+        return 0.13
+    if age <= 27:
+        return 0.05
+    if age <= 29:
+        return 0.0
+    return -min(0.3, 0.08 * (age - 29))
+
+
+def progress_rivals(state: GameState, rng: random.Random) -> None:
+    """Every rival club in every category trains too; ambitious clubs improve faster."""
+    for club in state.rival_clubs:
+        for athlete in club.athletes.values():
+            drift = _weekly_rival_drift(athlete.age)
+            if drift > 0:
+                drift *= club.ambition
+            athlete.skill = round(athlete.skill + drift + rng.gauss(0.0, 0.15), 2)
+        if state.week % 4 == 0:
+            club.history.append(round(club.level(), 2))
+            club.history = club.history[-RIVAL_TREND_SNAPSHOTS:]
+
+
+def renew_rivals_for_season(state: GameState, rng: random.Random) -> List[str]:
+    """New season: rivals age, veterans retire and clubs sign replacements.
+
+    Ambitious clubs raise their recruiting level, complacent ones lose ground; every
+    season's recruits are slightly stronger than the last (the sport moves forward).
+    Returns news lines about the player's current category.
+    """
+    news: List[str] = []
+    for club in state.rival_clubs:
+        club.offset = round(club.offset + (club.ambition - 1.0) * 1.5, 2)
+        club.ambition = round(club.ambition + (1.0 - club.ambition) * 0.2, 2)  # drifts back to normal
+        for event, athlete in list(club.athletes.items()):
+            athlete.age += 1
+            retiring = athlete.age >= RIVAL_RETIREMENT_AGE or (athlete.age >= 31 and rng.random() < 0.3)
+            if not retiring:
+                continue
+            newcomer = generate_rival_athlete(
+                event, club.tier, club.offset, season=state.season_number, rng=rng, age_range=(18, 22)
+            )
+            club.athletes[event] = newcomer
+            if club.tier == state.tier and len(news) < 4:
+                news.append(
+                    f"Sett. {state.week}: {club.name} — si ritira {athlete.name} ({event}), "
+                    f"arriva il giovane {newcomer.name}."
+                )
+    return news
+
+
+def _adapt_rival_ambition(state: GameState, team_points: Dict[str, int]) -> None:
+    """Clubs beaten by the player invest more; clubs comfortably ahead relax a little."""
+    mine = team_points.get(state.team_name, 0)
+    for club in state.rivals_in():
+        pts = team_points.get(club.name, 0)
+        if pts < mine:
+            club.ambition = min(1.6, round(club.ambition + 0.04, 2))
+        elif pts > mine + 8:
+            club.ambition = max(0.6, round(club.ambition - 0.02, 2))
 
 
 def simulate_competition(
@@ -524,7 +597,8 @@ def simulate_competition(
     """Simulate the current week's meet: wind, weather, race attitude, team scoring & home gate."""
     r = rng or random.Random()
     tier_cfg = TIER_CONFIG[state.tier]
-    rivals = get_rival_teams(state.tier)
+    clubs = state.rivals_in()
+    rivals = [c.name for c in clubs]
     roles = _hired_roles(state)
     has_mental = StaffRole.MENTAL_COACH in roles
     has_doctor = StaffRole.DOCTOR in roles
@@ -562,7 +636,7 @@ def simulate_competition(
         player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
 
         if player_athlete is None or player_athlete.is_injured:
-            _rival_only_points(rivals, team_points, r)
+            _rival_only_points(clubs, event_name, team_points, r)
             continue
 
         attitude = state.attitude_for(event_name)
@@ -619,17 +693,17 @@ def simulate_competition(
         player_athlete.fatigue = clamp_stat(player_athlete.fatigue + int(att["fatigue"]), 0, 100)
         player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
 
-        # 7 AI opponents, one per rival club
-        opp_base = tier_cfg["opponent_skill"]
-        for i in range(7):
-            opp_name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
-            opp_team = rivals[i % len(rivals)]
-            opp_score = r.gauss(opp_base, 7.5)
+        # One athlete per rival club: the same people you meet every time, getting better
+        for club in clubs:
+            opp = club.athletes[event_name]
+            opp_score = r.gauss(opp.skill, RIVAL_RACE_SIGMA)
             o_val, o_disp = _score_to_mark(event_def, opp_score, wind_ms)
+            if not wind_illegal and (opp.pb is None or _is_better(event_def, o_val, opp.pb)):
+                opp.pb, opp.pb_display = o_val, o_disp
             standings.append(
                 EventStanding(
-                    athlete_name=opp_name,
-                    team_name=opp_team,
+                    athlete_name=opp.name,
+                    team_name=club.name,
                     is_player=False,
                     mark_value=o_val,
                     mark_display=o_disp,
@@ -724,7 +798,6 @@ def simulate_competition(
         )
 
     # ---- Relays: harmony, legs and baton changes; no effect on individual form or fans
-    opp_base = tier_cfg["opponent_skill"]
     for relay_name in state.active_relays:
         rdef = RELAYS[relay_name]
         relay = state.relays.get(relay_name)
@@ -739,7 +812,7 @@ def simulate_competition(
                 if runner is not None and not runner.is_injured:
                     legs.append(runner)
         if relay is None or len(legs) < 4:
-            _rival_only_points(rivals, team_points, r)
+            _rival_only_points(clubs, rdef.requires_event, team_points, r)
             continue
 
         harmony = relay.harmony - (15 if substituted else 0)
@@ -763,12 +836,13 @@ def simulate_competition(
                 mark_display=p_disp,
             )
         ]
-        for i in range(7):
-            o_val, o_disp = _relay_mark(rdef, r.gauss(opp_base, 5.0))
+        for club in clubs:
+            # A club's relay is as fast as its sprinters in that distance
+            o_val, o_disp = _relay_mark(rdef, r.gauss(club.athletes[rdef.requires_event].skill, 4.0))
             standings.append(
                 EventStanding(
-                    athlete_name=f"Staffetta {rivals[i % len(rivals)]}",
-                    team_name=rivals[i % len(rivals)],
+                    athlete_name=f"Staffetta {club.name}",
+                    team_name=club.name,
                     is_player=False,
                     mark_value=o_val,
                     mark_display=o_disp,
@@ -822,6 +896,7 @@ def simulate_competition(
             )
         )
 
+    _adapt_rival_ambition(state, team_points)
     team_standings = sorted(team_points.items(), key=lambda kv: kv[1], reverse=True)
     team_place = next(
         (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
@@ -948,6 +1023,8 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
             auto_assign_coach(state, athlete)
     if any(name not in state.relays for name in state.active_relays):
         auto_build_all_relays(state)
+    if not state.rival_clubs:
+        state.rival_clubs = create_rival_clubs(rng=r)
 
 
 def comp_summary_relays(summary: Optional[CompetitionSummary]) -> List[str]:
@@ -1098,6 +1175,7 @@ def advance_week(
                 coach.skills[stat] -= 1
 
     _update_relay_harmony(state, set(comp_summary_relays(comp_summary)))
+    progress_rivals(state, r)
 
     # Gradual tartan track wear
     state.track_condition = clamp_stat(state.track_condition - r.randint(1, 3), 25, 100)
@@ -1118,6 +1196,8 @@ def advance_week(
             state.league_table = {}
             for a in state.athletes:
                 a.age += 1
+            for line in renew_rivals_for_season(state, r):
+                state.news_log.insert(0, line)
         state.news_log.insert(
             0,
             f"Sett. {state.week}: Inizia la stagione {state.season_phase.value}!",

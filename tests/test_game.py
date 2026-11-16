@@ -17,6 +17,7 @@ from controllers.game_controller import GameController
 from models.database import DatabaseManager
 from models.entities import (
     CompetitionTier,
+    GameState,
     PeriodizationPhase,
     RaceAttitude,
     Specialty,
@@ -269,9 +270,10 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.event_lineup["1500m"] = None  # empty slot: rivals still score
             summary = sim.simulate_competition(ctrl.state, rng=random.Random(2))
             self.assertEqual(len(summary.team_standings), 8)
-            # 3 events + 4x100m relay, each worth 8+7+...+1 = 36 points,
-            # minus the 8th-place point nobody takes in the empty 1500m slot
-            self.assertEqual(sum(p for _t, p in summary.team_standings), 4 * 36 - 1)
+            # 3 events + 4x100m relay, each worth 8+7+...+1 = 36 points, minus the
+            # 8th-place point nobody takes in the empty 1500m slot and for each withdrawal/DQ
+            dropped = sum(1 for er in summary.event_results if er.withdrew_injured or er.disqualified)
+            self.assertEqual(sum(p for _t, p in summary.team_standings), 4 * 36 - 1 - dropped)
             self.assertEqual(dict(summary.team_standings), ctrl.state.league_table)
             self.assertGreater(summary.team_placement, 0)
 
@@ -362,11 +364,11 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.team_name = "Vecchio Salvataggio"
             ctrl.db.save_game(ctrl.state)
             # Downgrade the file to the v2 layout (drop v3 columns, reset version)
-            from models.database import V3_COLUMNS, V4_COLUMNS
+            from models.database import V3_COLUMNS, V4_COLUMNS, V5_COLUMNS
 
             conn = sqlite3.connect(path)
             try:
-                for columns in (V3_COLUMNS, V4_COLUMNS):
+                for columns in (V3_COLUMNS, V4_COLUMNS, V5_COLUMNS):
                     for table, cols in columns.items():
                         for col, _def in cols:
                             conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
@@ -580,6 +582,142 @@ class TestCoachesAndRelays(unittest.TestCase):
             self.assertEqual(loaded.coach_hired_week, ctrl.state.week)
 
 
+class TestRivalClubs(unittest.TestCase):
+    """Persistent rival clubs whose athletes develop, retire and react to the player."""
+
+    def _ctrl(self, tmpdir: str, seed: int = 1, mode: str = "vertical_slice") -> GameController:
+        db = DatabaseManager(db_path=Path(tmpdir) / f"r{seed}.db")
+        ctrl = GameController(db_manager=db, rng=random.Random(seed))
+        if mode != "vertical_slice":
+            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+        return ctrl
+
+    @staticmethod
+    def _club(ambition: float = 1.0, age: int = 20, skill: float = 50.0):
+        from models.entities import EVENTS, RivalAthlete, RivalClub
+
+        club = RivalClub(name="Test AC", tier=CompetitionTier.PROVINCIALE, ambition=ambition)
+        for ev in EVENTS:
+            club.athletes[ev] = RivalAthlete(name=f"X {ev}", event=ev, age=age, skill=skill)
+        return club
+
+    def test_clubs_are_created_for_every_category(self) -> None:
+        from models.entities import EVENTS
+        from models.generator import RIVAL_TEAMS
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = self._ctrl(tmpdir).state
+            self.assertEqual(len(s.rival_clubs), 28)
+            for tier, names in RIVAL_TEAMS.items():
+                self.assertEqual([c.name for c in s.rivals_in(tier)], names)
+            self.assertTrue(all(set(c.athletes) == set(EVENTS) for c in s.rival_clubs))
+            # stronger categories have stronger clubs
+            prov = sum(c.level() for c in s.rivals_in(CompetitionTier.PROVINCIALE))
+            naz = sum(c.level() for c in s.rivals_in(CompetitionTier.NAZIONALE))
+            self.assertGreater(naz, prov)
+
+    def test_meets_feature_the_same_named_rivals(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = self._ctrl(tmpdir, seed=2).state
+            s.week = 4
+            s.prestige = -1000
+            summary = sim.simulate_competition(s, rng=random.Random(1))
+            for er in summary.event_results:
+                if er.event_name.startswith("4x"):
+                    continue
+                expected = {c.athletes[er.event_name].name for c in s.rivals_in()}
+                rivals = {st.athlete_name for st in er.standings if not st.is_player}
+                self.assertEqual(rivals, expected)
+            lj = next(er for er in summary.event_results if er.event_name == "Salto in Lungo")
+            if not lj.wind_illegal:
+                self.assertTrue(all(c.athletes["Salto in Lungo"].pb is not None for c in s.rivals_in()))
+
+    def test_young_rivals_improve_and_veterans_decline(self) -> None:
+        from models.simulation import progress_rivals
+
+        young, old = self._club(age=20), self._club(age=32)
+        s = GameState(rival_clubs=[young, old])
+        for week in range(1, 37):
+            s.week = week
+            progress_rivals(s, random.Random(week))
+        self.assertGreater(young.level(), 53)
+        self.assertLess(old.level(), 45)
+        self.assertEqual(len(young.history), 9)  # one snapshot every 4 weeks
+        self.assertGreater(young.trend, 0)
+
+    def test_ambition_speeds_up_growth(self) -> None:
+        from models.simulation import progress_rivals
+
+        eager, lazy = self._club(ambition=1.6), self._club(ambition=0.6)
+        s = GameState(rival_clubs=[eager, lazy])
+        for week in range(1, 25):
+            s.week = week
+            progress_rivals(s, random.Random(week))
+        self.assertGreater(eager.level(), lazy.level() + 1.5)
+
+    def test_season_renewal_retires_veterans(self) -> None:
+        from models.simulation import renew_rivals_for_season
+
+        club = self._club(ambition=1.5, age=32)
+        s = GameState(rival_clubs=[club], season_number=2)
+        news = renew_rivals_for_season(s, random.Random(1))
+        self.assertTrue(all(18 <= a.age <= 22 for a in club.athletes.values()))
+        self.assertFalse(any(a.name.startswith("X ") for a in club.athletes.values()))
+        self.assertGreater(club.offset, 0)  # ambitious clubs recruit better
+        self.assertLess(club.ambition, 1.5)  # and calm down a bit
+        self.assertEqual(len(news), 4)
+
+    def test_beaten_clubs_get_more_ambitious(self) -> None:
+        from models.simulation import _adapt_rival_ambition
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = self._ctrl(tmpdir, seed=3).state
+            clubs = s.rivals_in()
+            before = {c.name: c.ambition for c in clubs}
+            points = {s.team_name: 20, clubs[0].name: 10, clubs[1].name: 40}
+            _adapt_rival_ambition(s, points)
+            self.assertAlmostEqual(clubs[0].ambition, min(1.6, before[clubs[0].name] + 0.04))
+            self.assertAlmostEqual(clubs[1].ambition, max(0.6, before[clubs[1].name] - 0.02))
+
+    def test_rivals_progress_over_a_career(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = self._ctrl(tmpdir, seed=4, mode="career").state
+            start = sum(c.level() for c in s.rival_clubs)
+            for _ in range(40):  # through the start of season 2 (rivals age & retire)
+                advance_week(s, rng=random.Random(_))
+            self.assertEqual(s.season_number, 2)
+            self.assertGreater(sum(c.level() for c in s.rival_clubs), start)
+
+    def test_rivals_roundtrip_and_old_saves_get_rivals(self) -> None:
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=5)
+            club = ctrl.state.rival_clubs[3]
+            club.ambition, club.history = 1.33, [40.0, 41.5]
+            club.athletes["100m"].pb, club.athletes["100m"].pb_display = 11.2, "11.20s"
+            ctrl.db.save_game(ctrl.state)
+            loaded = ctrl.db.load_game()
+            assert loaded is not None
+            lc = loaded.rival_clubs[3]
+            self.assertEqual((lc.name, lc.tier, lc.ambition, lc.history), (club.name, club.tier, 1.33, [40.0, 41.5]))
+            self.assertEqual(lc.athletes["100m"].pb_display, "11.20s")
+            self.assertEqual(lc.offset, club.offset)
+            # A v4 save (no rivals column) gets fresh rivals when opened
+            path = ctrl.db.db_path
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute("ALTER TABLE game_state DROP COLUMN rivals_json")
+                conn.execute("PRAGMA user_version = 4")
+                conn.commit()
+            finally:
+                conn.close()
+            ctrl2 = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(1))
+            self.assertEqual(len(ctrl2.state.rival_clubs), 28)
+
+
 class TestPyQtViewsV2(unittest.TestCase):
     """Smoke tests for MainWindow (6 tabs) and updated Dialogs."""
 
@@ -602,7 +740,10 @@ class TestPyQtViewsV2(unittest.TestCase):
             win = MainWindow(controller=ctrl)
 
             self.assertEqual(win.windowTitle(), "Track & Field Manager")
-            self.assertEqual(win.tabs.count(), 7)
+            self.assertEqual(win.tabs.count(), 8)
+            self.assertEqual(win.rivals_tab.clubs_table.rowCount(), 7)
+            self.assertEqual(win.rivals_tab.compare_table.rowCount(), 3)
+            self.assertEqual(win.rivals_tab.roster_table.rowCount(), 3)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)
             self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 3)
             self.assertEqual(win.staff_tab.table.rowCount(), 3)

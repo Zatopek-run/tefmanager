@@ -21,6 +21,8 @@ from models.entities import (
     PeriodizationPhase,
     Personality,
     Relay,
+    RivalAthlete,
+    RivalClub,
     SeasonObjective,
     SeasonPhase,
     Specialty,
@@ -31,7 +33,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -68,7 +70,64 @@ V4_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("coach_id", "INTEGER"),
     ],
 }
-MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {2: V3_COLUMNS, 3: V4_COLUMNS}
+# Columns added in v5 (persistent rival clubs that develop over time).
+V5_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("rivals_json", "TEXT NOT NULL DEFAULT '[]'")],
+}
+MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
+    2: V3_COLUMNS,
+    3: V4_COLUMNS,
+    4: V5_COLUMNS,
+}
+
+
+def _rivals_to_json(clubs: List[RivalClub]) -> str:
+    return json.dumps(
+        [
+            {
+                "name": c.name,
+                "tier": c.tier.value,
+                "ambition": c.ambition,
+                "offset": c.offset,
+                "history": c.history,
+                "athletes": [
+                    {
+                        "name": a.name,
+                        "event": a.event,
+                        "age": a.age,
+                        "skill": a.skill,
+                        "pb": a.pb,
+                        "pb_display": a.pb_display,
+                    }
+                    for a in c.athletes.values()
+                ],
+            }
+            for c in clubs
+        ]
+    )
+
+
+def _rivals_from_json(raw: str) -> List[RivalClub]:
+    clubs: List[RivalClub] = []
+    for cj in json.loads(raw):
+        club = RivalClub(
+            name=cj["name"],
+            tier=CompetitionTier(cj["tier"]),
+            ambition=float(cj["ambition"]),
+            offset=float(cj.get("offset", 0.0)),
+            history=[float(h) for h in cj.get("history", [])],
+        )
+        for aj in cj["athletes"]:
+            club.athletes[aj["event"]] = RivalAthlete(
+                name=aj["name"],
+                event=aj["event"],
+                age=int(aj["age"]),
+                skill=float(aj["skill"]),
+                pb=aj.get("pb"),
+                pb_display=aj.get("pb_display"),
+            )
+        clubs.append(club)
+    return clubs
 
 
 def get_default_save_path() -> Path:
@@ -147,7 +206,8 @@ class DatabaseManager:
                     bankrupt INTEGER NOT NULL DEFAULT 0,
                     league_table_json TEXT NOT NULL DEFAULT '{}',
                     relays_json TEXT NOT NULL DEFAULT '{}',
-                    coach_hired_week INTEGER NOT NULL DEFAULT 0
+                    coach_hired_week INTEGER NOT NULL DEFAULT 0,
+                    rivals_json TEXT NOT NULL DEFAULT '[]'
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -279,8 +339,8 @@ class DatabaseManager:
                     event_lineup_json, club_records_json, objectives_json, milestones_json,
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
-                    relays_json, coach_hired_week
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    relays_json, coach_hired_week, rivals_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -321,6 +381,7 @@ class DatabaseManager:
                         }
                     ),
                     state.coach_hired_week,
+                    _rivals_to_json(state.rival_clubs),
                 ),
             )
 
@@ -679,4 +740,5 @@ class DatabaseManager:
                 coaches=coaches,
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
+                rival_clubs=_rivals_from_json(row["rivals_json"]),
             )

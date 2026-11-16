@@ -27,6 +27,7 @@ from views.tabs import (
     DashboardTab,
     FinancesTab,
     RelayTab,
+    RivalsTab,
     RosterTab,
     StaffTab,
     YouthTab,
@@ -115,6 +116,7 @@ class MainWindow(QMainWindow):
         self.youth_tab = YouthTab(self.controller)
         self.calendar_tab = CalendarTab(self.controller)
         self.relay_tab = RelayTab(self.controller)
+        self.rivals_tab = RivalsTab(self.controller)
         self.staff_tab = StaffTab(self.controller)
         self.finances_tab = FinancesTab(self.controller)
 
@@ -123,6 +125,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.youth_tab, "Vivaio && Osservatori")
         self.tabs.addTab(self.calendar_tab, "Calendario && Gare")
         self.tabs.addTab(self.relay_tab, "Staffette")
+        self.tabs.addTab(self.rivals_tab, "Rivali")
         self.tabs.addTab(self.staff_tab, "Staff && Impianto")
         self.tabs.addTab(self.finances_tab, "Finanze")
 
@@ -166,6 +169,7 @@ class MainWindow(QMainWindow):
         self.youth_tab.refresh(state)
         self.calendar_tab.refresh(state)
         self.relay_tab.refresh(state)
+        self.rivals_tab.refresh(state)
         self.staff_tab.refresh(state)
         self.finances_tab.refresh(state)
 

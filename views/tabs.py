@@ -1,4 +1,4 @@
-"""Tab views for Dashboard, Roster, Youth Academy, Calendar & Meets, Relays, Staff & Facilities, Finances."""
+"""Tab views: Dashboard, Roster, Youth Academy, Calendar & Meets, Relays, Rivals, Staff & Facilities, Finances."""
 
 from __future__ import annotations
 
@@ -55,8 +55,7 @@ from models.entities import (
     stand_expansion_cost,
 )
 from controllers.game_controller import scouting_search_cost
-from models.generator import get_rival_teams
-from models.simulation import relay_leg_score, weekly_finances
+from models.simulation import expected_event_score, relay_leg_score, weekly_finances
 from views.dialogs import CompetitionResultsDialog, HireCoachDialog, RecruitAthleteDialog
 
 
@@ -671,7 +670,7 @@ class CalendarTab(QWidget):
 
         table = dict(state.league_table)
         if not table:  # new season or category: everyone starts from zero
-            table = {team: 0 for team in [state.team_name, *get_rival_teams(state.tier)]}
+            table = {team: 0 for team in [state.team_name, *(c.name for c in state.rivals_in())]}
         league_rows = sorted(table.items(), key=lambda kv: kv[1], reverse=True)
         self.league_title.setText(f"Classifica di Lega — {state.tier.value}")
         self.league_table.setRowCount(len(league_rows))
@@ -1396,3 +1395,198 @@ class RelayTab(QWidget):
     def _on_slot_changed(self, name: str, slot: int, combo: QComboBox) -> None:
         if not self.controller.set_relay_slot(name, slot, combo.currentData()):
             self.refresh(self.controller.state)  # refused: show the real line-up again
+
+
+def _trend_text(delta: float) -> str:
+    if delta >= 0.5:
+        return f"↑ +{delta:.1f}"
+    if delta <= -0.5:
+        return f"↓ {delta:.1f}"
+    return f"= {delta:+.1f}"
+
+
+class RivalsTab(QWidget):
+    """Rival clubs of the current category: level, trend, ambition and their athletes."""
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._club_names: list[str] = []
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        banner = QFrame()
+        banner.setObjectName("StatCard")
+        banner_layout = QVBoxLayout(banner)
+        banner_layout.setContentsMargins(14, 12, 14, 12)
+        self.summary_label = QLabel("Rivali")
+        self.summary_label.setObjectName("SectionHeader")
+        banner_layout.addWidget(self.summary_label)
+        hint = QLabel(
+            "Le società rivali si allenano anche loro: i giovani migliorano, i veterani calano e "
+            "a fine stagione si ritirano, sostituiti da nuovi atleti ogni anno un po' più forti. "
+            "Le società che batti diventano più ambiziose e investono di più; quelle che ti "
+            "staccano si rilassano. Il livello è sulla stessa scala del valore atteso dei tuoi atleti."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        banner_layout.addWidget(hint)
+        root.addWidget(banner)
+
+        compare_panel = QFrame()
+        compare_panel.setObjectName("SectionPanel")
+        compare_layout = QVBoxLayout(compare_panel)
+        compare_layout.setContentsMargins(14, 12, 14, 12)
+        compare_title = QLabel("Confronto per gara (valore atteso in una giornata normale)")
+        compare_title.setObjectName("SectionHeader")
+        compare_layout.addWidget(compare_title)
+        self.compare_table = QTableWidget(0, 5)
+        self.compare_table.setHorizontalHeaderLabels(
+            ["Gara", "Tuo convocato", "Media categoria", "Miglior rivale", "Margine sul migliore"]
+        )
+        self.compare_table.setAlternatingRowColors(True)
+        self.compare_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.compare_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.compare_table.verticalHeader().setVisible(False)
+        compare_layout.addWidget(self.compare_table)
+        root.addWidget(compare_panel, stretch=2)
+
+        lower = QHBoxLayout()
+        lower.setSpacing(12)
+
+        clubs_panel = QFrame()
+        clubs_panel.setObjectName("SectionPanel")
+        clubs_layout = QVBoxLayout(clubs_panel)
+        clubs_layout.setContentsMargins(14, 12, 14, 12)
+        clubs_title = QLabel("Società della categoria (seleziona per vedere gli atleti)")
+        clubs_title.setObjectName("SectionHeader")
+        clubs_layout.addWidget(clubs_title)
+        self.clubs_table = QTableWidget(0, 5)
+        self.clubs_table.setHorizontalHeaderLabels(
+            ["Società", "Livello", "Ultimo anno", "Atteggiamento", "Punti lega"]
+        )
+        self.clubs_table.setAlternatingRowColors(True)
+        self.clubs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.clubs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.clubs_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.clubs_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.clubs_table.verticalHeader().setVisible(False)
+        self.clubs_table.itemSelectionChanged.connect(self._show_selected_club)
+        clubs_layout.addWidget(self.clubs_table)
+        lower.addWidget(clubs_panel, stretch=3)
+
+        roster_panel = QFrame()
+        roster_panel.setObjectName("SectionPanel")
+        roster_layout = QVBoxLayout(roster_panel)
+        roster_layout.setContentsMargins(14, 12, 14, 12)
+        self.roster_title = QLabel("Atleti")
+        self.roster_title.setObjectName("SectionHeader")
+        roster_layout.addWidget(self.roster_title)
+        self.roster_table = QTableWidget(0, 5)
+        self.roster_table.setHorizontalHeaderLabels(["Gara", "Atleta", "Età", "Livello", "PB"])
+        self.roster_table.setAlternatingRowColors(True)
+        self.roster_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.roster_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.roster_table.verticalHeader().setVisible(False)
+        roster_layout.addWidget(self.roster_table)
+        lower.addWidget(roster_panel, stretch=2)
+
+        root.addLayout(lower, stretch=3)
+
+    @staticmethod
+    def _cell(text: str, color: Optional[str] = None) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if color:
+            item.setForeground(QColor(color))
+        return item
+
+    def refresh(self, state: GameState) -> None:
+        clubs = state.rivals_in()
+        events = state.active_events
+        avg = sum(c.level(events) for c in clubs) / len(clubs) if clubs else 0.0
+        trend = sum(c.trend for c in clubs) / len(clubs) if clubs else 0.0
+        by_id = {a.id: a for a in state.main_squad}
+        mine = [
+            expected_event_score(by_id[aid], EVENTS[ev], state.track_condition)
+            for ev, aid in state.event_lineup.items()
+            if ev in events and aid in by_id
+        ]
+        mine_avg = sum(mine) / len(mine) if mine else 0.0
+        self.summary_label.setText(
+            f"Categoria {state.tier.value}: livello medio rivali {avg:.1f} "
+            f"({_trend_text(trend)} nell'ultimo anno) · la tua formazione {mine_avg:.1f}"
+        )
+
+        self.compare_table.setRowCount(len(events))
+        for row, ev in enumerate(events):
+            levels = [(c, c.athletes[ev]) for c in clubs if ev in c.athletes]
+            ev_avg = sum(a.skill for _c, a in levels) / len(levels) if levels else 0.0
+            best_club, best = max(levels, key=lambda ca: ca[1].skill) if levels else (None, None)
+            aid = state.event_lineup.get(ev)
+            athlete = by_id.get(aid) if aid is not None else None
+            mine_val = expected_event_score(athlete, EVENTS[ev], state.track_condition) if athlete else None
+            vals = [
+                (ev, None),
+                (f"{athlete.name} ({mine_val:.1f})" if athlete else "— nessuno —", None),
+                (f"{ev_avg:.1f}", None),
+                (f"{best.name}, {best_club.name} ({best.skill:.1f})" if best else "—", None),
+            ]
+            if mine_val is not None and best is not None:
+                margin = mine_val - best.skill
+                vals.append((f"{margin:+.1f}", "#34d399" if margin >= 0 else ("#fbbf24" if margin > -4 else "#f87171")))
+            else:
+                vals.append(("—", None))
+            for col, (text, color) in enumerate(vals):
+                self.compare_table.setItem(row, col, self._cell(text, color))
+
+        selected = self._selected_club_name()
+        ordered = sorted(clubs, key=lambda c: c.level(events), reverse=True)
+        self._club_names = [c.name for c in ordered]
+        self.clubs_table.blockSignals(True)
+        self.clubs_table.setRowCount(len(ordered))
+        for row, club in enumerate(ordered):
+            trend_color = "#34d399" if club.trend >= 0.5 else ("#f87171" if club.trend <= -0.5 else None)
+            amb_color = "#fbbf24" if club.ambition >= 1.2 else None
+            vals = [
+                (club.name, None),
+                (f"{club.level(events):.1f}", None),
+                (_trend_text(club.trend), trend_color),
+                (club.ambition_label, amb_color),
+                (str(state.league_table.get(club.name, 0)), None),
+            ]
+            for col, (text, color) in enumerate(vals):
+                self.clubs_table.setItem(row, col, self._cell(text, color))
+        self.clubs_table.blockSignals(False)
+        if self._club_names:
+            row = self._club_names.index(selected) if selected in self._club_names else 0
+            self.clubs_table.selectRow(row)
+        self._show_selected_club()
+
+    def _selected_club_name(self) -> Optional[str]:
+        rows = self.clubs_table.selectionModel().selectedRows()
+        if rows and 0 <= rows[0].row() < len(self._club_names):
+            return self._club_names[rows[0].row()]
+        return None
+
+    def _show_selected_club(self) -> None:
+        state = self.controller.state
+        name = self._selected_club_name()
+        club = next((c for c in state.rivals_in() if c.name == name), None)
+        if club is None:
+            self.roster_table.setRowCount(0)
+            return
+        self.roster_title.setText(f"Atleti — {club.name}")
+        events = [ev for ev in state.active_events if ev in club.athletes]
+        self.roster_table.setRowCount(len(events))
+        for row, ev in enumerate(events):
+            a = club.athletes[ev]
+            age_color = "#34d399" if a.age <= 23 else ("#f87171" if a.age >= 30 else None)
+            vals = [(ev, None), (a.name, None), (str(a.age), age_color),
+                    (f"{a.skill:.1f}", None), (a.pb_display or "—", None)]
+            for col, (text, color) in enumerate(vals):
+                self.roster_table.setItem(row, col, self._cell(text, color))

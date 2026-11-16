@@ -45,6 +45,7 @@ from models.generator import (
     clamp_stat,
     create_initial_coaches,
     create_initial_staff,
+    create_rival_clubs,
     generate_coach,
     create_season_objectives,
     generate_academy_prospects,
@@ -157,6 +158,7 @@ class GameController(QObject):
             milestones=[],
             news_log=[intro],
             coaches=coaches,
+            rival_clubs=create_rival_clubs(rng=self.rng),
         )
         auto_build_all_relays(state)
         self.db.save_game(state)

@@ -480,6 +480,64 @@ class Relay:
         return ids
 
 
+# ---------------------------------------------------------------- rival clubs
+RIVAL_RACE_SIGMA = 4.5  # day-to-day variance of a rival's performance
+RIVAL_RETIREMENT_AGE = 33
+RIVAL_SEASON_INFLATION = 0.8  # each season new rival recruits are a bit stronger
+RIVAL_TREND_SNAPSHOTS = 13  # one every 4 weeks: about a year of history
+
+
+@dataclass
+class RivalAthlete:
+    """A named athlete of a rival club. Their level uses the same scale as race scores."""
+
+    name: str
+    event: str
+    age: int
+    skill: float
+    pb: Optional[float] = None
+    pb_display: Optional[str] = None
+
+
+@dataclass
+class RivalClub:
+    """A rival club that develops over time: young athletes grow, veterans decline and retire.
+
+    Ambition (0.6-1.6) scales how much the club invests in progress; it rises when
+    the club keeps finishing behind the player and drops when it is comfortably ahead.
+    """
+
+    name: str
+    tier: CompetitionTier
+    ambition: float
+    offset: float = 0.0  # club quality vs the category average (drives its recruits)
+    athletes: Dict[str, RivalAthlete] = field(default_factory=dict)
+    history: List[float] = field(default_factory=list)  # average level, one snapshot every 4 weeks
+
+    def level(self, events: Optional[List[str]] = None) -> float:
+        pool = [a.skill for e, a in self.athletes.items() if events is None or e in events]
+        return sum(pool) / len(pool) if pool else 0.0
+
+    @property
+    def trend(self) -> float:
+        """Change in average level over the stored history (about the last year)."""
+        if len(self.history) < 2:
+            return 0.0
+        return self.history[-1] - self.history[0]
+
+    @property
+    def ambition_label(self) -> str:
+        if self.ambition >= 1.2:
+            return "Ambiziosa"
+        if self.ambition <= 0.85:
+            return "Appagata"
+        return "Stabile"
+
+    def star(self, events: Optional[List[str]] = None) -> Optional[RivalAthlete]:
+        pool = [a for e, a in self.athletes.items() if events is None or e in events]
+        return max(pool, key=lambda a: a.skill) if pool else None
+
+
 @dataclass
 class StaffMember:
     """Club staff specialist providing bonuses at a weekly salary."""
@@ -625,6 +683,11 @@ class GameState:
     coaches: List[Coach] = field(default_factory=list)
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
+    rival_clubs: List[RivalClub] = field(default_factory=list)
+
+    def rivals_in(self, tier: Optional[CompetitionTier] = None) -> List[RivalClub]:
+        t = tier or self.tier
+        return [c for c in self.rival_clubs if c.tier == t]
 
     def coach_of(self, athlete: Athlete) -> Optional[Coach]:
         """The athlete's coach, if assigned and allowed to train them."""
