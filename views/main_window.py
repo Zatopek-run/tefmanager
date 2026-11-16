@@ -22,6 +22,7 @@ from views.dialogs import (
     NewGameDialog,
     SeasonEndDialog,
 )
+from views.race_viewer import RaceViewerDialog
 from views.styles import DARK_STYLESHEET
 from views.tabs import (
     CalendarTab,
@@ -176,6 +177,8 @@ class MainWindow(QMainWindow):
         self.finances_tab.refresh(state)
 
     def _show_competition_results(self, summary: CompetitionSummary) -> None:
+        if summary.event_results:
+            RaceViewerDialog(summary, parent=self).exec()
         dlg = CompetitionResultsDialog(summary, parent=self)
         dlg.exec()
 
