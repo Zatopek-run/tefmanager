@@ -49,20 +49,118 @@ class TestRaceViewer(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_progress_and_attempts(self) -> None:
-        from views.race_viewer import FIELD_ROUNDS, generate_attempts, track_progress
+        from views.race_viewer import FIELD_ROUNDS, curve_progress, generate_attempts
 
-        prev = -1.0
-        for i in range(0, 101):
-            v = track_progress(i / 100, phase=2.0)
-            self.assertGreaterEqual(v, prev - 1e-9)  # mai all'indietro
-            prev = v
-        self.assertEqual(track_progress(0.0), 0.0)
-        self.assertAlmostEqual(track_progress(1.0, phase=3.0), 1.0)
+        for kind in ("100m", "400m", "1500m", "relay"):
+            for phase in (0.0, 1.3, 2.7, 4.1, 6.0):
+                prev = -1.0
+                for i in range(0, 1001):
+                    v = curve_progress(kind, i / 1000, phase)
+                    self.assertGreater(v, prev - 1e-12, (kind, phase, i))  # mai all'indietro
+                    prev = v
+            self.assertEqual(curve_progress(kind, 0.0, 2.0), 0.0)
+            self.assertAlmostEqual(curve_progress(kind, 1.0, 3.0), 1.0, places=9)
         for seed in range(30):
             att = generate_attempts(7.25, random.Random(seed))
             self.assertEqual(len(att), FIELD_ROUNDS)
             self.assertIn(7.25, att)
             self.assertTrue(all(a is None or a <= 7.25 for a in att))
+
+    def test_runners_cross_the_line_exactly_at_their_mark(self) -> None:
+        """La messa in scena non cambia l'esito: tempo di arrivo = tempo ufficiale, stesso ordine."""
+        from views.race_viewer import position_fraction, reaction_time, is_field_event
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv2.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            checked = 0
+            for res in summary.event_results:
+                if is_field_event(res.event_name):
+                    continue
+                arrivals = []
+                for s in res.standings:
+                    r = reaction_time("seed", s.athlete_name)
+                    self.assertTrue(0.12 <= r <= 0.22)
+                    self.assertAlmostEqual(position_fraction(res.event_name, s.mark_value, s.mark_value, r), 1.0, places=9)
+                    self.assertLess(position_fraction(res.event_name, s.mark_value - 0.01, s.mark_value, r), 1.0)
+                    self.assertEqual(position_fraction(res.event_name, 0.0, s.mark_value, r), 0.0)
+                    arrivals.append((s.mark_value, s.placement))
+                    checked += 1
+                self.assertEqual([p for _m, p in sorted(arrivals)], sorted(p for _m, p in arrivals))
+            self.assertGreater(checked, 10)
+
+    def test_start_sequence_and_skip_during_countdown(self) -> None:
+        from views.race_viewer import RaceViewerDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv3.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            dlg = RaceViewerDialog(summary)
+            self.assertEqual(dlg.track.start_phase, "AI VOSTRI POSTI")
+            self.assertEqual(dlg.track.race_time, 0.0)
+            dlg.track.advance(1.5)
+            self.assertEqual(dlg.track.start_phase, "PRONTI")
+            dlg.track.advance(1.0)
+            self.assertEqual(dlg.track.start_phase, "VIA!")
+            dlg.track.advance(2.0)
+            self.assertGreater(dlg.track.race_time, 0.5)  # il cronometro parte dallo sparo
+            dlg._cycle_speed()
+            dlg._toggle_pause()
+            dlg._toggle_pause()
+            dlg._skip_race()  # anche in piena corsa
+            self.assertTrue(dlg._race_done)
+            dlg.close()
+            # saltare durante il conto alla rovescia
+            dlg2 = RaceViewerDialog(summary)
+            dlg2._skip_race()
+            self.assertTrue(dlg2._race_done)
+            self.assertEqual(dlg2.track.race_clock, min(r.mark_value for r in summary.event_results[0].standings))
+            dlg2.close()
+
+    def test_field_event_animates_only_player_attempts(self) -> None:
+        import copy
+
+        from views.race_viewer import FIELD_ROUNDS, FieldEventWidget
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv4.db"), rng=random.Random(15))
+            ctrl.state.week = 8
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            jump = next(r for r in summary.event_results if r.event_name == "Salto in Lungo")
+            shot = copy.deepcopy(jump)
+            shot.event_name = "Getto del Peso"
+            for st in shot.standings:
+                st.mark_value = round(st.mark_value * 2.2, 2)
+                st.mark_display = f"{st.mark_value:.2f}m"
+            for res in (jump, shot):
+                widget = FieldEventWidget()
+                done = []
+                widget.finished.connect(lambda: done.append(True))
+                widget.set_race(res.event_name, res, "seed")
+                elapsed, animated = 0.0, set()
+                while not done and elapsed < 120:
+                    widget.advance(0.05)
+                    elapsed += 0.05
+                    cur = widget.scene.cur
+                    if cur and cur["animate"]:
+                        animated.add((cur["n"], cur["name"]))
+                self.assertTrue(done, res.event_name)
+                self.assertEqual(len(animated), FIELD_ROUNDS)  # solo le prove del club sono animate
+                self.assertLess(elapsed, 45)  # niente gare da un minuto di attesa
+                best = {widget.board.item(r, FIELD_ROUNDS + 1).text() for r in range(widget.board.rowCount())}
+                self.assertTrue({s.mark_display for s in res.standings} <= best)
+                widget.close()
+            # saltare a metà non lascia il tabellone incompleto
+            skipped = FieldEventWidget()
+            skipped.set_race(jump.event_name, jump, "seed")
+            skipped.advance(1.0)
+            skipped.skip_to_end()
+            self.assertEqual(skipped.board.item(0, FIELD_ROUNDS + 2).text()[-1], "°")
 
     def test_dialog_plays_every_event(self) -> None:
         from views.race_viewer import RaceViewerDialog
