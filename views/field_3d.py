@@ -34,11 +34,13 @@ from views.race_3d import (
     _clamp,
     _lerp,
     draw_athlete_head_3d,
+    draw_floodlight_pylon_3d,
     draw_line3,
     draw_official_3d,
     draw_poly,
     draw_shaded_limb,
     draw_singlet_torso_3d,
+    draw_spike_shoe_3d,
     draw_textured_ground_quad,
     draw_textured_quad,
     get_soft_shadow,
@@ -164,7 +166,7 @@ class Field3DSceneWidget(FieldSceneWidget):
         # Getto del peso
         if cur is None or not cur["animate"]:
             self._cam_label = "SECTOR-CAM"
-            return Camera((7.5, 3.2, 11.0), (6.5, 0.7, 0.0), 32.0, w, h)
+            return Camera((7.5, 3.3, 12.2), (6.5, 1.0, 0.0), 35.0, w, h)
         t = self.t
         d = cur["dist"]
         if t < 1.15:
@@ -172,8 +174,10 @@ class Field3DSceneWidget(FieldSceneWidget):
             return Camera((2.0, 1.65, 3.6), (-1.0, 1.05, 0.0), 28.0, w, h)
         self._cam_label = "SECTOR-CAM"
         s_ = _clamp((t - 1.0) / 1.05, 0.0, 1.0)
-        fx = _lerp(1.5, d * 0.65, s_)
-        return Camera((fx + 5.0, 3.3, 12.2), (fx, 0.75, 0.0), 32.0, w, h)
+        fx = _lerp(1.5, d * 0.62, s_)
+        apex = 2.8 + 0.13 * d
+        by = 2.05 * (1.0 - s_) + 4.0 * apex * s_ * (1.0 - s_)
+        return Camera((fx + 5.6, 3.6, 13.8), (fx, 1.25 + 0.25 * max(0.0, by - 1.2), 0.0), 37.0, w, h)
 
     # ---- sfondo stadio comune
     def _draw_stadium_backdrop(self, p: QPainter, cam: Camera, w: int, h: int, x_min: float, x_max: float) -> None:
@@ -194,6 +198,13 @@ class Field3DSceneWidget(FieldSceneWidget):
         p.fillRect(0, 0, w, h, QBrush(sky))
         p.setPen(Qt.PenStyle.NoPen)
         p.fillRect(0, int(h * 0.36), w, int(h * 0.64), QColor("#152c1c" if evening else "#24522e"))
+        if not evening and not rain:
+            for cx, cy, rw, rh in ((0.22, 0.11, 0.13, 0.032), (0.72, 0.09, 0.14, 0.035)):
+                cloud = QRadialGradient(w * cx, h * cy, w * rw)
+                cloud.setColorAt(0.0, QColor(255, 255, 255, 65))
+                cloud.setColorAt(1.0, QColor(255, 255, 255, 0))
+                p.setBrush(QBrush(cloud))
+                p.drawEllipse(QPointF(w * cx, h * cy), w * rw, h * rh)
 
         # prato a bande intorno alla pedana
         band = 8.0
@@ -210,21 +221,24 @@ class Field3DSceneWidget(FieldSceneWidget):
             )
             xb += band
 
-        # tribuna dello stadio sullo sfondo + cartelloni LED (più arretrati nel peso per il settore a 35°)
+        # tribuna dello stadio sullo sfondo + torri faro + cartelloni LED
         crowd_pm = self._crowd_pm()
         z_board = -4.2 if self.kind == "lj" else -7.5
         z_stand = -15.0 if self.kind == "lj" else -18.5
+        draw_floodlight_pylon_3d(p, cam, (x_min - 8.0, 0.0, z_stand - 14.0), (1.0, 0.0, 0.6), height=28.0 if not evening else 34.0, evening=evening)
+        draw_floodlight_pylon_3d(p, cam, (x_max + 8.0, 0.0, z_stand - 14.0), (-1.0, 0.0, 0.6), height=28.0 if not evening else 34.0, evening=evening)
         seg = 16.0
         sx = math.floor((x_min - 36.0) / seg) * seg
         while sx < x_max + 36.0:
             x0, x1 = sx - 0.1, sx + seg + 0.1
             draw_poly(p, cam, [(x0, 0.0, z_stand), (x1, 0.0, z_stand), (x1, 1.3, z_stand), (x0, 1.3, z_stand)], "#475569")
+            draw_line3(p, cam, (x0, 1.3, z_stand), (x1, 1.3, z_stand), 0.05, QColor("#cbd5e1"))
             q1 = [(x0, 1.3, z_stand), (x1, 1.3, z_stand), (x1, 9.2, z_stand - 9.0), (x0, 9.2, z_stand - 9.0)]
             draw_poly(p, cam, q1, "#334155")
             draw_textured_quad(p, cam, [q1[3], q1[2], q1[1], q1[0]], crowd_pm)
             if evening:
                 draw_poly(p, cam, [(x0, 9.2, z_stand - 9.0), (x1, 9.2, z_stand - 9.0), (x1, 13.5, z_stand - 11.0), (x0, 13.5, z_stand - 11.0)], "#0f172a")
-                draw_line3(p, cam, (x0, 13.2, z_stand - 4.5), (x1, 13.2, z_stand - 4.5), 0.16, QColor("#fef08a"))
+                draw_line3(p, cam, (x0, 13.4, z_stand - 10.8), (x1, 13.4, z_stand - 10.8), 0.16, QColor("#fef08a"))
             sx += seg
 
         bseg = 5.5
@@ -237,8 +251,8 @@ class Field3DSceneWidget(FieldSceneWidget):
             bx += bseg
             idx += 1
 
-        # sagoma di materasso salto in alto sullo sfondo del prato per dare profondità allo stadio
-        hx0, hz0 = -10.5, z_board - 2.6
+        # sagoma di materasso salto in alto sullo sfondo (spostata fuori dalla linea della testa nel getto del peso)
+        hx0, hz0 = (-11.5 if self.kind == "lj" else 11.5), z_board - 3.2
         draw_poly(p, cam, [(hx0, 0.0, hz0 - 1.8), (hx0 + 3.6, 0.0, hz0 - 1.8), (hx0 + 3.6, 0.68, hz0), (hx0, 0.68, hz0)], "#1d4ed8")
         draw_line3(p, cam, (hx0 - 0.2, 0.0, hz0 - 1.6), (hx0 - 0.2, 2.3, hz0 - 1.6), 0.05, QColor("#e2e8f0"))
         draw_line3(p, cam, (hx0 + 3.8, 0.0, hz0 - 1.6), (hx0 + 3.8, 2.3, hz0 - 1.6), 0.05, QColor("#e2e8f0"))
@@ -283,7 +297,7 @@ class Field3DSceneWidget(FieldSceneWidget):
             draw_shaded_limb(p, cam, hs, mid_t, 0.092, 0.078, col_sh)
             draw_shaded_limb(p, cam, kn, calf_m, 0.060, 0.068, col_s)
             draw_shaded_limb(p, cam, calf_m, ak, 0.065, 0.036, col_s)
-            draw_shaded_limb(p, cam, ak, to, 0.042, 0.028, spike_col if is_near else spike_col.darker(120))
+            draw_spike_shoe_3d(p, cam, ak, to, spike_col, is_near=is_near)
 
         def draw_arm(side: float, angles: Tuple[float, float]) -> None:
             up_a, el_bend = angles
@@ -524,12 +538,23 @@ class Field3DSceneWidget(FieldSceneWidget):
             bx = _lerp(0.15, d, s_)
             apex = 2.8 + 0.13 * d
             by = 2.05 * (1.0 - s_) + 4.0 * apex * s_ * (1.0 - s_)
+            # scia parabolica luminosa durante il volo del peso
+            for k_tr in range(1, 5):
+                s_tr = max(0.0, s_ - k_tr * 0.045)
+                tx_tr = _lerp(0.15, d, s_tr)
+                ty_tr = 2.05 * (1.0 - s_tr) + 4.0 * apex * s_tr * (1.0 - s_tr)
+                tc = cam.to_cam((tx_tr, max(0.08, ty_tr), 0.0))
+                if tc[2] >= NEAR:
+                    px_t, py_t = cam.proj(tc)
+                    pr = max(1.5, (0.055 - k_tr * 0.008) * cam.f / tc[2])
+                    p.setBrush(QColor(226, 232, 240, max(35, 165 - k_tr * 34)))
+                    p.drawEllipse(QPointF(px_t, py_t), pr, pr)
             # ombra sul prato sotto il peso
             draw_textured_ground_quad(p, cam, [(bx - 0.25, 0.015, -0.25), (bx + 0.25, 0.015, -0.25), (bx + 0.25, 0.015, 0.25), (bx - 0.25, 0.015, 0.25)], get_soft_shadow(), "#0f172a")
             bc = cam.to_cam((bx, max(0.08, by), 0.0))
             if bc[2] >= NEAR:
                 sx_, sy_ = cam.proj(bc)
-                sr = max(3.0, 0.075 * cam.f / bc[2])
+                sr = max(4.2, 0.088 * cam.f / bc[2])
                 sg = QRadialGradient(sx_ + sr * 0.3, sy_ - sr * 0.3, sr * 1.4)
                 sg.setColorAt(0.0, QColor("#f8fafc"))
                 sg.setColorAt(0.55, QColor("#64748b"))
@@ -537,6 +562,7 @@ class Field3DSceneWidget(FieldSceneWidget):
                 p.setBrush(QBrush(sg))
                 p.drawEllipse(QPointF(sx_, sy_), sr, sr)
             if t >= fly_end:
+                draw_poly(p, cam, [(d - 0.22, 0.02, -0.22), (d + 0.22, 0.02, -0.22), (d + 0.22, 0.02, 0.22), (d - 0.22, 0.02, 0.22)], QColor(40, 28, 12, 165))
                 draw_line3(p, cam, (d, 0.022, -1.6), (d, 0.022, 1.6), 0.028, QColor("#ef4444" if foul else "#fbbf24"))
 
     # ---- HUD TV
