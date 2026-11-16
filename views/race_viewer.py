@@ -917,9 +917,14 @@ class RaceViewerDialog(QDialog):
         root.addWidget(self.info)
 
         self.stack = QStackedWidget()
-        self.track = TrackRaceWidget()
+        from views.race_3d import Track3DWidget  # import tardivo: race_3d usa questo modulo
+
+        self.track2d = TrackRaceWidget()
+        self.track3d = Track3DWidget()
+        self.track = self.track3d  # vista in uso per le corse (3D di default)
         self.field = FieldEventWidget()
-        self.stack.addWidget(self.track)
+        self.stack.addWidget(self.track2d)
+        self.stack.addWidget(self.track3d)
         self.stack.addWidget(self.field)
         root.addWidget(self.stack, stretch=1)
 
@@ -936,6 +941,9 @@ class RaceViewerDialog(QDialog):
         self.btn_pause.clicked.connect(self._toggle_pause)
         self.btn_speed = QPushButton("Velocità 1x")
         self.btn_speed.clicked.connect(self._cycle_speed)
+        self.btn_view = QPushButton("Vista 2D")
+        self.btn_view.setToolTip("Passa dalla vista 3D alla vista 2D (più leggera)")
+        self.btn_view.clicked.connect(self._toggle_view)
         self.btn_skip = QPushButton("⏩ Salta alla fine")
         self.btn_skip.clicked.connect(self._skip_race)
         self.btn_next = QPushButton("Prossima gara ▶")
@@ -943,14 +951,15 @@ class RaceViewerDialog(QDialog):
         self.btn_next.clicked.connect(self._next)
         self.btn_close = QPushButton("Vai ai risultati")
         self.btn_close.clicked.connect(self.accept)
-        for b in (self.btn_pause, self.btn_speed, self.btn_skip):
+        for b in (self.btn_pause, self.btn_speed, self.btn_view, self.btn_skip):
             bar.addWidget(b)
         bar.addStretch()
         bar.addWidget(self.btn_close)
         bar.addWidget(self.btn_next)
         root.addLayout(bar)
 
-        self.track.finished.connect(self._on_race_finished)
+        self.track2d.finished.connect(self._on_race_finished)
+        self.track3d.finished.connect(self._on_race_finished)
         self.field.finished.connect(self._on_race_finished)
         self._clock = QElapsedTimer()
         self._timer = QTimer(self)
@@ -1005,6 +1014,18 @@ class RaceViewerDialog(QDialog):
         w.advance(dt * self.SPEEDS[self._speed_idx])
         if w is self.track:
             self.clock.setText(f"⏱ {format_race_time(self.track.race_clock)}")
+
+    def _toggle_view(self) -> None:
+        """Cambia fra vista 3D e 2D senza perdere il punto della gara."""
+        old = self.track
+        new = self.track2d if old is self.track3d else self.track3d
+        if self.stack.currentWidget() is old and 0 <= self._index < len(self.summary.event_results):
+            res = self.summary.event_results[self._index]
+            new.set_race(res.event_name, res, self._seed())
+            new._t, new._done = old._t, old._done
+            self.stack.setCurrentWidget(new)
+        self.track = new
+        self.btn_view.setText("Vista 3D" if new is self.track2d else "Vista 2D")
 
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
