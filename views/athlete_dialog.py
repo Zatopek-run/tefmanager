@@ -201,9 +201,9 @@ class AthleteDetailDialog(QDialog):
                 item.widget().deleteLater()
         lay.addWidget(self._avatar(athlete, 52))
         names = QVBoxLayout()
-        title = QLabel(athlete.name + (" *" if athlete.is_youth_prospect else ""))
+        title = QLabel(f"{athlete.name} {athlete.flag}" + (" *" if athlete.is_youth_prospect else ""))
         title.setStyleSheet("font-size: 20px; font-weight: 800; color: #f8fafc;")
-        team = QLabel(self.controller.state.team_name)
+        team = QLabel(f"{self.controller.state.team_name}  ·  {athlete.flag} {athlete.nationality}")
         team.setObjectName("SubTitle")
         names.addWidget(title)
         names.addWidget(team)
@@ -251,6 +251,9 @@ class AthleteDetailDialog(QDialog):
         coach = self.controller.state.coach_of(a)
         info_rows = [
             ("Età", f"{a.age} anni"),
+            ("Nazionalità", f"{a.flag} {a.nationality}"),
+            ("Altezza", a.height_display),
+            ("Peso", a.weight_display),
             ("Disciplina", a.specialty.value),
             ("Carattere", a.personality.value),
             ("Potenziale", str(a.potential)),

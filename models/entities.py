@@ -335,6 +335,25 @@ EVENTS: Dict[str, EventDefinition] = {
 VERTICAL_SLICE_EVENTS: List[str] = ["100m", "Salto in Lungo", "1500m"]
 
 
+# Nationality name -> flag emoji. Most of the pool is Italian; the rest are foreign athletes.
+NATIONALITIES: Dict[str, str] = {
+    "Italia": "🇮🇹",
+    "Francia": "🇫🇷",
+    "Spagna": "🇪🇸",
+    "Germania": "🇩🇪",
+    "Regno Unito": "🇬🇧",
+    "Stati Uniti": "🇺🇸",
+    "Canada": "🇨🇦",
+    "Giamaica": "🇯🇲",
+    "Kenya": "🇰🇪",
+    "Etiopia": "🇪🇹",
+    "Nigeria": "🇳🇬",
+    "Brasile": "🇧🇷",
+    "Giappone": "🇯🇵",
+    "Australia": "🇦🇺",
+}
+
+
 @dataclass
 class Athlete:
     """Represents a single track & field athlete on the team."""
@@ -365,6 +384,21 @@ class Athlete:
     in_youth_squad: bool = False
     fans: int = 0
     coach_id: Optional[int] = None
+    nationality: str = "Italia"
+    height_cm: int = 0  # 0 = not yet generated (old saves)
+    weight_kg: int = 0
+
+    @property
+    def flag(self) -> str:
+        return NATIONALITIES.get(self.nationality, "🏳")
+
+    @property
+    def height_display(self) -> str:
+        return f"{self.height_cm / 100:.2f} m" if self.height_cm else "—"
+
+    @property
+    def weight_display(self) -> str:
+        return f"{self.weight_kg} kg" if self.weight_kg else "—"
 
     @property
     def power(self) -> int:

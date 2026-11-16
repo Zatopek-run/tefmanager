@@ -6,9 +6,11 @@ from contextlib import closing, contextmanager
 import json
 import sqlite3
 from datetime import date
+import random
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
+from models.generator import generate_body
 from models.entities import (
     Athlete,
     Coach,
@@ -35,7 +37,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -80,12 +82,29 @@ V5_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V6_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("season_history_json", "TEXT NOT NULL DEFAULT '[]'")],
 }
+# Columns added in v7 (nationality, height and weight of athletes).
+V7_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [
+        ("nationality", "TEXT NOT NULL DEFAULT 'Italia'"),
+        ("height_cm", "INTEGER NOT NULL DEFAULT 0"),
+        ("weight_kg", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
     4: V5_COLUMNS,
     5: V6_COLUMNS,
+    6: V7_COLUMNS,
 }
+
+
+def _backfill_bodies(athletes: List[Athlete]) -> List[Athlete]:
+    """Old saves have no height/weight: generate stable values (seeded by athlete id)."""
+    for a in athletes:
+        if not a.height_cm:
+            a.height_cm, a.weight_kg = generate_body(a.specialty, random.Random(a.id or 0), a.age)
+    return athletes
 
 
 def _season_history_to_json(history: List[SeasonEndResult]) -> str:
@@ -274,7 +293,10 @@ class DatabaseManager:
                     doping_boost_weeks INTEGER NOT NULL DEFAULT 0,
                     in_youth_squad INTEGER NOT NULL DEFAULT 0,
                     fans INTEGER NOT NULL DEFAULT 0,
-                    coach_id INTEGER
+                    coach_id INTEGER,
+                    nationality TEXT NOT NULL DEFAULT 'Italia',
+                    height_cm INTEGER NOT NULL DEFAULT 0,
+                    weight_kg INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS coaches (
@@ -431,8 +453,8 @@ class DatabaseManager:
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
-                    in_youth_squad, fans, coach_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -462,6 +484,9 @@ class DatabaseManager:
                         1 if a.in_youth_squad else 0,
                         a.fans,
                         a.coach_id,
+                        a.nationality,
+                        a.height_cm,
+                        a.weight_kg,
                     )
                     for a in state.athletes
                 ],
@@ -609,6 +634,9 @@ class DatabaseManager:
                     in_youth_squad=bool(r["in_youth_squad"]),
                     fans=r["fans"],
                     coach_id=r["coach_id"],
+                    nationality=r["nationality"],
+                    height_cm=r["height_cm"],
+                    weight_kg=r["weight_kg"],
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
@@ -757,7 +785,7 @@ class DatabaseManager:
                 tier=CompetitionTier(row["tier"]),
                 track_condition=row["track_condition"],
                 member_fees_weekly=row["member_fees_weekly"],
-                athletes=athletes,
+                athletes=_backfill_bodies(athletes),
                 staff=staff,
                 transactions=transactions,
                 competition_history=history,

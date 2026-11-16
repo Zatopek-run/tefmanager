@@ -395,6 +395,12 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             self.assertEqual(len(loaded.athletes), 10)
             self.assertEqual(loaded.stand_seats, 500)
             self.assertEqual(loaded.youth_squad, [])
+            # athletes of old saves get a stable body profile and the default nationality
+            self.assertTrue(all(150 <= a.height_cm <= 205 and a.weight_kg > 0 for a in loaded.athletes))
+            self.assertTrue(all(a.nationality == "Italia" for a in loaded.athletes))
+            again = DatabaseManager(db_path=path).load_game()
+            assert again is not None
+            self.assertEqual([a.height_cm for a in again.athletes], [a.height_cm for a in loaded.athletes])
             # Opening it through the controller turns the old coach role into a real coach
             ctrl2 = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(1))
             self.assertEqual([c.name for c in ctrl2.state.coaches], ["Andrea Valeri"])
@@ -566,8 +572,11 @@ class TestCoachesAndRelays(unittest.TestCase):
             fatigue = {a.id: a.fatigue for a in s.athletes}
             summary = sim.simulate_competition(s, rng=random.Random(3))
             res = next(er for er in summary.event_results if er.event_name == "4x100m")
-            self.assertIn(reserve.name.split(" ", 1)[1], res.player_athlete_name)
-            self.assertNotIn(injured.name.split(" ", 1)[1], res.player_athlete_name)
+            def label(a) -> str:  # how the relay team label shows a runner
+                return f"{a.name[0]}. {a.name.split(' ', 1)[-1]}"
+
+            self.assertIn(label(reserve), res.player_athlete_name)
+            self.assertNotIn(label(injured), res.player_athlete_name)
             self.assertEqual({a.id: a.fatigue for a in s.athletes}, fatigue)
             self.assertIn("4x100m", s.club_records)
 
@@ -875,11 +884,15 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertTrue(win.relay_tab._slot_combos["4x100m"][0].isEnabled())
             self.assertFalse(win.relay_tab._slot_combos["4x400m"][0].isEnabled())  # no 400m in prototype
 
+            from models.entities import NATIONALITIES
             from views.athlete_dialog import AthleteDetailDialog, stat_colors
 
             self.assertEqual(stat_colors(85)[0], "#16a34a")
             self.assertEqual(stat_colors(30)[0], "#ef4444")
             self.assertEqual(stat_colors(80, invert=True)[0], "#ef4444")  # molta fatica = rosso
+            first = ctrl.state.athletes[0]
+            self.assertTrue(150 <= first.height_cm <= 205 and 45 <= first.weight_kg <= 140)
+            self.assertIn(first.nationality, NATIONALITIES)
             detail = AthleteDetailDialog(ctrl, ctrl.state.athletes[0].id)
             self.assertEqual(detail.tabs.count(), 3)
             detail.refresh()
