@@ -1003,7 +1003,9 @@ class FieldEventWidget(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-        self.scene = FieldSceneWidget()
+        from views.field_3d import Field3DSceneWidget  # import tardivo: field_3d usa FieldSceneWidget
+
+        self.scene = Field3DSceneWidget()
         self.board = FieldBoardWidget()
         lay.addWidget(self.scene, stretch=3)
         lay.addWidget(self.board, stretch=2)

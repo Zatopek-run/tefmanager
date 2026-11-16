@@ -273,6 +273,170 @@ def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85,
     return pm
 
 
+# --------------------------------------------------------------------------- primitive 3D condivise
+_SHARED_BOARDS: Dict[int, QPixmap] = {}
+_SHARED_SHADOW: Optional[QPixmap] = None
+
+
+def draw_poly(p: QPainter, cam: Camera, pts: Sequence[Vec], color) -> None:
+    cs = clip_near([cam.to_cam(q) for q in pts])
+    if len(cs) < 3:
+        return
+    p.setBrush(color if isinstance(color, QBrush) else QBrush(QColor(color)))
+    p.drawPolygon(QPolygonF([QPointF(*cam.proj(c)) for c in cs]))
+
+
+def draw_textured_quad(p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap) -> None:
+    cs = [cam.to_cam(q) for q in corners]
+    if any(c[2] < NEAR * 2 for c in cs):
+        return
+    dst = QPolygonF([QPointF(*cam.proj(c)) for c in cs])
+    src = QPolygonF([QPointF(0, 0), QPointF(pm.width(), 0), QPointF(pm.width(), pm.height()), QPointF(0, pm.height())])
+    t = QTransform()
+    if not QTransform.quadToQuad(src, dst, t):
+        return
+    p.save()
+    p.setTransform(t, True)
+    p.drawPixmap(0, 0, pm)
+    p.restore()
+
+
+def draw_textured_ground_quad(p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap, fallback_col: str) -> None:
+    cs = [cam.to_cam(q) for q in corners]
+    if all(c[2] < NEAR for c in cs):
+        return
+    if any(c[2] < NEAR * 2.2 for c in cs) or max(c[2] for c in cs) > 85.0:
+        draw_poly(p, cam, corners, fallback_col)
+        return
+    dst = QPolygonF([QPointF(*cam.proj(c)) for c in cs])
+    src = QPolygonF([QPointF(0, 0), QPointF(pm.width(), 0), QPointF(pm.width(), pm.height()), QPointF(0, pm.height())])
+    t = QTransform()
+    if not QTransform.quadToQuad(src, dst, t):
+        draw_poly(p, cam, corners, fallback_col)
+        return
+    p.save()
+    p.setTransform(t, True)
+    p.drawPixmap(0, 0, pm)
+    p.restore()
+
+
+def draw_line3(p: QPainter, cam: Camera, a: Vec, b: Vec, radius: float, color: QColor) -> None:
+    seg = clip_segment_near(cam.to_cam(a), cam.to_cam(b))
+    if seg is None:
+        return
+    ca, cb = seg
+    (x0, y0), (x1, y1) = cam.proj(ca), cam.proj(cb)
+    width = max(1.2, 2.0 * radius * cam.f / max(NEAR, (ca[2] + cb[2]) / 2.0))
+    pen = QPen(color, width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+    p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
+    p.setPen(Qt.PenStyle.NoPen)
+
+
+def draw_shaded_limb(
+    p: QPainter, cam: Camera, a: Vec, b: Vec, r0: float, r1: float, color: QColor, lit_side: float = 1.0,
+) -> None:
+    seg = clip_segment_near(cam.to_cam(a), cam.to_cam(b))
+    if seg is None:
+        return
+    ca, cb = seg
+    ax, ay = cam.proj(ca)
+    bx, by = cam.proj(cb)
+    ra = max(1.3, r0 * cam.f / ca[2])
+    rb = max(1.3, r1 * cam.f / cb[2])
+    dx, dy = bx - ax, by - ay
+    dist = math.hypot(dx, dy)
+    if dist < 0.6:
+        p.setBrush(color)
+        p.drawEllipse(QPointF(ax, ay), ra, ra)
+        return
+    nx, ny = -dy / dist, dx / dist
+    poly = QPolygonF(
+        [
+            QPointF(ax + nx * ra, ay + ny * ra),
+            QPointF(bx + nx * rb, by + ny * rb),
+            QPointF(bx - nx * rb, by - ny * rb),
+            QPointF(ax - nx * ra, ay - ny * ra),
+        ]
+    )
+    mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
+    mr = max(ra, rb)
+    if mr >= 2.4:
+        grad = QLinearGradient(
+            mx - lit_side * nx * mr, my - lit_side * ny * mr,
+            mx + lit_side * nx * mr, my + lit_side * ny * mr,
+        )
+        grad.setColorAt(0.0, color.darker(142))
+        grad.setColorAt(0.38, color)
+        grad.setColorAt(0.72, color.lighter(124))
+        grad.setColorAt(1.0, color.darker(112))
+        p.setBrush(QBrush(grad))
+    else:
+        p.setBrush(color)
+    p.drawPolygon(poly)
+    p.drawEllipse(QPointF(ax, ay), ra, ra)
+    p.drawEllipse(QPointF(bx, by), rb, rb)
+
+
+def get_sponsor_board(idx: int) -> QPixmap:
+    pm = _SHARED_BOARDS.get(idx)
+    if pm is None:
+        text, col, fg = SPONSORS[idx % len(SPONSORS)]
+        pm = QPixmap(256, 56)
+        pm.fill(QColor(col))
+        q = QPainter(pm)
+        grad = QLinearGradient(0, 0, 0, 56)
+        grad.setColorAt(0.0, QColor(col).lighter(116))
+        grad.setColorAt(0.45, QColor(col))
+        grad.setColorAt(1.0, QColor(col).darker(125))
+        q.fillRect(0, 0, 256, 56, grad)
+        q.fillRect(0, 0, 256, 4, QColor("#e2e8f0"))
+        q.fillRect(0, 52, 256, 4, QColor("#0f172a"))
+        q.fillRect(0, 0, 5, 56, QColor("#1e293b"))
+        q.setPen(QColor(fg))
+        f = QFont("Arial", 20)
+        f.setBold(True)
+        q.setFont(f)
+        q.drawText(QRectF(8, 4, 244, 48), Qt.AlignmentFlag.AlignCenter, text)
+        q.end()
+        _SHARED_BOARDS[idx] = pm
+    return pm
+
+
+def get_soft_shadow() -> QPixmap:
+    global _SHARED_SHADOW
+    if _SHARED_SHADOW is None:
+        _SHARED_SHADOW = make_soft_shadow_pm()
+    return _SHARED_SHADOW
+
+
+def draw_official_3d(p: QPainter, cam: Camera, x: float, z: float, cap_col: str = "#f8fafc") -> None:
+    c = cam.to_cam((x, 0.9, z))
+    if c[2] < NEAR * 2 or c[2] > 75.0:
+        return
+    draw_textured_ground_quad(
+        p, cam,
+        [(x - 0.35, 0.016, z - 0.22), (x + 0.35, 0.016, z - 0.22), (x + 0.35, 0.016, z + 0.22), (x - 0.35, 0.016, z + 0.22)],
+        get_soft_shadow(), "#0f172a",
+    )
+    for sz in (-0.10, 0.10):
+        draw_shaded_limb(p, cam, (x, 0.05, z + sz), (x, 0.85, z + sz), 0.070, 0.082, QColor("#1e293b"))
+        draw_shaded_limb(p, cam, (x, 0.03, z + sz), (x + 0.14, 0.03, z + sz), 0.042, 0.032, QColor("#0f172a"))
+    draw_shaded_limb(p, cam, (x, 0.82, z), (x, 1.42, z), 0.15, 0.17, QColor("#f8fafc"))
+    for sz in (-0.21, 0.21):
+        draw_shaded_limb(p, cam, (x, 1.38, z + sz), (x + 0.04, 0.95, z + sz), 0.050, 0.038, QColor("#d9a066"))
+    draw_shaded_limb(p, cam, (x, 1.40, z), (x, 1.54, z), 0.052, 0.048, QColor("#d9a066"))
+    hc = cam.to_cam((x, 1.66, z))
+    if hc[2] >= NEAR:
+        hx, hy = cam.proj(hc)
+        r = max(2.0, 0.10 * cam.f / hc[2])
+        p.setBrush(QColor("#d9a066"))
+        p.drawEllipse(QPointF(hx, hy), r, r * 1.1)
+        p.setBrush(QColor(cap_col))
+        p.drawChord(QRectF(hx - r * 1.1, hy - r * 1.15, 2.2 * r, 1.6 * r), 15 * 16, 150 * 16)
+
+
 # --------------------------------------------------------------------------- vista 3D
 class Track3DWidget(TrackRaceWidget):
     """Vista 3D su stadio ovale da 400 m con regia multi-camera e gruppo realistico."""
@@ -488,134 +652,26 @@ class Track3DWidget(TrackRaceWidget):
         target = (lx - 1.5 * fwd_x, 0.95, lz - 1.5 * fwd_z)
         return Camera(pos, target, 30.0, w, h)
 
-    # ---- primitive 3D
+    # ---- primitive 3D (delegate alle funzioni condivise)
     def _poly(self, p: QPainter, cam: Camera, pts: Sequence[Vec], color) -> None:
-        cs = clip_near([cam.to_cam(q) for q in pts])
-        if len(cs) < 3:
-            return
-        p.setBrush(color if isinstance(color, QBrush) else QBrush(QColor(color)))
-        p.drawPolygon(QPolygonF([QPointF(*cam.proj(c)) for c in cs]))
+        draw_poly(p, cam, pts, color)
 
     def _textured_quad(self, p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap) -> None:
-        cs = [cam.to_cam(q) for q in corners]
-        if any(c[2] < NEAR * 2 for c in cs):
-            return
-        dst = QPolygonF([QPointF(*cam.proj(c)) for c in cs])
-        src = QPolygonF([QPointF(0, 0), QPointF(pm.width(), 0), QPointF(pm.width(), pm.height()), QPointF(0, pm.height())])
-        t = QTransform()
-        if not QTransform.quadToQuad(src, dst, t):
-            return
-        p.save()
-        p.setTransform(t, True)
-        p.drawPixmap(0, 0, pm)
-        p.restore()
+        draw_textured_quad(p, cam, corners, pm)
 
     def _textured_ground_quad(self, p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap, fallback_col: str) -> None:
-        cs = [cam.to_cam(q) for q in corners]
-        if all(c[2] < NEAR for c in cs):
-            return
-        if any(c[2] < NEAR * 2.2 for c in cs) or max(c[2] for c in cs) > 85.0:
-            self._poly(p, cam, corners, fallback_col)
-            return
-        dst = QPolygonF([QPointF(*cam.proj(c)) for c in cs])
-        src = QPolygonF([QPointF(0, 0), QPointF(pm.width(), 0), QPointF(pm.width(), pm.height()), QPointF(0, pm.height())])
-        t = QTransform()
-        if not QTransform.quadToQuad(src, dst, t):
-            self._poly(p, cam, corners, fallback_col)
-            return
-        p.save()
-        p.setTransform(t, True)
-        p.drawPixmap(0, 0, pm)
-        p.restore()
+        draw_textured_ground_quad(p, cam, corners, pm, fallback_col)
 
     def _line3(self, p: QPainter, cam: Camera, a: Vec, b: Vec, radius: float, color: QColor) -> None:
-        seg = clip_segment_near(cam.to_cam(a), cam.to_cam(b))
-        if seg is None:
-            return
-        ca, cb = seg
-        (x0, y0), (x1, y1) = cam.proj(ca), cam.proj(cb)
-        width = max(1.2, 2.0 * radius * cam.f / max(NEAR, (ca[2] + cb[2]) / 2.0))
-        pen = QPen(color, width)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(pen)
-        p.drawLine(QPointF(x0, y0), QPointF(x1, y1))
-        p.setPen(Qt.PenStyle.NoPen)
+        draw_line3(p, cam, a, b, radius, color)
 
     def _shaded_limb(
-        self,
-        p: QPainter,
-        cam: Camera,
-        a: Vec,
-        b: Vec,
-        r0: float,
-        r1: float,
-        color: QColor,
-        lit_side: float = 1.0,
+        self, p: QPainter, cam: Camera, a: Vec, b: Vec, r0: float, r1: float, color: QColor, lit_side: float = 1.0,
     ) -> None:
-        seg = clip_segment_near(cam.to_cam(a), cam.to_cam(b))
-        if seg is None:
-            return
-        ca, cb = seg
-        ax, ay = cam.proj(ca)
-        bx, by = cam.proj(cb)
-        ra = max(1.3, r0 * cam.f / ca[2])
-        rb = max(1.3, r1 * cam.f / cb[2])
-        dx, dy = bx - ax, by - ay
-        dist = math.hypot(dx, dy)
-        if dist < 0.6:
-            p.setBrush(color)
-            p.drawEllipse(QPointF(ax, ay), ra, ra)
-            return
-        nx, ny = -dy / dist, dx / dist
-        poly = QPolygonF(
-            [
-                QPointF(ax + nx * ra, ay + ny * ra),
-                QPointF(bx + nx * rb, by + ny * rb),
-                QPointF(bx - nx * rb, by - ny * rb),
-                QPointF(ax - nx * ra, ay - ny * ra),
-            ]
-        )
-        mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
-        mr = max(ra, rb)
-        if mr >= 2.4:
-            grad = QLinearGradient(
-                mx - lit_side * nx * mr, my - lit_side * ny * mr,
-                mx + lit_side * nx * mr, my + lit_side * ny * mr,
-            )
-            grad.setColorAt(0.0, color.darker(142))
-            grad.setColorAt(0.38, color)
-            grad.setColorAt(0.72, color.lighter(124))
-            grad.setColorAt(1.0, color.darker(112))
-            p.setBrush(QBrush(grad))
-        else:
-            p.setBrush(color)
-        p.drawPolygon(poly)
-        p.drawEllipse(QPointF(ax, ay), ra, ra)
-        p.drawEllipse(QPointF(bx, by), rb, rb)
+        draw_shaded_limb(p, cam, a, b, r0, r1, color, lit_side)
 
     def _board(self, idx: int) -> QPixmap:
-        pm = self._board_cache.get(idx)
-        if pm is None:
-            text, col, fg = SPONSORS[idx % len(SPONSORS)]
-            pm = QPixmap(256, 56)
-            pm.fill(QColor(col))
-            q = QPainter(pm)
-            grad = QLinearGradient(0, 0, 0, 56)
-            grad.setColorAt(0.0, QColor(col).lighter(116))
-            grad.setColorAt(0.45, QColor(col))
-            grad.setColorAt(1.0, QColor(col).darker(125))
-            q.fillRect(0, 0, 256, 56, grad)
-            q.fillRect(0, 0, 256, 4, QColor("#e2e8f0"))
-            q.fillRect(0, 52, 256, 4, QColor("#0f172a"))
-            q.fillRect(0, 0, 5, 56, QColor("#1e293b"))
-            q.setPen(QColor(fg))
-            f = QFont("Arial", 20)
-            f.setBold(True)
-            q.setFont(f)
-            q.drawText(QRectF(8, 4, 244, 48), Qt.AlignmentFlag.AlignCenter, text)
-            q.end()
-            self._board_cache[idx] = pm
-        return pm
+        return get_sponsor_board(idx)
 
     def _lane_num_pm(self, num: int) -> QPixmap:
         pm = self._lane_num_cache.get(num)
@@ -952,29 +1008,7 @@ class Track3DWidget(TrackRaceWidget):
             idx += 1
 
     def _draw_official(self, p: QPainter, cam: Camera, x: float, z: float, cap_col: str = "#f8fafc") -> None:
-        c = cam.to_cam((x, 0.9, z))
-        if c[2] < NEAR * 2 or c[2] > 75.0:
-            return
-        self._textured_ground_quad(
-            p, cam,
-            [(x - 0.35, 0.016, z - 0.22), (x + 0.35, 0.016, z - 0.22), (x + 0.35, 0.016, z + 0.22), (x - 0.35, 0.016, z + 0.22)],
-            self._shadow_pm(), "#0f172a",
-        )
-        for sz in (-0.10, 0.10):
-            self._shaded_limb(p, cam, (x, 0.05, z + sz), (x, 0.85, z + sz), 0.070, 0.082, QColor("#1e293b"))
-            self._shaded_limb(p, cam, (x, 0.03, z + sz), (x + 0.14, 0.03, z + sz), 0.042, 0.032, QColor("#0f172a"))
-        self._shaded_limb(p, cam, (x, 0.82, z), (x, 1.42, z), 0.15, 0.17, QColor("#f8fafc"))
-        for sz in (-0.21, 0.21):
-            self._shaded_limb(p, cam, (x, 1.38, z + sz), (x + 0.04, 0.95, z + sz), 0.050, 0.038, QColor("#d9a066"))
-        self._shaded_limb(p, cam, (x, 1.40, z), (x, 1.54, z), 0.052, 0.048, QColor("#d9a066"))
-        hc = cam.to_cam((x, 1.66, z))
-        if hc[2] >= NEAR:
-            hx, hy = cam.proj(hc)
-            r = max(2.0, 0.10 * cam.f / hc[2])
-            p.setBrush(QColor("#d9a066"))
-            p.drawEllipse(QPointF(hx, hy), r, r * 1.1)
-            p.setBrush(QColor(cap_col))
-            p.drawChord(QRectF(hx - r * 1.1, hy - r * 1.15, 2.2 * r, 1.6 * r), 15 * 16, 150 * 16)
+        draw_official_3d(p, cam, x, z, cap_col)
 
     def _draw_props(self, p: QPainter, cam: Camera, poses: Sequence[Tuple[float, float, float, float]]) -> None:
         n = len(self._runners)
