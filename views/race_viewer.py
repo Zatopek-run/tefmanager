@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import random
 import zlib
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from PyQt6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
@@ -35,6 +35,9 @@ DNF_PROGRESS = 0.42  # un atleta ritirato si ferma a questo punto della gara
 PRE_START_SECONDS = 3.0  # "Ai vostri posti" -> "Pronti" -> sparo
 GUN_AT = 2.4  # istante dello sparo nella sequenza di partenza
 REACTION_RANGE = (0.12, 0.22)  # tempo di reazione ai blocchi (fa parte del tempo ufficiale)
+SET_RAISE_TIME = 0.5  # s per alzare il bacino dopo "PRONTI" (posizione di "set")
+PUSH_METERS = 0.9  # metri dallo stacco dai blocchi alla prima falcata
+DRIVE_METERS = 28.0  # metri di "spinta" in cui il busto si rialza fino alla corsa eretta
 
 
 def is_field_event(event_name: str) -> bool:
@@ -96,6 +99,25 @@ def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006) 
 
 def reaction_time(seed: object, name: str) -> float:
     return _rng(seed, "reaction", name).uniform(*REACTION_RANGE)
+
+
+def _smoothstep(x: float) -> float:
+    x = max(0.0, min(1.0, x))
+    return x * x * (3.0 - 2.0 * x)
+
+
+def start_stance(anim_t: float, race_t: float, reaction: float, meters: float) -> Tuple[float, float, float]:
+    """Fase di partenza di un velocista: (blocks, push, rise), ciascuno in [0, 1].
+
+    Solo messa in scena (non cambia tempi né posizioni): `blocks` va da 0 ("ai vostri posti",
+    ginocchio a terra) a 1 ("set", bacino alzato) dopo "PRONTI"; `push` è lo stacco dai blocchi,
+    che non parte prima del tempo di reazione; `rise` è il busto che si rialza durante la spinta
+    e dipende dai metri percorsi, quindi chi accelera più piano resta chino più a lungo.
+    """
+    blocks = _smoothstep((anim_t - GUN_AT * 0.5) / SET_RAISE_TIME)
+    if race_t <= reaction:
+        return blocks, 0.0, 0.0
+    return blocks, _smoothstep(meters / PUSH_METERS), _smoothstep(meters / DRIVE_METERS)
 
 
 def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0) -> float:

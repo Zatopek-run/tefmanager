@@ -9,7 +9,7 @@ gara (tempi di arrivo, ordine) resta quello già simulato.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
@@ -25,7 +25,7 @@ from PyQt6.QtGui import (
     QTransform,
 )
 
-from views.race_viewer import GUN_AT, TrackRaceWidget, _short, make_crowd
+from views.race_viewer import GUN_AT, TrackRaceWidget, _short, make_crowd, start_stance
 
 Vec = Tuple[float, float, float]
 
@@ -159,6 +159,97 @@ def figure_joints(hip: Vec, yaw: float, lean: float, legs, arms, torso: float = 
         elbow, hand = limb(sh, arms[k][0], 0.30, arms[k][1], 0.27)
         sides.append({"side": side, "hip": hs, "knee": knee, "ankle": ankle, "shoulder": sh, "elbow": elbow, "hand": hand})
     return {"hip": hip, "chest": chest, "head": head, "u": u, "w": w, "sides": sides}
+
+
+# --------------------------------------------------------------------------- posa del velocista
+class SprintPose(NamedTuple):
+    """Posa di un velocista per `figure_joints`: l'anca sta a `x + dx` (m) rispetto alla sua posizione in pista."""
+
+    dx: float
+    hip_h: float
+    lean: float
+    legs: tuple
+    arms: tuple
+
+
+def _ik2(ox: float, oy: float, tx: float, ty: float, l1: float, l2: float, bend: float) -> Tuple[float, float]:
+    """Catena a due ossa nel piano (x, y) dall'origine al bersaglio: angoli assoluti (a1, a2) dalla
+    verticale verso il basso, positivi in avanti. `bend` = +1 articolazione in avanti (ginocchio),
+    -1 indietro (gomito). Se il bersaglio è fuori portata l'arto si tende lungo la sua direzione."""
+    dx, dy = tx - ox, ty - oy
+    hyp = math.hypot(dx, dy) or 1e-6
+    d = min(hyp, (l1 + l2) * 0.9995)
+    alpha = math.acos(max(-1.0, min(1.0, (l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d))))
+    a1 = math.atan2(dx, -dy) + bend * alpha
+    mx, my = ox + l1 * math.sin(a1), oy - l1 * math.cos(a1)
+    ex, ey = ox + dx * d / hyp, oy + dy * d / hyp
+    return a1, math.atan2(ex - mx, -(ey - my))
+
+
+# Blocchi di partenza, nel sistema "linea di partenza" (x = 0 alla linea, mani dietro): anca (x, y)
+# e inclinazione del busto per "ai vostri posti" e per "set" (bacino sopra le spalle).
+_ON_MARKS = (-0.60, 0.45, 1.256)
+_SET = (-0.524, 0.72, 1.717)
+_HANDS = (-0.03, 0.02)  # mani a terra dietro la linea
+_FRONT_FOOT = (-0.48, 0.10)  # caviglia sul blocco anteriore (ginocchio a ~90° nel "set")
+_REAR_FOOT = (-0.98, 0.10)  # caviglia sul blocco posteriore (nel "ai posti" il ginocchio tocca terra)
+_TORSO = 0.55
+
+
+def stance_pose(blocks: float) -> SprintPose:
+    """Posa sui blocchi: 0 = "ai vostri posti" (ginocchio posteriore a terra), 1 = "set" (bacino alto).
+    Mani e piedi restano fermi: l'anca sale e gli arti si adattano (cinematica inversa)."""
+    b = max(0.0, min(1.0, blocks))
+    hx = _ON_MARKS[0] + (_SET[0] - _ON_MARKS[0]) * b
+    hy = _ON_MARKS[1] + (_SET[1] - _ON_MARKS[1]) * b
+    lean = _ON_MARKS[2] + (_SET[2] - _ON_MARKS[2]) * b
+    sx = _TORSO * math.sin(lean)
+    sy = hy + _TORSO * math.cos(lean) - 0.04  # spalla (come in `figure_joints`)
+    front = _ik2(0.0, hy, _FRONT_FOOT[0] - hx, _FRONT_FOOT[1], 0.45, 0.45, 1.0)
+    rear = _ik2(0.0, hy, _REAR_FOOT[0] - hx, _REAR_FOOT[1], 0.45, 0.45, 1.0)
+    arm = _ik2(sx, sy, _HANDS[0] - hx, _HANDS[1], 0.30, 0.27, -1.0)
+    return SprintPose(hx, hy, lean, (front, rear), (arm, arm))
+
+
+def drive_pose(phase: float, ratio: float, rise: float) -> SprintPose:
+    """Corsa del velocista. `rise` 1 = corsa eretta; più basso = fase di spinta: busto in avanti,
+    anca più bassa, gambe che spingono indietro e braccia che pompano di più."""
+    r = max(0.0, min(1.0, rise))
+    d = 1.0 - r
+    amp = 0.45 + 0.55 * ratio
+    lean = 0.10 + 0.28 * ratio + 0.65 * d
+    legs, arms = [], []
+    for k in (0, 1):
+        ph = phase + k * math.pi
+        la = amp * math.sin(ph) - 0.20 * d
+        kf = 0.35 + 1.25 * ratio * max(0.0, math.sin(ph + 1.3))
+        aa = -amp * 1.15 * (1.0 + 0.25 * d) * math.sin(ph)
+        legs.append((la, la - kf))
+        arms.append((aa, aa + 1.2))
+    hip_h = 0.95 - 0.10 * d
+    low = min(s["ankle"][1] for s in figure_joints((0.0, hip_h, 0.0), 0.0, lean, legs, arms)["sides"])
+    hip_h += max(0.0, 0.04 - low)  # i piedi non vanno mai sotto terra
+    return SprintPose(0.0, hip_h, lean, tuple(legs), tuple(arms))
+
+
+def sprint_pose(phase: float, ratio: float, blocks: float, push: float, rise: float) -> SprintPose:
+    """Posa dalla partenza alla corsa: blocchi (`blocks`), stacco (`push`), spinta (`rise`)."""
+    st = stance_pose(blocks)
+    if push <= 0.0:
+        return st
+    dr = drive_pose(phase, ratio, rise)
+    if push >= 1.0:
+        return dr
+
+    def mix(a: float, b: float) -> float:
+        return a + (b - a) * push
+
+    def mix2(a, b):
+        return tuple(tuple(mix(x, y) for x, y in zip(ja, jb)) for ja, jb in zip(a, b))
+
+    mixed = SprintPose(mix(st.dx, dr.dx), mix(st.hip_h, dr.hip_h), mix(st.lean, dr.lean), mix2(st.legs, dr.legs), mix2(st.arms, dr.arms))
+    low = min(s["ankle"][1] for s in figure_joints((0.0, mixed.hip_h, 0.0), 0.0, mixed.lean, mixed.legs, mixed.arms)["sides"])
+    return mixed._replace(hip_h=mixed.hip_h + max(0.0, 0.04 - low))  # anche nel raccordo i piedi restano sopra terra
 
 
 class Scene3D:
@@ -463,59 +554,12 @@ class Track3DWidget(Scene3D, TrackRaceWidget):
     # ---- atleti
     def _draw_athlete(
         self, p: QPainter, cam: Camera, x: float, z: float, phase: float, ratio: float,
-        crouch: bool, kit: QColor, skin: QColor, is_player: bool, name: str,
+        stance: Tuple[float, float, float], kit: QColor, skin: QColor, is_player: bool, name: str,
     ) -> None:
-        # ombra
-        pts = [(x + 0.5 * math.cos(a), 0.02, z + 0.28 * math.sin(a)) for a in [i * math.pi / 6 for i in range(12)]]
-        self._poly(p, cam, pts, QColor(0, 0, 0, 80))
-
-        lean = 0.95 if crouch else 0.10 + 0.28 * ratio
-        hip_h = 0.62 if crouch else 0.95
-        hip = (x, hip_h, z)
-        s_, c_ = math.sin(lean), math.cos(lean)
-        shoulder = (x + 0.55 * s_, hip_h + 0.55 * c_, z)
-        head = (shoulder[0] + 0.22 * s_, shoulder[1] + 0.22 * c_, z)
-        amp = 0.45 + 0.55 * ratio
-        near_sign = 1.0 if cam.pos[2] > z else -1.0
-        shorts = QColor("#1e293b")
-        legs = []
-
-        def limb(origin: Vec, a1: float, l1: float, a2: float, l2: float) -> Tuple[Vec, Vec]:
-            mid = (origin[0] + l1 * math.sin(a1), origin[1] - l1 * math.cos(a1), origin[2])
-            end = (mid[0] + l2 * math.sin(a2), mid[1] - l2 * math.cos(a2), mid[2])
-            return mid, end
-
-        def draw_side(side: float) -> None:
-            k = 0 if side > 0 else 1
-            ph = phase + k * math.pi
-            shade = 100 if side == near_sign else 140
-            leg_col = skin.darker(shade)
-            if crouch:
-                la, kf = (0.9, 0.5) if side > 0 else (-0.2, 1.5)
-            else:
-                la = amp * math.sin(ph)
-                kf = 0.35 + 1.25 * ratio * max(0.0, math.sin(ph + 1.3))
-            hip_s = (hip[0], hip[1], hip[2] + side * 0.1)
-            knee, ankle = limb(hip_s, la, 0.45, la - kf, 0.45)
-            self._line3(p, cam, hip_s, knee, 0.075, leg_col)
-            self._line3(p, cam, knee, ankle, 0.055, leg_col)
-            self._line3(p, cam, ankle, (ankle[0] + 0.16, max(0.03, ankle[1] - 0.03), ankle[2]), 0.045, QColor("#f8fafc"))
-            sh_s = (shoulder[0], shoulder[1] - 0.04, shoulder[2] + side * 0.21)
-            if crouch:
-                aa = 0.35
-            else:
-                aa = -amp * 1.15 * math.sin(ph)
-            elbow, hand = limb(sh_s, aa, 0.30, aa + 1.2, 0.27)
-            self._line3(p, cam, sh_s, elbow, 0.05, skin.darker(shade))
-            self._line3(p, cam, elbow, hand, 0.045, skin.darker(shade))
-
-        far = -near_sign
-        draw_side(far)
-        self._line3(p, cam, hip, shoulder, 0.14, kit)
-        self._line3(p, cam, (hip[0], hip[1] - 0.05, hip[2]), (hip[0] + 0.1 * s_, hip[1] + 0.12, hip[2]), 0.15, shorts)
-        draw_side(near_sign)
-
-        self._draw_head(p, cam, head, skin, is_player, name)
+        """`stance` = (blocks, push, rise) di `start_stance`: dai blocchi alla corsa eretta."""
+        pose = sprint_pose(phase, ratio, *stance)
+        self._draw_shadow(p, cam, x + pose.dx + 0.15, z)
+        self._draw_figure(p, cam, (x + pose.dx, pose.hip_h, z), 0.0, pose.lean, pose.legs, pose.arms, kit, skin, is_player, name)
 
     # ---- paint
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
@@ -537,7 +581,6 @@ class Track3DWidget(Scene3D, TrackRaceWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self._draw_boards_and_finish(p, cam)
 
-        crouch = self.race_time <= 0.0
         order = sorted(range(n), key=lambda i: -cam.to_cam((meters[i], 0.0, self._lane_z(i)))[2])
         for i in order:  # dal più lontano al più vicino
             r = self._runners[i]
@@ -550,7 +593,8 @@ class Track3DWidget(Scene3D, TrackRaceWidget):
                 legs = s.athlete_name.split(" / ")
                 if len(legs) == 4:
                     tag = legs[min(3, int(max(0.0, min(0.999, meters[i] / self._distance)) * 4))]
-            self._draw_athlete(p, cam, meters[i], self._lane_z(i), phase, ratio, crouch, kit, self._skin(s.athlete_name), s.is_player, tag)
+            stance = start_stance(self._t, self.race_time, r["react"], meters[i])
+            self._draw_athlete(p, cam, meters[i], self._lane_z(i), phase, ratio, stance, kit, self._skin(s.athlete_name), s.is_player, tag)
         p.setPen(Qt.PenStyle.NoPen)
         self._paint_hud(p, meters, w, h)
         p.end()

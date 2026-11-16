@@ -89,6 +89,13 @@ container di sviluppo e non sarebbero testabili).
 - Le primitive (`_poly`, `_line3`, `_textured_quad`, `_draw_stand`, `_draw_figure`, …) stanno nel mixin `Scene3D`,
   usato da `Track3DWidget` e `FieldScene3D`. `figure_joints` (pura) calcola lo scheletro con orientamento libero
   (`yaw`); gli angoli degli arti partono dalla verticale verso il basso, positivi in avanti, e sono assoluti.
+- **Partenza dei velocisti** (solo 3D; la vista 2D ha ancora la vecchia posa unica `crouch`). `start_stance`
+  (`race_viewer.py`, pura) dà `(blocks, push, rise)` in [0, 1]: "set" dopo "PRONTI", stacco solo dopo il tempo di
+  reazione, busto che si rialza in `DRIVE_METERS` (28 m) **in funzione dei metri percorsi**. `sprint_pose`
+  (`race_3d.py`, pura) ne ricava la posa: sui blocchi mani e piedi sono fissi e gli arti si adattano con
+  `_ik2` (cinematica inversa a due ossa); a `rise = 1` torna esattamente alla corsa di prima. I piedi non vanno mai
+  sotto terra (testato anche nel raccordo). Misure ricavate a occhio da una ripresa dall'alto di una finale reale:
+  gli angoli sono stime. La posa non tocca `position_fraction`: l'esito resta quello del modello.
 
 ### Vista 3D dei concorsi (`field_3d.py`)
 

@@ -216,6 +216,73 @@ class TestRaceViewer(unittest.TestCase):
                     widget.close()
             self.assertGreater(painted, 40)
 
+    def test_start_stance_timeline(self) -> None:
+        """Set, reazione e spinta: solo messa in scena, monotona e senza salti."""
+        from views.race_viewer import DRIVE_METERS, GUN_AT, PUSH_METERS, start_stance
+
+        react = 0.17
+        # prima di "PRONTI" si sta ai posti; poi il bacino sale fino al set e ci resta fino allo sparo
+        self.assertEqual(start_stance(0.0, 0.0, react, 0.0), (0.0, 0.0, 0.0))
+        self.assertEqual(start_stance(GUN_AT * 0.5, 0.0, react, 0.0)[0], 0.0)
+        blocks = [start_stance(t / 20, 0.0, react, 0.0)[0] for t in range(0, int(GUN_AT * 20) + 1)]
+        self.assertEqual(blocks, sorted(blocks))
+        self.assertEqual(blocks[-1], 1.0)
+        # durante il tempo di reazione l'atleta è ancora fermo sui blocchi, anche dopo lo sparo
+        self.assertEqual(start_stance(GUN_AT + react, react, react, 0.0), (1.0, 0.0, 0.0))
+        # lo stacco e il busto che si rialza crescono con i metri e non tornano indietro
+        prev = (0.0, 0.0)
+        for step in range(0, 400):
+            m = step * 0.1
+            _, push, rise = start_stance(GUN_AT + 5.0, 1.0, react, m)
+            self.assertGreaterEqual(push, prev[0])
+            self.assertGreaterEqual(rise, prev[1])
+            self.assertLessEqual(max(push, rise), 1.0)
+            prev = (push, rise)
+        self.assertEqual(start_stance(GUN_AT + 5.0, 1.0, react, PUSH_METERS)[1], 1.0)
+        self.assertEqual(start_stance(GUN_AT + 5.0, 1.0, react, DRIVE_METERS)[2], 1.0)
+        # a 6 m il busto è ancora molto inclinato (come nei video di riferimento)
+        self.assertLess(start_stance(GUN_AT + 5.0, 1.0, react, 6.0)[2], 0.2)
+
+    def test_sprint_pose_blocks_drive_and_run(self) -> None:
+        from views.race_3d import drive_pose, figure_joints, sprint_pose, stance_pose
+
+        def joints(pose, x=0.0):
+            return figure_joints((x + pose.dx, pose.hip_h, 0.0), 0.0, pose.lean, pose.legs, pose.arms)
+
+        # "ai vostri posti": mani a terra, ginocchio posteriore a terra, piedi sui blocchi, anca sotto le spalle
+        on_marks = joints(stance_pose(0.0))
+        front, rear = on_marks["sides"]
+        self.assertAlmostEqual(front["hand"][1], 0.02, delta=0.02)
+        self.assertLess(rear["knee"][1], 0.05)
+        self.assertLess(on_marks["hip"][1], front["shoulder"][1])
+        # "set": bacino sopra le spalle e più in alto che ai posti
+        ready = joints(stance_pose(1.0))
+        self.assertGreater(ready["hip"][1], ready["sides"][0]["shoulder"][1])
+        self.assertGreater(ready["hip"][1], on_marks["hip"][1])
+        # mani e piedi non si muovono mentre il bacino sale
+        for b in (0.25, 0.5, 0.75):
+            mid = joints(stance_pose(b))["sides"]
+            for a, c in zip(mid, on_marks["sides"]):
+                self.assertAlmostEqual(a["ankle"][0], c["ankle"][0], delta=0.03)
+                self.assertAlmostEqual(a["hand"][0], c["hand"][0], delta=0.03)
+        # a spinta finita (rise = 1) la corsa è quella di sempre
+        for ratio in (0.0, 0.6, 1.0):
+            run = drive_pose(1.3, ratio, 1.0)
+            self.assertAlmostEqual(run.lean, 0.10 + 0.28 * ratio)
+            self.assertAlmostEqual(run.hip_h, 0.95)
+            self.assertEqual(sprint_pose(1.3, ratio, 1.0, 1.0, 1.0), run)
+        # in spinta il busto è più inclinato e l'anca più bassa
+        self.assertGreater(drive_pose(0.0, 0.3, 0.0).lean, drive_pose(0.0, 0.3, 1.0).lean + 0.5)
+        self.assertLess(drive_pose(0.0, 0.3, 0.0).hip_h, 0.95)
+        # in nessuno stato (anche nel raccordo tra blocchi e corsa) i piedi vanno sotto terra
+        for push in (0.0, 0.25, 0.5, 0.75, 1.0):
+            for rise in (0.0, 0.1, 0.5, 1.0):
+                for ratio in (0.0, 0.3, 1.0):
+                    for k in range(16):
+                        pose = sprint_pose(k * 0.4, ratio, 1.0, push, rise)
+                        low = min(s["ankle"][1] for s in joints(pose)["sides"])
+                        self.assertGreaterEqual(low, 0.0, (push, rise, ratio, k))
+
     def test_view_toggle_keeps_race_position(self) -> None:
         from views.race_3d import Track3DWidget
         from views.race_viewer import RaceViewerDialog
