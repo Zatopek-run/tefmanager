@@ -41,6 +41,52 @@ def _drop_columns_after(conn, version: int) -> None:
                 conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
 
 
+class TestRaceViewer(unittest.TestCase):
+    """Live race viewer: animation helpers and the dialog stepping through a meet."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_progress_and_attempts(self) -> None:
+        from views.race_viewer import FIELD_ROUNDS, generate_attempts, track_progress
+
+        prev = -1.0
+        for i in range(0, 101):
+            v = track_progress(i / 100, phase=2.0)
+            self.assertGreaterEqual(v, prev - 1e-9)  # mai all'indietro
+            prev = v
+        self.assertEqual(track_progress(0.0), 0.0)
+        self.assertAlmostEqual(track_progress(1.0, phase=3.0), 1.0)
+        for seed in range(30):
+            att = generate_attempts(7.25, random.Random(seed))
+            self.assertEqual(len(att), FIELD_ROUNDS)
+            self.assertIn(7.25, att)
+            self.assertTrue(all(a is None or a <= 7.25 for a in att))
+
+    def test_dialog_plays_every_event(self) -> None:
+        from views.race_viewer import RaceViewerDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            rep = advance_week(ctrl.state, rng=random.Random(15))
+            summary = rep.competition_summary
+            assert summary is not None
+            dlg = RaceViewerDialog(summary)
+            seen = 0
+            while True:
+                seen += 1
+                dlg._skip_race()
+                self.assertTrue(dlg._race_done)
+                self.assertTrue(dlg.podium.text().startswith("1°"))
+                if dlg._index >= len(summary.event_results) - 1:
+                    break
+                dlg._next()
+            self.assertEqual(seen, len(summary.event_results))
+            dlg.close()
+
+
 class TestBodyBuild(unittest.TestCase):
     """Height and weight change race scores according to the event."""
 
