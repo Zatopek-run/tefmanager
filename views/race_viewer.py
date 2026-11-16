@@ -646,6 +646,9 @@ class FieldSceneWidget(QWidget):
     """Scena laterale di un concorso: salto in lungo (rincorsa, stacco, sabbia) o getto del peso."""
 
     CROWD_H = 62
+    # istanti (s) delle fasi della prova animata: condivisi con la vista 3D per restare in sincrono
+    LJ_RUN_END, LJ_JUMP_END = 1.15, 1.85  # rincorsa -> volo -> atterraggio
+    SP_WIND_END, SP_FLY_END = 1.0, 2.0  # rotazione -> volo dell'attrezzo
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -751,7 +754,7 @@ class FieldSceneWidget(QWidget):
         if not cur["animate"]:
             flag(flag_x, label, colour)
         elif self.kind == "lj":
-            run_end, jump_end = 1.15, 1.85
+            run_end, jump_end = self.LJ_RUN_END, self.LJ_JUMP_END
             if t < run_end:
                 x_m = -9.0 + 9.0 * (t / run_end)
                 ratio = min(1.0, 0.3 + t)
@@ -774,7 +777,7 @@ class FieldSceneWidget(QWidget):
                 if age > 0.25:
                     flag(flag_x, label, colour)
         else:  # getto del peso
-            wind_end, fly_end = 1.0, 2.0
+            wind_end, fly_end = self.SP_WIND_END, self.SP_FLY_END
             ring_x = sx(-1.0)
             if t < wind_end:
                 spin = 2 * math.pi * 1.6 * t
@@ -817,9 +820,17 @@ class FieldEventWidget(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-        self.scene = FieldSceneWidget()
+        from views.field_3d import FieldScene3D  # import tardivo: field_3d usa questo modulo
+
+        self.scene2d = FieldSceneWidget()
+        self.scene3d = FieldScene3D()
+        self.scene = self.scene3d  # scena in uso (3D di default, come le corse)
+        self.scene_stack = QStackedWidget()
+        self.scene_stack.addWidget(self.scene2d)
+        self.scene_stack.addWidget(self.scene3d)
+        self.scene_stack.setCurrentWidget(self.scene3d)
         self.board = FieldBoardWidget()
-        lay.addWidget(self.scene, stretch=3)
+        lay.addWidget(self.scene_stack, stretch=3)
         lay.addWidget(self.board, stretch=2)
         self.board.finished.connect(self._board_done)
         self._step = 0
@@ -836,6 +847,18 @@ class FieldEventWidget(QWidget):
         self._acc = 0.0
         self._started = False
         self._done = False
+
+    def set_view(self, three_d: bool) -> None:
+        """Passa dalla scena 3D a quella 2D (e viceversa) senza perdere la prova in corso."""
+        new = self.scene3d if three_d else self.scene2d
+        old = self.scene
+        if new is old:
+            return
+        new.kind, new.lo, new.hi = old.kind, old.lo, old.hi
+        new.cur, new.t, new.dur = old.cur, old.t, old.dur
+        self.scene = new
+        self.scene_stack.setCurrentWidget(new)
+        new.update()
 
     def _is_player(self, row: int) -> bool:
         return self.board._standings[row].is_player
@@ -1025,6 +1048,7 @@ class RaceViewerDialog(QDialog):
             new._t, new._done = old._t, old._done
             self.stack.setCurrentWidget(new)
         self.track = new
+        self.field.set_view(new is self.track3d)  # lo stesso interruttore vale per i concorsi
         self.btn_view.setText("Vista 3D" if new is self.track2d else "Vista 2D")
 
     def _toggle_pause(self) -> None:

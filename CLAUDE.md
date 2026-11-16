@@ -25,7 +25,8 @@ controllers/ game_controller.py   segnali Qt che collegano modello e viste
 views/       main_window.py  tabs.py  dialogs.py  styles.py (QSS scuro)
              athlete_dialog.py  Scheda Atleta
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
-             race_3d.py         vista 3D software delle corse in pista
+             race_3d.py         motore 3D software (Camera, Scene3D, figure_joints) + vista 3D delle corse
+             field_3d.py        vista 3D di salto in lungo e getto del peso (pose pure + FieldScene3D)
 tests/       test_game.py
 ```
 
@@ -61,8 +62,13 @@ tests/       test_game.py
   `meters()`, `fraction()`, `race_time`, … della base). Il dialog tiene `track2d`/`track3d`; `dlg.track` è
   quella attiva (3D di default) e `_toggle_view` passa dall'una all'altra mantenendo il punto della gara.
   `race_3d` è importato in modo tardivo da `race_viewer` per evitare l'import circolare.
-- **Concorsi**: `FieldEventWidget` = scena (`FieldSceneWidget`) + tabellone (`FieldBoardWidget`). Solo le prove
-  dell'atleta del club sono animate per intero, le altre scorrono veloci (gara sotto i ~45 s).
+- **Concorsi**: `FieldEventWidget` = scena + tabellone (`FieldBoardWidget`). La scena è `scene2d`
+  (`FieldSceneWidget`) o `scene3d` (`FieldScene3D`), in un `QStackedWidget`; `widget.scene` è quella attiva (3D di
+  default) e `set_view(three_d)` passa dall'una all'altra copiando `kind/lo/hi/cur/t/dur`. Il pulsante "Vista 2D/3D"
+  del dialog cambia sia le corse sia i concorsi. Solo le prove dell'atleta del club sono animate per intero, le
+  altre scorrono veloci (gara sotto i ~45 s).
+- **Fasi dei concorsi**: gli istanti (`LJ_RUN_END`, `LJ_JUMP_END`, `SP_WIND_END`, `SP_FLY_END`) sono costanti di
+  `FieldSceneWidget`, usate da 2D e 3D: se li cambi cambiano per entrambe e `PLAYER_SECONDS` resta valido.
 - Controlli: pausa, velocità 1x/2x/4x, vista 2D/3D, "Salta alla fine" (funziona anche durante il conto alla
   rovescia), "Prossima gara", "Vai ai risultati".
 
@@ -80,15 +86,33 @@ container di sviluppo e non sarebbero testabili).
 - **Prestazioni**: antialiasing **spento** per le grandi superfici e acceso solo per atleti e HUD (da ~32 ms a
   ~10 ms a fotogramma). Non riaccenderlo per tribune/prato/pista.
 - Costanti di camera in cima al file: `CAM_BACK`, `CAM_SIDE`, `CAM_HEIGHT`, `FOV_DEG`.
-- Il 3D copre solo le corse in pista; lungo e peso restano nelle scene 2D.
+- Le primitive (`_poly`, `_line3`, `_textured_quad`, `_draw_stand`, `_draw_figure`, …) stanno nel mixin `Scene3D`,
+  usato da `Track3DWidget` e `FieldScene3D`. `figure_joints` (pura) calcola lo scheletro con orientamento libero
+  (`yaw`); gli angoli degli arti partono dalla verticale verso il basso, positivi in avanti, e sono assoluti.
+
+### Vista 3D dei concorsi (`field_3d.py`)
+
+- Mondo: `x` = direzione di rincorsa/lancio con origine sulla linea di battuta (lungo) o sul bordo anteriore del
+  cerchio (peso, centro a `RING_CX = -1,067`); la camera sta a `z > 0` così si corre da sinistra a destra e il
+  braccio destro è quello vicino. Camera ravvicinata che segue l'azione (`_camera`), calcolata solo da `t`.
+- **La misura non si tocca.** `lj_pose` calcola `LJ_LAND_REACH` dalla posa d'atterraggio, così a fine volo il tallone
+  è esattamente a `x = d`; `sp_shot_position` chiude la parabola esattamente a `x = d`. C'è un test
+  (`test_3d_field_poses_land_exactly_on_the_mark`): se cambi pose o camera, deve restare verde.
+- In volo l'anca non scende sotto 0,2 m e l'attrezzo non va mai sotto terra (testato).
+- Nullo: la bandierina rossa sta sulla linea (lungo) e il banner "NULLO" compare in grande; l'animazione però arriva
+  comunque a `dist`, come nella vista 2D.
+- Le etichette dei metri (`_label3`) si saltano se cadono a < 34 px da una già disegnata: chiamare dal più vicino.
+- Prestazioni: ~5 ms a fotogramma (900×480); stesse regole delle corse (antialiasing spento per le superfici).
 
 ## Test: cosa verificano e cosa no
 
 - Curve monotone e arrivo esatto al tempo ufficiale; sequenza di partenza e salto durante il conto alla
   rovescia; ritmo dei concorsi; migrazione dei vecchi salvataggi; modificatore fisico.
-- `test_track_views_paint_in_every_state` renderizza 2D e 3D in ogni stato (compresi ritirato e staffetta
-  squalificata): intercetta eccezioni di disegno, **non** giudica l'aspetto. Per l'aspetto usa screenshot
-  offscreen (`widget.grab().save(...)`) e guardali.
+- `test_track_views_paint_in_every_state` e `test_field_3d_paints_in_every_state` renderizzano 2D e 3D in ogni stato
+  (ritirato, staffetta squalificata, nullo, prove di altri, ogni fase): intercettano eccezioni di disegno,
+  **non** giudicano l'aspetto. Per l'aspetto usa screenshot (`widget.grab().save(...)`) e guardali.
+- Con `QT_QPA_PLATFORM=offscreen` su Windows i font mancano e il testo diventa quadratini (visto anche nelle corse).
+  Per screenshot leggibili negli script usa la piattaforma nativa; nei test resta `offscreen`.
 - Quando si aggiungono dati casuali al generatore la sequenza del `random` cambia: i test che dipendono da un
   seed (es. cognomi uguali) possono rompersi senza che il codice sia sbagliato. Confronta valori completi.
 

@@ -132,34 +132,49 @@ def make_crowd_tile(width: int = 256, height: int = 70) -> QPixmap:
     return pm
 
 
-# --------------------------------------------------------------------------- vista
-class Track3DWidget(TrackRaceWidget):
-    """Stessa gara della vista 2D, vista in prospettiva."""
+
+def figure_joints(hip: Vec, yaw: float, lean: float, legs, arms, torso: float = 0.55) -> dict:
+    """Giunti di una figura a scheletro con orientamento libero (funzione pura, testabile).
+
+    `yaw` ruota attorno all'asse y (0 = guarda verso +x). `legs`/`arms` sono due coppie
+    ((a1, a2), (a1, a2)): lato +w (a destra di chi guarda +x) e lato -w. Gli angoli partono dalla
+    verticale verso il basso e sono positivi in avanti: a1 = coscia/braccio, a2 = stinco/avambraccio
+    (assoluto, non relativo)."""
+    u = (math.cos(yaw), 0.0, math.sin(yaw))
+    w = (-math.sin(yaw), 0.0, math.cos(yaw))
+
+    def limb(origin: Vec, a1: float, l1: float, a2: float, l2: float) -> Tuple[Vec, Vec]:
+        mid = (origin[0] + l1 * math.sin(a1) * u[0], origin[1] - l1 * math.cos(a1), origin[2] + l1 * math.sin(a1) * u[2])
+        end = (mid[0] + l2 * math.sin(a2) * u[0], mid[1] - l2 * math.cos(a2), mid[2] + l2 * math.sin(a2) * u[2])
+        return mid, end
+
+    sl, cl = math.sin(lean), math.cos(lean)
+    chest = (hip[0] + torso * sl * u[0], hip[1] + torso * cl, hip[2] + torso * sl * u[2])
+    head = (chest[0] + 0.22 * sl * u[0], chest[1] + 0.22 * cl, chest[2] + 0.22 * sl * u[2])
+    sides = []
+    for k, side in enumerate((1.0, -1.0)):
+        hs = (hip[0] + side * 0.1 * w[0], hip[1], hip[2] + side * 0.1 * w[2])
+        knee, ankle = limb(hs, legs[k][0], 0.45, legs[k][1], 0.45)
+        sh = (chest[0] + side * 0.21 * w[0], chest[1] - 0.04, chest[2] + side * 0.21 * w[2])
+        elbow, hand = limb(sh, arms[k][0], 0.30, arms[k][1], 0.27)
+        sides.append({"side": side, "hip": hs, "knee": knee, "ankle": ankle, "shoulder": sh, "elbow": elbow, "hand": hand})
+    return {"hip": hip, "chest": chest, "head": head, "u": u, "w": w, "sides": sides}
+
+
+class Scene3D:
+    """Primitive di disegno 3D condivise dalle viste in prospettiva (corse e concorsi).
+
+    Va mescolata a un QWidget: usa `self.font()`."""
 
     _board_cache: Dict[int, QPixmap] = {}
+    _crowd_tile: Optional[QPixmap] = None
 
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self.setMinimumHeight(420)
-        self._crowd_tile: Optional[QPixmap] = None
+    def _get_crowd_tile(self) -> QPixmap:
+        if self._crowd_tile is None:
+            self._crowd_tile = make_crowd_tile()
+        return self._crowd_tile
 
-    # ---- geometria del mondo
-    def _track_width(self) -> float:
-        return max(1, len(self._runners)) * LANE_W
 
-    def _lane_z(self, i: int) -> float:
-        return (i + 0.5) * LANE_W
-
-    def _make_camera(self, meters: Sequence[float], w: int, h: int) -> Camera:
-        d = self._distance
-        leader = max(meters) if meters else 0.0
-        focus = max(0.0, min(d + 6.0, leader))
-        zc = self._track_width() / 2.0
-        pos = (focus + CAM_BACK, CAM_HEIGHT, zc + CAM_SIDE)
-        target = (focus - 5.0, 0.9, zc)
-        return Camera(pos, target, FOV_DEG, w, h)
-
-    # ---- primitive di disegno
     def _poly(self, p: QPainter, cam: Camera, pts: Sequence[Vec], color) -> None:
         cs = clip_near([cam.to_cam(q) for q in pts])
         if len(cs) < 3:
@@ -227,6 +242,118 @@ class Track3DWidget(TrackRaceWidget):
         p.drawPixmap(0, 0, pm)
         p.restore()
 
+    def _draw_stand(self, p: QPainter, cam: Camera, side: float, base: float, xa: float, xb: float) -> None:
+        """Tribuna lunga a due ordini di gradoni lungo x. `side` = verso in cui sale (±1 su z),
+        `base` = z del piede della tribuna."""
+        tile = self._get_crowd_tile()
+        concrete = "#7d8aa0"
+        seg = 14.0
+        x = math.floor(xa / seg) * seg
+        while x < xb:
+            x0, x1 = x - 0.3, x + seg + 0.3
+
+            def zz(dz: float) -> float:
+                return base + side * dz
+
+            tiers = [((0.4, 5.0), (5.0, 14.0), 100), ((5.6, 17.0), (16.0, 38.0), 84)]
+            for (y_lo, y_hi), (d_lo, d_hi), tint in tiers:
+                quad = [(x0, y_lo, zz(d_lo)), (x1, y_lo, zz(d_lo)), (x1, y_hi, zz(d_hi)), (x0, y_hi, zz(d_hi))]
+                shade = QColor(concrete).darker(100 + (100 - tint))
+                self._poly(p, cam, quad, shade)
+                self._poly_tex(p, cam, quad, tile)
+            x += seg
+
+    def _draw_head(self, p: QPainter, cam: Camera, head: Vec, skin: QColor, is_player: bool, name: str) -> None:
+        hc = cam.to_cam(head)
+        if hc[2] < NEAR:
+            return
+        hx, hy = cam.proj(hc)
+        r = 0.115 * cam.f / hc[2]
+        p.setBrush(skin)
+        p.drawEllipse(QPointF(hx, hy), r, r * 1.08)
+        p.setBrush(QColor("#fbbf24") if is_player else QColor("#111827"))
+        p.drawChord(QRectF(hx - r, hy - r * 1.08, 2 * r, 2.16 * r), 20 * 16, 140 * 16)  # fascia / capelli
+
+        if is_player and hc[2] < 90:
+            font = QFont(self.font())  # type: ignore[attr-defined]
+            font.setPointSize(9)
+            font.setBold(True)
+            p.setFont(font)
+            label = _short(name, 18).upper()
+            tag_w = QFontMetrics(font).horizontalAdvance(label) + 16
+            rect = QRectF(hx - tag_w / 2, hy - r - 34, tag_w, 18)
+            p.setBrush(QColor(11, 18, 32, 220))
+            p.drawRoundedRect(rect, 4, 4)
+            p.setPen(QColor("#fbbf24"))
+            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#fbbf24"))
+            p.drawPolygon(QPolygonF([QPointF(hx - 5, hy - r - 15), QPointF(hx + 5, hy - r - 15), QPointF(hx, hy - r - 8)]))
+
+    def _draw_shadow(self, p: QPainter, cam: Camera, x: float, z: float, rx: float = 0.5, rz: float = 0.28) -> None:
+        pts = [(x + rx * math.cos(a), 0.02, z + rz * math.sin(a)) for a in [i * math.pi / 6 for i in range(12)]]
+        self._poly(p, cam, pts, QColor(0, 0, 0, 80))
+
+    def _draw_figure(
+        self, p: QPainter, cam: Camera, hip: Vec, yaw: float, lean: float, legs, arms,
+        kit: QColor, skin: QColor, is_player: bool, name: str,
+    ) -> dict:
+        """Disegna una figura a scheletro con orientamento libero (vedi `figure_joints`).
+        Il lato più vicino alla camera si disegna per ultimo. Restituisce i giunti."""
+        j = figure_joints(hip, yaw, lean, legs, arms)
+        w = j["w"]
+        near = 1.0 if (cam.pos[0] - hip[0]) * w[0] + (cam.pos[2] - hip[2]) * w[2] > 0 else -1.0
+        shorts = QColor("#1e293b")
+
+        def draw_side(s: dict) -> None:
+            col = skin.darker(100 if s["side"] == near else 140)
+            self._line3(p, cam, s["hip"], s["knee"], 0.075, col)
+            self._line3(p, cam, s["knee"], s["ankle"], 0.055, col)
+            ax, ay, az = s["ankle"]
+            self._line3(p, cam, s["ankle"], (ax + 0.16 * j["u"][0], max(0.03, ay - 0.03), az + 0.16 * j["u"][2]), 0.045, QColor("#f8fafc"))
+            self._line3(p, cam, s["shoulder"], s["elbow"], 0.05, col)
+            self._line3(p, cam, s["elbow"], s["hand"], 0.045, col)
+
+        far = next(s for s in j["sides"] if s["side"] != near)
+        near_s = next(s for s in j["sides"] if s["side"] == near)
+        draw_side(far)
+        self._line3(p, cam, j["hip"], j["chest"], 0.14, kit)
+        sl = math.sin(lean)
+        top = (hip[0] + 0.1 * sl * j["u"][0], hip[1] + 0.12, hip[2] + 0.1 * sl * j["u"][2])
+        self._line3(p, cam, (hip[0], hip[1] - 0.05, hip[2]), top, 0.15, shorts)
+        draw_side(near_s)
+        self._draw_head(p, cam, j["head"], skin, is_player, name)
+        return j
+
+
+
+# --------------------------------------------------------------------------- vista
+class Track3DWidget(Scene3D, TrackRaceWidget):
+    """Stessa gara della vista 2D, vista in prospettiva."""
+
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(420)
+        self._crowd_tile: Optional[QPixmap] = None
+
+    # ---- geometria del mondo
+    def _track_width(self) -> float:
+        return max(1, len(self._runners)) * LANE_W
+
+    def _lane_z(self, i: int) -> float:
+        return (i + 0.5) * LANE_W
+
+    def _make_camera(self, meters: Sequence[float], w: int, h: int) -> Camera:
+        d = self._distance
+        leader = max(meters) if meters else 0.0
+        focus = max(0.0, min(d + 6.0, leader))
+        zc = self._track_width() / 2.0
+        pos = (focus + CAM_BACK, CAM_HEIGHT, zc + CAM_SIDE)
+        target = (focus - 5.0, 0.9, zc)
+        return Camera(pos, target, FOV_DEG, w, h)
+
+
     # ---- scenografia
     def _draw_environment(self, p: QPainter, cam: Camera, w: int, h: int) -> None:
         d = self._distance
@@ -241,32 +368,11 @@ class Track3DWidget(TrackRaceWidget):
         p.fillRect(0, 0, w, h, QBrush(sky))
         p.setPen(Qt.PenStyle.NoPen)
 
-        if self._crowd_tile is None:
-            self._crowd_tile = make_crowd_tile()
-        tile = self._crowd_tile
+        tile = self._get_crowd_tile()
         concrete = "#7d8aa0"
 
-        def stand(side: float, xa_: float, xb_: float) -> None:
-            """Tribuna lunga: side=-1 lato opposto (z<0), side=+1 lato vicino (z>larghezza pista)."""
-            base = 0.0 if side < 0 else tw
-            seg = 14.0
-            x = math.floor(xa_ / seg) * seg
-            while x < xb_:
-                x0, x1 = x - 0.3, x + seg + 0.3
-
-                def zz(dz: float) -> float:
-                    return base + side * dz
-
-                tiers = [((0.4, 5.0), (5.0, 14.0), 100), ((5.6, 17.0), (16.0, 38.0), 84)]
-                for (y_lo, y_hi), (d_lo, d_hi), tint in tiers:
-                    quad = [(x0, y_lo, zz(d_lo)), (x1, y_lo, zz(d_lo)), (x1, y_hi, zz(d_hi)), (x0, y_hi, zz(d_hi))]
-                    shade = QColor(concrete).darker(100 + (100 - tint))
-                    self._poly(p, cam, quad, shade)
-                    self._poly_tex(p, cam, quad, tile)
-                x += seg
-
-        stand(-1.0, xa, xb)
-        stand(1.0, xa, xb)
+        self._draw_stand(p, cam, -1.0, 0.0, xa, xb)  # lato opposto (z<0)
+        self._draw_stand(p, cam, 1.0, tw, xa, xb)  # lato vicino (z>larghezza pista)
         end_x = -34.0
         for k in range(4):  # tribuna di testata (dietro gli atleti all'inizio)
             z0 = -38.0 + k * (tw + 76.0) / 4.0
@@ -409,31 +515,7 @@ class Track3DWidget(TrackRaceWidget):
         self._line3(p, cam, (hip[0], hip[1] - 0.05, hip[2]), (hip[0] + 0.1 * s_, hip[1] + 0.12, hip[2]), 0.15, shorts)
         draw_side(near_sign)
 
-        # testa
-        hc = cam.to_cam(head)
-        if hc[2] >= NEAR:
-            hx, hy = cam.proj(hc)
-            r = 0.115 * cam.f / hc[2]
-            p.setBrush(skin)
-            p.drawEllipse(QPointF(hx, hy), r, r * 1.08)
-            p.setBrush(QColor("#fbbf24") if is_player else QColor("#111827"))
-            p.drawChord(QRectF(hx - r, hy - r * 1.08, 2 * r, 2.16 * r), 20 * 16, 140 * 16)  # fascia / capelli
-
-            if is_player and hc[2] < 90:
-                font = QFont(self.font())
-                font.setPointSize(9)
-                font.setBold(True)
-                p.setFont(font)
-                label = _short(name, 18).upper()
-                tag_w = QFontMetrics(font).horizontalAdvance(label) + 16
-                rect = QRectF(hx - tag_w / 2, hy - r - 34, tag_w, 18)
-                p.setBrush(QColor(11, 18, 32, 220))
-                p.drawRoundedRect(rect, 4, 4)
-                p.setPen(QColor("#fbbf24"))
-                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#fbbf24"))
-                p.drawPolygon(QPolygonF([QPointF(hx - 5, hy - r - 15), QPointF(hx + 5, hy - r - 15), QPointF(hx, hy - r - 8)]))
+        self._draw_head(p, cam, head, skin, is_player, name)
 
     # ---- paint
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)

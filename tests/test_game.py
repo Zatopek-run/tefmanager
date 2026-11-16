@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import os
 import random
 import tempfile
@@ -237,6 +238,174 @@ class TestRaceViewer(unittest.TestCase):
             dlg._skip_race()
             self.assertTrue(dlg._race_done)
             self.assertEqual(dlg.track.race_clock, min(r.mark_value for r in summary.event_results[0].standings))
+            dlg.close()
+
+    def test_3d_field_poses_land_exactly_on_the_mark(self) -> None:
+        """La vista mette in scena la misura già decisa: tallone e attrezzo chiudono esattamente a `dist`."""
+        from views.field_3d import LJ_Z, lj_pose, sp_release_point, sp_shot_position
+        from views.race_3d import figure_joints
+        from views.race_viewer import FieldSceneWidget as F
+
+        for d in (4.5, 6.8, 7.9, 8.9):
+            pose, phase, _ = lj_pose(d, F.LJ_JUMP_END, F.LJ_RUN_END, F.LJ_JUMP_END)
+            self.assertEqual(phase, "land")
+            for side in figure_joints(pose.hip, pose.yaw, pose.lean, pose.legs, pose.arms)["sides"]:
+                self.assertAlmostEqual(side["ankle"][0], d, places=6)  # il tallone sta sulla misura
+                self.assertAlmostEqual(side["ankle"][1], 0.04, places=6)  # appena sopra la sabbia
+            # in volo l'anca non va mai sotto terra e il saltatore non esce dalla pedana
+            for k in range(0, 101):
+                t = F.LJ_RUN_END + (F.LJ_JUMP_END - F.LJ_RUN_END) * k / 100
+                p_, ph, _ = lj_pose(d, t, F.LJ_RUN_END, F.LJ_JUMP_END)
+                self.assertGreater(p_.hip[1], 0.2)
+                self.assertEqual(p_.hip[2], LJ_Z)
+        for d in (9.0, 14.5, 19.9, 22.3):
+            x, y, z = sp_shot_position(d, F.SP_FLY_END, F.SP_WIND_END, F.SP_FLY_END)
+            self.assertAlmostEqual(x, d, places=6)
+            self.assertAlmostEqual(y, 0.0, places=6)
+            self.assertAlmostEqual(z, 0.0, places=6)
+            x0, y0, _ = sp_release_point(F.SP_WIND_END)
+            self.assertAlmostEqual(sp_shot_position(d, F.SP_WIND_END, F.SP_WIND_END, F.SP_FLY_END)[0], x0, places=6)
+            xs = []
+            for k in range(0, 101):
+                t = F.SP_WIND_END + (F.SP_FLY_END - F.SP_WIND_END) * k / 100
+                px, py, _ = sp_shot_position(d, t, F.SP_WIND_END, F.SP_FLY_END)
+                self.assertGreaterEqual(py, -1e-9)  # mai sotto terra
+                xs.append(px)
+            self.assertEqual(xs, sorted(xs))  # avanza sempre
+
+    def test_3d_field_feet_stay_legal_and_on_the_ground(self) -> None:
+        """Un lancio valido non deve sembrare nullo (punta oltre il fermapiede) né affondare i piedi."""
+        from views.field_3d import RING_CX, RING_R, lj_pose, sp_pose
+        from views.race_3d import figure_joints
+        from views.race_viewer import FieldSceneWidget as F
+
+        stop_board = -0.08  # faccia interna del fermapiede
+        for k in range(0, 301):
+            t = F.SP_FLY_END * 1.45 * k / 300  # dalla posizione di partenza fino a ben dopo il rilascio
+            pose = sp_pose(t, F.SP_WIND_END)
+            j = figure_joints(pose.hip, pose.yaw, pose.lean, pose.legs, pose.arms)
+            for side in j["sides"]:
+                ax, ay, _ = side["ankle"]
+                toe_x = ax + 0.16 * j["u"][0]
+                self.assertGreaterEqual(ay, 0.03 - 1e-9, f"t={t:.2f}: caviglia sotto terra")
+                self.assertLessEqual(max(ax, toe_x), stop_board + 1e-9, f"t={t:.2f}: piede oltre il fermapiede")
+                self.assertGreaterEqual(ax, RING_CX - RING_R - 0.1, f"t={t:.2f}: piede fuori dal fondo del cerchio")
+        for d in (4.5, 7.9):
+            for k in range(0, 101):
+                t = F.LJ_RUN_END + (F.LJ_JUMP_END - F.LJ_RUN_END) * k / 100
+                pose, _, _ = lj_pose(d, t, F.LJ_RUN_END, F.LJ_JUMP_END)
+                j = figure_joints(pose.hip, pose.yaw, pose.lean, pose.legs, pose.arms)
+                self.assertGreaterEqual(min(s["ankle"][1] for s in j["sides"]), 0.04 - 1e-6)
+
+    def test_3d_field_camera_does_not_jump_between_rival_attempts(self) -> None:
+        """Le prove degli altri atleti durano 0,22 s: l'inquadratura deve restare identica (niente stacchi)."""
+        from views.field_3d import FieldScene3D
+
+        for name, marks in (("Salto in Lungo", [4.1, 6.3, 8.4]), ("Getto del Peso", [7.5, 13.0, 19.8])):
+            w = FieldScene3D()
+            w.resize(900, 380)
+            w.configure(name, marks)
+            cams = []
+            w.clear()
+            cams.append(w._camera(w._frame(), 900, 380))  # a gara finita: stessa inquadratura
+            for d, foul in ((marks[0], False), (marks[1], True), (marks[2], False), (marks[0] * 0.97, True)):
+                w.begin("Altro Atleta", "Altri", False, d, foul, False, 2, 4)
+                w.set_time(0.1, 0.22)
+                cams.append(w._camera(w._frame(), 900, 380))
+            for cam in cams[1:]:
+                self.assertEqual(cam.pos, cams[0].pos, name)
+                self.assertEqual(cam.fwd, cams[0].fwd, name)
+            # le misure più corta e più lunga stanno nell'inquadratura (di fronte alla camera e dentro lo schermo)
+            from views.field_3d import LJ_Z
+
+            for m in (min(marks), max(marks)):
+                pt = (m, 0.05, LJ_Z if w.kind == "lj" else 0.0)
+                c = cams[0].to_cam(pt)
+                self.assertGreater(c[2], 1.0, f"{name}: {m} m dietro la camera")
+                x, y = cams[0].proj(c)
+                self.assertTrue(0 <= x <= 900 and 0 <= y <= 380, f"{name}: {m} m fuori inquadratura ({x:.0f},{y:.0f})")
+            w.close()
+
+    def test_3d_figure_orientation(self) -> None:
+        from views.race_3d import figure_joints
+
+        legs = ((1.0, 1.0), (0.0, 0.0))
+        arms = ((0.0, 0.0), (0.0, 0.0))
+        j0 = figure_joints((0.0, 1.0, 0.0), 0.0, 0.0, legs, arms)["sides"][0]
+        self.assertGreater(j0["knee"][0] - j0["hip"][0], 0.3)  # yaw 0: la gamba avanza verso +x
+        self.assertAlmostEqual(j0["knee"][2], j0["hip"][2], places=6)
+        j1 = figure_joints((0.0, 1.0, 0.0), math.pi / 2, 0.0, legs, arms)["sides"][0]
+        self.assertAlmostEqual(j1["knee"][0], j1["hip"][0], places=6)  # yaw 90°: avanza verso +z
+        self.assertGreater(j1["knee"][2] - j1["hip"][2], 0.3)
+
+    def test_field_3d_paints_in_every_state(self) -> None:
+        """Nessuna eccezione di disegno: senza prova, prove di altri, nullo, ogni fase di salto e lancio."""
+        from PyQt6.QtGui import QImage
+
+        from views.field_3d import FieldScene3D
+        from views.race_viewer import FieldSceneWidget
+
+        painted = 0
+        for cls in (FieldScene3D, FieldSceneWidget):
+            for kind, name, marks in (("lj", "Salto in Lungo", [5.2, 6.1, 7.4]), ("sp", "Getto del Peso", [9.0, 12.4, 15.8])):
+                w = cls()
+                w.resize(900, 320)
+                w.configure(name, marks)
+                states = [None]  # nessuna prova in corso
+                for animate, foul in ((False, False), (False, True), (True, False), (True, True)):
+                    states.append((animate, foul))
+                for st in states:
+                    if st is None:
+                        w.clear()
+                        w.grab()
+                        painted += 1
+                        continue
+                    animate, foul = st
+                    w.begin("Mario Rossi", "Club", True, marks[-1], foul, animate, 1, 4)
+                    for t in (0.0, 0.5, 1.0, 1.1, 1.2, 1.5, 1.85, 2.0, 2.2, 2.9):  # attorno ai cambi di fase
+                        w.set_time(t, 2.9)
+                        image = QImage(900, 320, QImage.Format.Format_ARGB32)
+                        w.render(image)
+                        painted += 1
+                w.close()
+        self.assertGreater(painted, 80)
+
+    def test_field_view_toggle_keeps_the_attempt(self) -> None:
+        from views.field_3d import FieldScene3D
+        from views.race_viewer import FieldEventWidget, RaceViewerDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv7.db"), rng=random.Random(15))
+            ctrl.state.week = 8
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            jump = next(r for r in summary.event_results if r.event_name == "Salto in Lungo")
+            widget = FieldEventWidget()
+            self.assertIsInstance(widget.scene, FieldScene3D)  # 3D di default
+            widget.set_race(jump.event_name, jump, "seed")
+            for _ in range(60):
+                widget.advance(0.05)
+            cur, t = widget.scene.cur, widget.scene.t
+            widget.set_view(False)
+            self.assertIs(widget.scene, widget.scene2d)
+            self.assertIs(widget.scene_stack.currentWidget(), widget.scene2d)
+            self.assertIs(widget.scene.cur, cur)
+            self.assertEqual(widget.scene.t, t)
+            widget.advance(0.05)  # l'avanzamento continua sulla scena attiva
+            widget.set_view(True)
+            self.assertIs(widget.scene, widget.scene3d)
+            self.assertGreaterEqual(widget.scene.t, t)
+            widget.skip_to_end()
+            self.assertNotEqual(widget.board.item(0, 5).text(), "")  # tabellone completo
+            widget.close()
+
+            # lo stesso interruttore del dialog cambia anche i concorsi
+            dlg = RaceViewerDialog(summary)
+            dlg.field.set_race(jump.event_name, jump, "seed")
+            dlg._toggle_view()
+            self.assertIs(dlg.field.scene, dlg.field.scene2d)
+            dlg._toggle_view()
+            self.assertIs(dlg.field.scene, dlg.field.scene3d)
             dlg.close()
 
     def test_dialog_plays_every_event(self) -> None:
