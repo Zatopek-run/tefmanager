@@ -1,11 +1,13 @@
-"""Vista 3D realistica delle corse in pista con regia multi-camera stile ripresa TV.
+"""Vista 3D realistica delle corse in pista su stadio ovale completo da 400 m.
 
-Motore 3D software disegnato con QPainter:
-- Regia televisiva a 4 camere (Block-Cam rasoterra ai blocchi, Telephoto Broadcast Cam in corsa,
-  Finish Line-Scan Cam sul traguardo, Follow-Cam sul vincitore).
-- Texture procedurali pre-calcolate per pista tartan/Mondo granulare, erba e folla sfocata.
-- Atleti con ombreggiatura cilindrica 3D, muscolatura rastremata, pettorale numerato,
-  ombra morbida direzionale proiettata a terra e dettagli a bordo pista (Rail-Cam, giudici, coni).
+Motore 3D software con QPainter:
+- Circuito ovale reale da 400 m (rettilineo principale + 2 curve + rettilineo opposto):
+  - 100 m sul rettilineo principale con partenza dalla lunetta e blocchi 3D.
+  - 400 m e staffette con partenza sfalsata in curva (e rientro alla corda nella 4x400 m).
+  - 1500 m (3 giri e 3/4) con partenza a cascata in controrettilineo, gruppo compatto alla corda
+    con sorpassi in seconda/terza corsia, campana dell'ultimo giro e volata finale.
+- Regia multi-camera TV, texture procedurali, ombreggiatura cilindrica 3D degli atleti,
+  carrello Rail-Cam, giudici e HUD televisivo compatto con radar dell'ovale.
 """
 
 from __future__ import annotations
@@ -38,13 +40,14 @@ Vec = Tuple[float, float, float]
 
 NEAR = 0.35  # piano di taglio vicino (m)
 LANE_W = 1.22  # larghezza standard di una corsia (m)
-R_IN = 34.0  # raggio interno della curva dello stadio (m)
+STRAIGHT = 84.39  # lunghezza dei rettilinei dell'ovale standard da 400 m
+R_IN = 36.5  # raggio interno della curva (m)
 CAM_BACK = 10.2
 CAM_SIDE = 10.8
 CAM_HEIGHT = 4.35
 FOV_DEG = 29.0
 
-# Sponsor di fantasia per i cartelloni a bordo pista
+# Sponsor di fantasia per i cartelloni LED a bordo pista
 SPONSORS = [
     ("TEF SPORT", "#b91c1c", "#f8fafc"),
     ("AURORA", "#1d4ed8", "#f8fafc"),
@@ -55,7 +58,7 @@ SPONSORS = [
 ]
 
 
-# --------------------------------------------------------------------------- matematica 3D
+# --------------------------------------------------------------------------- matematica 3D e geometria ovale
 def _sub(a: Vec, b: Vec) -> Vec:
     return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
@@ -81,8 +84,34 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
+def oval_pose(dist_from_finish: float, lat_z: float, ref_lat: Optional[float] = None) -> Tuple[float, float, float, float]:
+    """Mappa (metri mancanti al traguardo, distanza dal cordolo interno) su (x, z, yaw, curvatura).
+
+    `dist_from_finish = 0` coincide col traguardo (`x = STRAIGHT`, `z = lat_z`, `yaw = 0`).
+    Se `ref_lat` è impostato (es. 1500m a cascata), usa quella corsia come riferimento d'arco
+    così il gruppo resta compatto anziché sfalsato per giro.
+    """
+    r_arc = R_IN + (lat_z if ref_lat is None else ref_lat)
+    r = R_IN + lat_z
+    arc = math.pi * r_arc
+    lap = 2.0 * STRAIGHT + 2.0 * arc
+    s_fwd = (-dist_from_finish) % lap
+    if s_fwd < arc:
+        ang = math.pi * 0.5 - s_fwd / r_arc
+        return STRAIGHT + r * math.cos(ang), -R_IN + r * math.sin(ang), math.atan2(-math.cos(ang), math.sin(ang)), 1.0 / r
+    if s_fwd < arc + STRAIGHT:
+        t = s_fwd - arc
+        return STRAIGHT - t, -R_IN - r, math.pi, 0.0
+    if s_fwd < 2.0 * arc + STRAIGHT:
+        sc = s_fwd - arc - STRAIGHT
+        ang = math.pi * 1.5 - sc / r_arc
+        return r * math.cos(ang), -R_IN + r * math.sin(ang), math.atan2(-math.cos(ang), math.sin(ang)), 1.0 / r
+    t = s_fwd - 2.0 * arc - STRAIGHT
+    return t, lat_z, 0.0, 0.0
+
+
 class Camera:
-    """Camera a foro stenopeico. Mondo: x lungo la pista, y in alto, z attraverso le corsie."""
+    """Camera a foro stenopeico. Mondo: x lungo il rettilineo, y in alto, z attraverso le corsie."""
 
     __slots__ = ("pos", "right", "up", "fwd", "f", "cx", "cy")
 
@@ -103,8 +132,7 @@ class Camera:
 
 
 def clip_near(pts: Sequence[Vec]) -> List[Vec]:
-    """Taglia un poligono (in coordinate camera) contro il piano vicino: evita le inversioni
-    di prospettiva quando un vertice sta dietro o troppo vicino alla camera."""
+    """Taglia un poligono (in coordinate camera) contro il piano vicino."""
     out: List[Vec] = []
     n = len(pts)
     for i in range(n):
@@ -130,31 +158,27 @@ def clip_segment_near(a: Vec, b: Vec) -> Optional[Tuple[Vec, Vec]]:
 
 # --------------------------------------------------------------------------- texture procedurali in cache
 def make_track_tile(base_hex: str, rain: bool = False) -> QPixmap:
-    """Genera una mattonella granulare realistica della pista (tartan/Mondo) con micro-usura."""
+    """Mattonella granulare realistica della pista (tartan/Mondo) con micro-usura."""
     w, h = 256, 128
     img = QImage(w, h, QImage.Format.Format_RGB32)
     base = QColor(base_hex)
     img.fill(base)
     q = QPainter(img)
     rng = random.Random(101 if not rain else 202)
-    # leggere striature longitudinali della gomma
     for y in range(0, h, 3):
         delta = rng.randint(-7, 7)
         col = base.lighter(100 + delta) if delta > 0 else base.darker(100 - delta)
         q.fillRect(0, y, w, 2, col)
-    # granuli EPDM del manto sintetico
     light = base.lighter(122)
     dark = base.darker(122)
     light.setAlpha(95)
     dark.setAlpha(105)
-    for _ in range(1800):
-        gx, gy = rng.randrange(w), rng.randrange(h)
-        q.fillRect(gx, gy, 2, 1, light if rng.random() < 0.45 else dark)
+    for _ in range(1600):
+        q.fillRect(rng.randrange(w), rng.randrange(h), 2, 1, light if rng.random() < 0.45 else dark)
     if rain:
-        # riflessi lucidi della pista bagnata
         sheen = QLinearGradient(0, 0, w, h)
-        sheen.setColorAt(0.0, QColor(200, 225, 255, 22))
-        sheen.setColorAt(0.5, QColor(220, 238, 255, 45))
+        sheen.setColorAt(0.0, QColor(200, 225, 255, 20))
+        sheen.setColorAt(0.5, QColor(220, 238, 255, 42))
         sheen.setColorAt(1.0, QColor(180, 210, 240, 18))
         q.fillRect(0, 0, w, h, sheen)
     q.end()
@@ -171,16 +195,16 @@ def make_grass_tile(base_hex: str) -> QPixmap:
     rng = random.Random(303)
     light = base.lighter(115)
     dark = base.darker(118)
-    light.setAlpha(90)
-    dark.setAlpha(90)
-    for _ in range(1400):
+    light.setAlpha(85)
+    dark.setAlpha(85)
+    for _ in range(1200):
         q.fillRect(rng.randrange(w), rng.randrange(h), 2, 2, light if rng.random() < 0.5 else dark)
     q.end()
     return QPixmap.fromImage(img)
 
 
 def make_soft_shadow_pm() -> QPixmap:
-    """Ombra ellittica morbida a caduta radiale da proiettare sotto i piedi degli atleti."""
+    """Ombra ellittica morbida a caduta radiale sotto gli atleti."""
     pm = QPixmap(96, 48)
     pm.fill(Qt.GlobalColor.transparent)
     q = QPainter(pm)
@@ -198,7 +222,7 @@ def make_soft_shadow_pm() -> QPixmap:
 def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85, dark: bool = False) -> QPixmap:
     """Gradinata con sfocatura ottica naturale, ombreggiature di fila e flash fotografici."""
     pm = QPixmap(width, height)
-    base = QColor("#2a3444" if dark else "#3b4759")
+    base = QColor("#1e293b" if dark else "#374355")
     pm.fill(base)
     q = QPainter(pm)
     rng = random.Random(19 if not dark else 43)
@@ -208,12 +232,12 @@ def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85,
     for r in range(rows):
         y0 = int(r * row_h)
         rh = int(math.ceil(row_h))
-        depth_dim = 100 + int((rows - r) * 2.5)
-        step_col = QColor("#323d4e" if r % 2 == 0 else "#3b485c").darker(depth_dim)
+        depth_dim = 100 + int((rows - r) * 3.0)
+        step_col = QColor("#2a3444" if r % 2 == 0 else "#334054").darker(depth_dim)
         if dark:
-            step_col = step_col.darker(120)
+            step_col = step_col.darker(130)
         q.fillRect(0, y0, width, rh, step_col)
-        q.fillRect(0, y0 + rh - 2, width, 2, QColor(8, 13, 24, 150))
+        q.fillRect(0, y0 + rh - 2, width, 2, QColor(8, 13, 24, 155))
         x = rng.randint(1, 5)
         while x < width - 4:
             if rng.random() > density:
@@ -221,41 +245,37 @@ def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85,
                 x += rng.randint(8, 12)
                 continue
             hue = rng.randint(0, 359)
-            sat = rng.randint(25, 135)
-            val = rng.randint(80, 195) if not dark else rng.randint(55, 145)
+            sat = rng.randint(25, 130)
+            val = rng.randint(75, 190) if not dark else rng.randint(45, 135)
             shirt = QColor.fromHsv(hue, sat, val)
             skin = QColor(rng.choice(skins))
             if dark:
-                skin = skin.darker(120)
+                skin = skin.darker(125)
             q.fillRect(x - 1, y0 + int(rh * 0.42), 8, int(rh * 0.56), shirt)
             q.fillRect(x + 1, y0 + int(rh * 0.14), 4, int(rh * 0.30), skin)
-            hair = QColor("#111827" if rng.random() < 0.72 else "#78350f")
-            q.fillRect(x + 1, y0 + int(rh * 0.06), 4, 2, hair)
+            q.fillRect(x + 1, y0 + int(rh * 0.06), 4, 2, QColor("#111827" if rng.random() < 0.72 else "#78350f"))
             x += rng.randint(6, 9)
-    # scalette verticali con leggera sfocatura atmosferica verso l'alto
     for aisle in (width // 4, width // 2, (3 * width) // 4):
-        q.fillRect(aisle - 3, 0, 6, height, QColor(71, 85, 105, 180))
-    # qualche punto luminoso dei flash fotografici in tribuna
-    for _ in range(10):
+        q.fillRect(aisle - 3, 0, 6, height, QColor(51, 65, 85, 180))
+    for _ in range(12):
         fx, fy = rng.randint(8, width - 8), rng.randint(8, height - 16)
         glow = QRadialGradient(fx, fy, 7)
-        glow.setColorAt(0.0, QColor(255, 255, 240, 210))
+        glow.setColorAt(0.0, QColor(255, 255, 240, 220))
         glow.setColorAt(1.0, QColor(255, 255, 240, 0))
         q.setBrush(QBrush(glow))
         q.setPen(Qt.PenStyle.NoPen)
         q.drawEllipse(QPointF(fx, fy), 7, 7)
-    # leggero velo atmosferico dall'alto per effetto teleobiettivo
     haze = QLinearGradient(0, 0, 0, height)
-    haze.setColorAt(0.0, QColor(148, 163, 184, 52 if not dark else 30))
-    haze.setColorAt(1.0, QColor(15, 23, 42, 24))
+    haze.setColorAt(0.0, QColor(148, 163, 184, 48 if not dark else 18))
+    haze.setColorAt(1.0, QColor(15, 23, 42, 32))
     q.fillRect(0, 0, width, height, haze)
     q.end()
     return pm
 
 
-# --------------------------------------------------------------------------- vista 3D broadcast
+# --------------------------------------------------------------------------- vista 3D
 class Track3DWidget(TrackRaceWidget):
-    """Vista 3D con regia TV multi-camera, texture reali e atleti ombreggiati."""
+    """Vista 3D su stadio ovale da 400 m con regia multi-camera e gruppo realistico."""
 
     _board_cache: Dict[int, QPixmap] = {}
     _crowd_strip_cache: Dict[Tuple[bool, int], QPixmap] = {}
@@ -272,12 +292,23 @@ class Track3DWidget(TrackRaceWidget):
         self.setMinimumHeight(420)
         self._cam_label = "BROADCAST"
 
-    # ---- geometria e stile stadio
+    # ---- geometria dell'ovale e stile stadio
     def _track_width(self) -> float:
         return max(1, len(self._runners)) * LANE_W
 
     def _lane_z(self, i: int) -> float:
         return (i + 0.5) * LANE_W
+
+    def _is_oval_race(self) -> bool:
+        return self._distance > 100
+
+    def _is_pack_race(self) -> bool:
+        """Gare con rientro alla corda e gruppo compatto (1500m, o 4x400m dopo la prima curva)."""
+        return self._distance >= 1500
+
+    def _is_evening_final(self) -> bool:
+        """Meeting nazionali/internazionali hanno atmosfera serale sotto i riflettori."""
+        return self._tier in (CompetitionTier.NAZIONALE, CompetitionTier.INTERNAZIONALE)
 
     def _is_blue_track(self) -> bool:
         surf = (self._surface or "").lower()
@@ -347,47 +378,115 @@ class Track3DWidget(TrackRaceWidget):
             self._cone_cache[num] = pm
         return pm
 
+    # ---- posizionamento sull'ovale (compreso il gruppo a cascata/corda nei 1500m)
+    def _runner_world_poses(self, meters: Sequence[float]) -> List[Tuple[float, float, float, float]]:
+        """Calcola (x, z, yaw, curvatura) per ogni atleta in base alla disciplina."""
+        d = self._distance
+        n = len(meters)
+        if not self._is_oval_race():
+            # 100 m: rettilineo finale che arriva al traguardo x = STRAIGHT
+            poses: List[Tuple[float, float, float, float]] = []
+            for i, m in enumerate(meters):
+                x = STRAIGHT - (100.0 - m)
+                poses.append((x, self._lane_z(i), 0.0, 0.0))
+            return poses
+
+        # gare sull'ovale da 400 m (400m, 4x100m, 1500m, 4x400m)
+        lat_zs = [self._lane_z(i) for i in range(n)]
+        if self._event == "1500m":
+            # partenza a cascata in corsia, poi rientro morbido verso la corda (corsia 1) con sorpassi in corsia 2/3
+            order = sorted(range(n), key=lambda i: -meters[i])
+            placed: List[Tuple[float, float]] = []  # (metri, lat_z)
+            for idx in order:
+                m = meters[idx]
+                merge = _clamp(m / 65.0, 0.0, 1.0)
+                target_z = _lerp(self._lane_z(idx), 0.52, merge)
+                # evita sovrapposizioni nel gruppo allargando in 2ª/3ª corsia
+                while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
+                    target_z += 0.58
+                lat_zs[idx] = min(self._track_width() - 0.4, target_z)
+                placed.append((m, lat_zs[idx]))
+        elif self._event == "4x400m":
+            # prima frazione (fino a 500 m) in corsia, poi rientro graduale alla corda
+            order = sorted(range(n), key=lambda i: -meters[i])
+            placed = []
+            for idx in order:
+                m = meters[idx]
+                if m <= 400.0:
+                    lat_zs[idx] = self._lane_z(idx)
+                else:
+                    merge = _clamp((m - 400.0) / 80.0, 0.0, 1.0)
+                    target_z = _lerp(self._lane_z(idx), 0.55, merge)
+                    while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
+                        target_z += 0.58
+                    lat_zs[idx] = min(self._track_width() - 0.4, target_z)
+                placed.append((m, lat_zs[idx]))
+
+        poses = []
+        ref_lat = 0.52 if self._event == "1500m" else None
+        for i, m in enumerate(meters):
+            rl = 0.55 if (self._event == "4x400m" and m > 400.0) else ref_lat
+            poses.append(oval_pose(d - m, lat_zs[i], ref_lat=rl))
+        return poses
+
     # ---- regia multi-camera TV
-    def _make_camera(self, meters: Sequence[float], w: int, h: int) -> Camera:
+    def _make_camera(self, meters: Sequence[float], poses: Sequence[Tuple[float, float, float, float]], w: int, h: int) -> Camera:
         d = self._distance
         tw = self._track_width()
         leader = max(meters) if meters else 0.0
         leader_idx = max(range(len(meters)), key=lambda i: meters[i]) if meters else 0
-        mine = [m for m, r in zip(meters, self._runners) if r["s"].is_player]
-        if mine and leader - mine[0] < 12.0:
-            focus = 0.68 * leader + 0.32 * mine[0]
-        else:
-            focus = leader
 
-        # Camera 1: Block-Cam rasoterra in partenza (t < GUN_AT + 0.45)
-        if self._t < GUN_AT + 0.45 and leader < 6.0:
-            self._cam_label = "BLOCK-CAM"
-            pos = (3.45, 0.80, tw + 2.75)
-            target = (-0.55, 0.46, tw * 0.46)
-            return Camera(pos, target, 31.0, w, h)
+        if not self._is_oval_race():
+            mine = [m for m, r in zip(meters, self._runners) if r["s"].is_player]
+            focus = (0.68 * leader + 0.32 * mine[0]) if (mine and leader - mine[0] < 12.0) else leader
+            start_x = STRAIGHT - 100.0
+            if self._t < GUN_AT + 0.45 and leader < 6.0:
+                self._cam_label = "BLOCK-CAM"
+                return Camera((start_x + 3.45, 0.80, tw + 2.75), (start_x - 0.55, 0.46, tw * 0.46), 31.0, w, h)
+            if self.race_time > self._winner_time + 1.0 * self._scale:
+                self._cam_label = "WINNER-CAM"
+                wx, wz, _, _ = poses[leader_idx]
+                return Camera((wx + 6.2, 1.45, wz + 6.2), (wx - 1.2, 1.0, wz), 30.0, w, h)
+            if leader >= d - 13.0:
+                self._cam_label = "FINISH-CAM"
+                return Camera((STRAIGHT + 4.4, 4.4, tw + 16.0), (STRAIGHT - 1.2, 0.85, tw * 0.48), 28.0, w, h)
+            self._cam_label = "BROADCAST"
+            fx = STRAIGHT - (100.0 - _clamp(focus, 4.0, d - 4.0))
+            return Camera((fx + CAM_BACK, CAM_HEIGHT, tw + CAM_SIDE), (fx - 3.0, 0.90, tw * 0.46), FOV_DEG, w, h)
 
-        # Camera 4: Follow-Cam sul vincitore dopo il traguardo
+        # ---- Regia per gare su pista ovale (400m, 1500m, 4x100m, 4x400m)
+        lx, lz, lyaw, _ = poses[leader_idx]
+        fwd_x, fwd_z = math.cos(lyaw), math.sin(lyaw)
+        center_x, center_z = STRAIGHT * 0.5, -R_IN
+        in_x, in_z = _norm((center_x - lx, 0.0, center_z - lz))[0], _norm((center_x - lx, 0.0, center_z - lz))[2]
+
+        # Post-arrivo: Winner-Cam ravvicinata
         if self.race_time > self._winner_time + 1.0 * self._scale:
             self._cam_label = "WINNER-CAM"
-            wx = meters[leader_idx]
-            wz = self._lane_z(leader_idx)
-            pos = (wx + 6.2, 1.45, wz + 6.2)
-            target = (wx - 1.2, 1.0, wz)
+            pos = (lx + 5.8 * fwd_x - 5.2 * in_x, 1.5, lz + 5.8 * fwd_z - 5.2 * in_z)
+            target = (lx - 1.0 * fwd_x, 1.0, lz - 1.0 * fwd_z)
             return Camera(pos, target, 30.0, w, h)
 
-        # Camera 3: Finish Line-Scan Cam negli ultimi 13 metri
-        if leader >= d - 13.0:
+        # Volata sul rettilineo finale (ultimi 55m): Finish-Cam dal traguardo
+        if leader >= d - 55.0:
             self._cam_label = "FINISH-CAM"
-            pos = (d + 4.4, 4.4, tw + 16.0)
-            target = (d - 1.2, 0.85, tw * 0.48)
-            return Camera(pos, target, 28.0, w, h)
+            pos = (STRAIGHT + 9.5, 4.6, tw + 15.5)
+            target = (_lerp(lx, STRAIGHT - 1.5, 0.55), 1.0, tw * 0.35)
+            return Camera(pos, target, 29.0, w, h)
 
-        # Camera 2: Main Elevated Telephoto Broadcast Cam
-        self._cam_label = "BROADCAST"
-        focus = _clamp(focus, 4.0, d - 4.0)
-        pos = (focus + CAM_BACK, CAM_HEIGHT, tw + CAM_SIDE)
-        target = (focus - 3.0, 0.90, tw * 0.46)
-        return Camera(pos, target, FOV_DEG, w, h)
+        # Partenza: inquadratura ampia dal lato interno sul gruppo alla linea di partenza
+        if self._t < GUN_AT + 0.8:
+            self._cam_label = "START-CAM"
+            pos = (lx + 11.0 * fwd_x + 16.0 * in_x, 5.2, lz + 11.0 * fwd_z + 16.0 * in_z)
+            target = (lx - 2.0 * fwd_x, 0.9, lz - 2.0 * fwd_z)
+            return Camera(pos, target, 30.0, w, h)
+
+        # Ripresa dinamica dall'interno pista verso il gruppo e le tribune curve sullo sfondo (stile 1500m TV!)
+        self._cam_label = "OVAL-CAM"
+        # in rettilineo/curva la camera sta sul prato interno guardando verso il gruppo e le tribune esterne
+        pos = (lx + 8.5 * fwd_x + 19.5 * in_x, 5.4, lz + 8.5 * fwd_z + 19.5 * in_z)
+        target = (lx - 1.5 * fwd_x, 0.95, lz - 1.5 * fwd_z)
+        return Camera(pos, target, 30.0, w, h)
 
     # ---- primitive 3D
     def _poly(self, p: QPainter, cam: Camera, pts: Sequence[Vec], color) -> None:
@@ -398,7 +497,6 @@ class Track3DWidget(TrackRaceWidget):
         p.drawPolygon(QPolygonF([QPointF(*cam.proj(c)) for c in cs]))
 
     def _textured_quad(self, p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap) -> None:
-        """Mappa una pixmap in prospettiva esatta su un quadrilatero 3D (alto-sx, alto-dx, basso-dx, basso-sx)."""
         cs = [cam.to_cam(q) for q in corners]
         if any(c[2] < NEAR * 2 for c in cs):
             return
@@ -413,9 +511,10 @@ class Track3DWidget(TrackRaceWidget):
         p.restore()
 
     def _textured_ground_quad(self, p: QPainter, cam: Camera, corners: Sequence[Vec], pm: QPixmap, fallback_col: str) -> None:
-        """Usa la texture prospettica se il quad è davanti al piano vicino, altrimenti fallback poligonale."""
         cs = [cam.to_cam(q) for q in corners]
-        if any(c[2] < NEAR * 2.2 for c in cs):
+        if all(c[2] < NEAR for c in cs):
+            return
+        if any(c[2] < NEAR * 2.2 for c in cs) or max(c[2] for c in cs) > 85.0:
             self._poly(p, cam, corners, fallback_col)
             return
         dst = QPolygonF([QPointF(*cam.proj(c)) for c in cs])
@@ -453,7 +552,6 @@ class Track3DWidget(TrackRaceWidget):
         color: QColor,
         lit_side: float = 1.0,
     ) -> None:
-        """Segmento anatomico 3D con ombreggiatura cilindrica continua (luce chiave -> ombra -> riflesso)."""
         seg = clip_segment_near(cam.to_cam(a), cam.to_cam(b))
         if seg is None:
             return
@@ -479,7 +577,7 @@ class Track3DWidget(TrackRaceWidget):
         )
         mx, my = (ax + bx) * 0.5, (ay + by) * 0.5
         mr = max(ra, rb)
-        if mr >= 2.5:
+        if mr >= 2.4:
             grad = QLinearGradient(
                 mx - lit_side * nx * mr, my - lit_side * ny * mr,
                 mx + lit_side * nx * mr, my + lit_side * ny * mr,
@@ -575,15 +673,16 @@ class Track3DWidget(TrackRaceWidget):
             self._scoreboard_cache[clock_txt] = pm
         return pm
 
-    # ---- scenografia stadio
+    # ---- scenografia completa dell'ovale a 360°
     def _draw_sky(self, p: QPainter, w: int, h: int) -> None:
         rain = self._weather == WeatherCondition.PIOGGIA
         hot = self._weather == WeatherCondition.CALDO
-        indoor = self._season_phase == SeasonPhase.INDOOR
+        evening = self._is_evening_final() or self._season_phase == SeasonPhase.INDOOR
 
         sky = QLinearGradient(0, 0, 0, h * 0.56)
-        if indoor:
-            sky.setColorAt(0.0, QColor("#0b1120"))
+        if evening:
+            sky.setColorAt(0.0, QColor("#050914"))
+            sky.setColorAt(0.65, QColor("#0f172a"))
             sky.setColorAt(1.0, QColor("#1e293b"))
         elif rain:
             sky.setColorAt(0.0, QColor("#3f4c5e"))
@@ -599,261 +698,260 @@ class Track3DWidget(TrackRaceWidget):
             sky.setColorAt(1.0, QColor("#dbeafe"))
         p.fillRect(0, 0, w, h, QBrush(sky))
         p.setPen(Qt.PenStyle.NoPen)
+        p.fillRect(0, int(h * 0.36), w, int(h * 0.64), QColor("#14281b" if evening else "#24522e"))
 
-        p.fillRect(0, int(h * 0.38), w, int(h * 0.62), QColor("#24522e" if not rain else "#1b3a22"))
-
-        if not indoor and not rain:
+        if not evening and not rain:
             sun = QRadialGradient(w * 0.14, h * 0.12, w * 0.22)
             sun.setColorAt(0.0, QColor(255, 250, 220, 140))
             sun.setColorAt(1.0, QColor(255, 250, 220, 0))
             p.setBrush(QBrush(sun))
             p.drawEllipse(QPointF(w * 0.14, h * 0.12), w * 0.22, w * 0.22)
 
-    def _draw_stadium_bowl(self, p: QPainter, cam: Camera) -> None:
-        d = self._distance
+    def _draw_stand_section(
+        self, p: QPainter, cam: Camera, a: Vec, b: Vec, out_a: Vec, out_b: Vec,
+        crowd_pm: QPixmap, big: bool, evening: bool, rain: bool,
+    ) -> None:
+        """Disegna un blocco di tribuna (muretto + 1°/2° anello + tettoia) con culling rapido."""
+        ca = cam.to_cam(a)
+        cb = cam.to_cam(b)
+        if ca[2] < -12.0 and cb[2] < -12.0:
+            return
+        # basso muretto
+        self._poly(p, cam, [(a[0], 0.0, a[2]), (b[0], 0.0, b[2]), (b[0], 1.3, b[2]), (a[0], 1.3, a[2])], "#475569")
+        # primo anello
+        p0 = (a[0], 1.3, a[2])
+        p1 = (b[0], 1.3, b[2])
+        d_scale = 0.45 if big else 1.0
+        m_a = (_lerp(a[0], out_a[0], d_scale), 8.2, _lerp(a[2], out_a[2], d_scale))
+        m_b = (_lerp(b[0], out_b[0], d_scale), 8.2, _lerp(b[2], out_b[2], d_scale))
+        self._poly(p, cam, [p0, p1, m_b, m_a], "#334155" if evening else "#475569")
+        self._textured_quad(p, cam, [m_a, m_b, p1, p0], crowd_pm)
+        if big:
+            n_a = (_lerp(a[0], out_a[0], 0.50), 9.5, _lerp(a[2], out_a[2], 0.50))
+            n_b = (_lerp(b[0], out_b[0], 0.50), 9.5, _lerp(b[2], out_b[2], 0.50))
+            self._poly(p, cam, [m_a, m_b, n_b, n_a], "#1e293b")
+            t_a = (out_a[0], 18.5, out_a[2])
+            t_b = (out_b[0], 18.5, out_b[2])
+            self._poly(p, cam, [n_a, n_b, t_b, t_a], "#293548" if evening else "#3b495e")
+            self._textured_quad(p, cam, [t_a, t_b, n_b, n_a], crowd_pm)
+            # fascia superiore e tettoia
+            r_back_a = (out_a[0], 21.0, out_a[2])
+            r_back_b = (out_b[0], 21.0, out_b[2])
+            r_front_a = (_lerp(a[0], out_a[0], 0.25), 19.6, _lerp(a[2], out_a[2], 0.25))
+            r_front_b = (_lerp(b[0], out_b[0], 0.25), 19.6, _lerp(b[2], out_b[2], 0.25))
+            self._poly(p, cam, [t_a, t_b, r_back_b, r_back_a], "#0f172a")
+            self._poly(p, cam, [r_back_a, r_back_b, r_front_b, r_front_a], "#94a3b8" if not rain else "#475569")
+            # fascia luci LED sotto la tettoia nelle serate importanti
+            if evening:
+                self._line3(p, cam, r_front_a, r_front_b, 0.20, QColor("#fef08a"))
+
+    def _draw_oval_stadium(self, p: QPainter, cam: Camera) -> None:
         tw = self._track_width()
-        cam_x = cam.pos[0]
-        xa = max(-16.0, cam_x - 175.0)
-        xb = min(d + 24.0, cam_x + 35.0)
         rain = self._weather == WeatherCondition.PIOGGIA
-        big_stadium = self._tier in (CompetitionTier.NAZIONALE, CompetitionTier.INTERNAZIONALE)
-        crowd_far = self._crowd_pm(dark=rain)
+        evening = self._is_evening_final()
+        big = self._is_evening_final()
+        crowd_pm = self._crowd_pm(dark=(rain or evening))
+        c1, c2, c3 = self._track_colors()
 
-        # ---- tribuna opposta e curve
-        z_back = -2.0 * R_IN - tw - 4.0
-        seg = 24.0
-        s_xa = max(-24.0, cam_x - 185.0)
-        s_xb = min(d + 28.0, cam_x + 48.0)
-        x = math.floor(s_xa / seg) * seg
-        while x < s_xb:
-            x0, x1 = x - 0.15, x + seg + 0.15
-            self._poly(p, cam, [(x0, 0.0, z_back), (x1, 0.0, z_back), (x1, 1.4, z_back), (x0, 1.4, z_back)], "#64748b")
-            q1 = [(x0, 1.4, z_back), (x1, 1.4, z_back), (x1, 8.2, z_back - 12.0), (x0, 8.2, z_back - 12.0)]
-            self._poly(p, cam, q1, "#475569")
-            self._textured_quad(p, cam, [q1[3], q1[2], q1[1], q1[0]], crowd_far)
-            if big_stadium:
-                self._poly(
-                    p, cam,
-                    [(x0, 8.2, z_back - 12.0), (x1, 8.2, z_back - 12.0), (x1, 9.6, z_back - 13.5), (x0, 9.6, z_back - 13.5)],
-                    "#334155",
-                )
-                q2 = [(x0, 9.6, z_back - 13.5), (x1, 9.6, z_back - 13.5), (x1, 18.5, z_back - 26.0), (x0, 18.5, z_back - 26.0)]
-                self._poly(p, cam, q2, "#3b495e")
-                self._textured_quad(p, cam, [q2[3], q2[2], q2[1], q2[0]], crowd_far)
-                self._poly(
-                    p, cam,
-                    [(x0, 18.5, z_back - 26.0), (x1, 18.5, z_back - 26.0), (x1, 21.2, z_back - 27.5), (x0, 21.2, z_back - 27.5)],
-                    "#1e293b",
-                )
-                self._poly(
-                    p, cam,
-                    [(x0, 21.2, z_back - 27.5), (x1, 21.2, z_back - 27.5), (x1, 19.6, z_back - 7.0), (x0, 19.6, z_back - 7.0)],
-                    "#cbd5e1" if not rain else "#64748b",
-                )
-                self._poly(
-                    p, cam,
-                    [(x0, 19.6, z_back - 7.0), (x1, 19.6, z_back - 7.0), (x1, 18.9, z_back - 7.0), (x0, 18.9, z_back - 7.0)],
-                    "#0f172a",
-                )
-            else:
-                self._poly(
-                    p, cam,
-                    [(x0, 8.2, z_back - 12.0), (x1, 8.2, z_back - 12.0), (x1, 9.2, z_back - 12.2), (x0, 9.2, z_back - 12.2)],
-                    "#94a3b8",
-                )
-            x += seg
-
-        # torri faro
-        for fx in (-20.0, 40.0, 100.0):
-            if cam_x - 180.0 <= fx <= cam_x + 45.0:
-                top_y = 26.5 if big_stadium else 16.5
-                fz = z_back - (25.0 if big_stadium else 12.5)
-                self._line3(p, cam, (fx, 9.0, fz), (fx, top_y, fz + 2.0), 0.32, QColor("#64748b"))
-                self._poly(
-                    p, cam,
-                    [(fx - 2.8, top_y - 1.3, fz + 2.1), (fx + 2.8, top_y - 1.3, fz + 2.1),
-                     (fx + 2.8, top_y + 1.5, fz + 2.1), (fx - 2.8, top_y + 1.5, fz + 2.1)],
-                    "#1e293b",
-                )
-                self._poly(
-                    p, cam,
-                    [(fx - 2.4, top_y - 1.0, fz + 2.2), (fx + 2.4, top_y - 1.0, fz + 2.2),
-                     (fx + 2.4, top_y + 1.2, fz + 2.2), (fx - 2.4, top_y + 1.2, fz + 2.2)],
-                    "#fef9c3",
-                )
-
-        # curva di testata dietro la partenza
-        cx_start = -16.0
-        if cam_x - 175.0 < cx_start + 5.0:
+        # ---- 1. Tribune 360° intorno all'ovale
+        stand_depth = 26.0 if big else 13.0
+        # Rettilineo opposto (z < -2*R_IN - tw - 4)
+        z_in_b = -2.0 * R_IN - tw - 4.0
+        for s_idx in range(4):
+            x0, x1 = s_idx * (STRAIGHT / 4.0), (s_idx + 1) * (STRAIGHT / 4.0) + 0.15
+            self._draw_stand_section(
+                p, cam, (x0, 0.0, z_in_b), (x1, 0.0, z_in_b),
+                (x0, 0.0, z_in_b - stand_depth), (x1, 0.0, z_in_b - stand_depth),
+                crowd_pm, big, evening, rain,
+            )
+        # Rettilineo principale (z > tw + 4) — visibile quando si corre nel rettilineo opposto
+        z_in_h = tw + 4.5
+        for s_idx in range(4):
+            x0, x1 = (s_idx + 1) * (STRAIGHT / 4.0) + 0.15, s_idx * (STRAIGHT / 4.0)
+            self._draw_stand_section(
+                p, cam, (x0, 0.0, z_in_h), (x1, 0.0, z_in_h),
+                (x0, 0.0, z_in_h + stand_depth), (x1, 0.0, z_in_h + stand_depth),
+                crowd_pm, big, evening, rain,
+            )
+        # Curve di testata (Curva 1 a x=STRAIGHT, Curva 2 a x=0)
+        r_s_in = R_IN + tw + 4.2
+        r_s_out = r_s_in + stand_depth
+        for cx, a_start in ((STRAIGHT, -math.pi * 0.5), (0.0, math.pi * 0.5)):
             steps = 8
-            r_stand_in = R_IN + tw + 4.0
-            r_stand_out = r_stand_in + (22.0 if big_stadium else 12.0)
-            y_top = 16.5 if big_stadium else 8.2
             for k in range(steps):
-                a0 = math.pi * 0.5 + (math.pi * k) / steps
-                a1 = math.pi * 0.5 + (math.pi * (k + 1)) / steps
-                p0 = (cx_start + r_stand_in * math.cos(a0), 1.2, -R_IN + r_stand_in * math.sin(a0))
-                p1 = (cx_start + r_stand_in * math.cos(a1), 1.2, -R_IN + r_stand_in * math.sin(a1))
-                p2 = (cx_start + r_stand_out * math.cos(a1), y_top, -R_IN + r_stand_out * math.sin(a1))
-                p3 = (cx_start + r_stand_out * math.cos(a0), y_top, -R_IN + r_stand_out * math.sin(a0))
-                self._poly(p, cam, [(p0[0], 0.0, p0[2]), (p1[0], 0.0, p1[2]), p1, p0], "#64748b")
-                self._poly(p, cam, [p0, p1, p2, p3], "#3f4d63")
-                self._textured_quad(p, cam, [p3, p2, p1, p0], crowd_far)
-                if big_stadium:
-                    r_roof = r_stand_in + 6.0
-                    rf0 = (cx_start + r_stand_out * math.cos(a0), 19.0, -R_IN + r_stand_out * math.sin(a0))
-                    rf1 = (cx_start + r_stand_out * math.cos(a1), 19.0, -R_IN + r_stand_out * math.sin(a1))
-                    rf2 = (cx_start + r_roof * math.cos(a1), 18.0, -R_IN + r_roof * math.sin(a1))
-                    rf3 = (cx_start + r_roof * math.cos(a0), 18.0, -R_IN + r_roof * math.sin(a0))
-                    self._poly(p, cam, [rf0, rf1, rf2, rf3], "#94a3b8")
+                a0 = a_start + (math.pi * k) / steps
+                a1 = a_start + (math.pi * (k + 1)) / steps
+                p0 = (cx + r_s_in * math.cos(a0), 0.0, -R_IN + r_s_in * math.sin(a0))
+                p1 = (cx + r_s_in * math.cos(a1), 0.0, -R_IN + r_s_in * math.sin(a1))
+                o0 = (cx + r_s_out * math.cos(a0), 0.0, -R_IN + r_s_out * math.sin(a0))
+                o1 = (cx + r_s_out * math.cos(a1), 0.0, -R_IN + r_s_out * math.sin(a1))
+                self._draw_stand_section(p, cam, p0, p1, o0, o1, crowd_pm, big, evening, rain)
 
-            sb_a = math.pi * 1.12
-            sb_r = r_stand_in + 13.0
-            sx0 = cx_start + sb_r * math.cos(sb_a - 0.14)
-            sz0 = -R_IN + sb_r * math.sin(sb_a - 0.14)
-            sx1 = cx_start + sb_r * math.cos(sb_a + 0.14)
-            sz1 = -R_IN + sb_r * math.sin(sb_a + 0.14)
-            y_lo = 13.0 if big_stadium else 7.5
-            y_hi = y_lo + 6.5
-            self._poly(p, cam, [(sx0, y_lo, sz0), (sx1, y_lo, sz1), (sx1, y_hi, sz1), (sx0, y_hi, sz0)], "#0f172a")
-            clk = format_race_time(self.race_clock)
-            self._textured_quad(p, cam, [(sx0, y_hi, sz0), (sx1, y_hi, sz1), (sx1, y_lo, sz1), (sx0, y_lo, sz0)], self._scoreboard_pm(clk))
+        # Maxischermo sopra la Curva 2 (lato partenza 100m)
+        sb_a = math.pi * 1.12
+        sb_r = r_s_in + (14.0 if big else 8.0)
+        sx0 = sb_r * math.cos(sb_a - 0.14)
+        sz0 = -R_IN + sb_r * math.sin(sb_a - 0.14)
+        sx1 = sb_r * math.cos(sb_a + 0.14)
+        sz1 = -R_IN + sb_r * math.sin(sb_a + 0.14)
+        y_lo = 13.5 if big else 7.8
+        self._poly(p, cam, [(sx0, y_lo, sz0), (sx1, y_lo, sz1), (sx1, y_lo + 6.2, sz1), (sx0, y_lo + 6.2, sz0)], "#0f172a")
+        self._textured_quad(p, cam, [(sx0, y_lo + 6.2, sz0), (sx1, y_lo + 6.2, sz1), (sx1, y_lo, sz1), (sx0, y_lo, sz0)], self._scoreboard_pm(format_race_time(self.race_clock)))
 
-        # ---- prato interno con texture granulare e bande
+        # Fascia esterna all'ovale (disegnata PRIMA del prato centrale così non lo copre!)
+        out_col = "#162032" if evening else "#245d2e"
+        self._poly(p, cam, [(-48.0, -0.02, -2.0 * R_IN - 22.0), (STRAIGHT + 48.0, -0.02, -2.0 * R_IN - 22.0), (STRAIGHT + 48.0, -0.02, tw + 22.0), (-48.0, -0.02, tw + 22.0)], out_col)
+
+        # ---- 2. Prato centrale e lunette (D-zones)
         band = 14.0
-        x = math.floor(xa / band) * band
-        while x < xb:
-            light = int(x // band) % 2 == 0
-            g_hex = "#2e7a3b" if light else "#358943"
-            if rain:
-                g_hex = QColor(g_hex).darker(118).name()
-            g_pm = self._grass_tile(g_hex)
+        xb = 0.0
+        while xb < STRAIGHT:
+            x1 = min(STRAIGHT, xb + band + 0.1)
+            light = int(xb // band) % 2 == 0
+            g_hex = "#2d7539" if light else "#348440"
+            if rain or evening:
+                g_hex = QColor(g_hex).darker(122).name()
             self._textured_ground_quad(
                 p, cam,
-                [(x, 0.0, -2.0 * R_IN), (x + band + 0.1, 0.0, -2.0 * R_IN), (x + band + 0.1, 0.0, 0.0), (x, 0.0, 0.0)],
-                g_pm, g_hex,
+                [(xb, 0.0, -2.0 * R_IN), (x1, 0.0, -2.0 * R_IN), (x1, 0.0, 0.0), (xb, 0.0, 0.0)],
+                self._grass_tile(g_hex), g_hex,
             )
-            x += band
-        # linee del campo interno e lunetta cementata dietro le gare di campo
-        self._poly(p, cam, [(max(0.0, xa), 0.008, -56.0), (min(d, xb), 0.008, -56.0), (min(d, xb), 0.008, -55.7), (max(0.0, xa), 0.008, -55.7)], QColor(248, 250, 252, 110))
-        self._poly(p, cam, [(max(0.0, xa), 0.008, -10.3), (min(d, xb), 0.008, -10.3), (min(d, xb), 0.008, -10.0), (max(0.0, xa), 0.008, -10.0)], QColor(248, 250, 252, 110))
-        if xa < 60.0 and xb > 10.0:
-            self._poly(p, cam, [(18.0, 0.01, -7.2), (27.0, 0.01, -7.2), (27.0, 0.01, -4.4), (18.0, 0.01, -4.4)], "#d9c293")
-            self._poly(p, cam, [(-4.0, 0.01, -6.2), (18.0, 0.01, -6.2), (18.0, 0.01, -5.0), (-4.0, 0.01, -5.0)], self._track_colors()[2])
-
-        # fascia esterna alla corsia 8 + binario del carrello Rail-Cam
-        out_g = "#276432" if not rain else "#1e4e27"
-        self._poly(p, cam, [(xa - 4.0, 0.0, tw), (xb + 16.0, 0.0, tw), (xb + 16.0, 0.0, tw + 26.0), (xa - 4.0, 0.0, tw + 26.0)], out_g)
-        self._poly(p, cam, [(xa, 0.01, tw + 0.9), (xb, 0.01, tw + 0.9), (xb, 0.01, tw + 1.05), (xa, 0.01, tw + 1.05)], "#94a3b8")
-
-        # ---- rettilineo opposto e curva dietro la partenza
-        c1, c2, c3 = self._track_colors()
-        self._poly(p, cam, [(xa, 0.0, -2.0 * R_IN - tw), (xb, 0.0, -2.0 * R_IN - tw), (xb, 0.0, -2.0 * R_IN), (xa, 0.0, -2.0 * R_IN)], c3)
-        self._poly(p, cam, [(xa, 0.01, -2.0 * R_IN - 0.15), (xb, 0.01, -2.0 * R_IN - 0.15), (xb, 0.01, -2.0 * R_IN), (xa, 0.01, -2.0 * R_IN)], "#e2e8f0")
-
-        if cam_x - 175.0 < cx_start + 2.0:
-            n_seg = 10
-            d_col = "#64748b" if self._tier == CompetitionTier.INTERNAZIONALE else ("#2e7a3b" if not rain else "#225a2c")
-            for k in range(n_seg):
-                a0 = math.pi * 0.5 + (math.pi * k) / n_seg
-                a1 = math.pi * 0.5 + (math.pi * (k + 1)) / n_seg
+            xb += band
+        # Linee bianche campo centrale
+        self._poly(p, cam, [(4.0, 0.008, -58.0), (STRAIGHT - 4.0, 0.008, -58.0), (STRAIGHT - 4.0, 0.008, -57.7), (4.0, 0.008, -57.7)], QColor(248, 250, 252, 95))
+        self._poly(p, cam, [(4.0, 0.008, -14.3), (STRAIGHT - 4.0, 0.008, -14.3), (STRAIGHT - 4.0, 0.008, -14.0), (4.0, 0.008, -14.0)], QColor(248, 250, 252, 95))
+        # Lunette (sintetico scuro nei grandi stadi, erba negli altri)
+        d_col = "#334155" if evening else ("#2e7a3b" if not rain else "#225a2c")
+        for cx, a_start in ((STRAIGHT, -math.pi * 0.5), (0.0, math.pi * 0.5)):
+            steps = 12
+            for k in range(steps):
+                a0 = a_start + (math.pi * k) / steps
+                a1 = a_start + (math.pi * (k + 1)) / steps
                 self._poly(
                     p, cam,
-                    [
-                        (cx_start, 0.0, -R_IN),
-                        (cx_start + R_IN * math.cos(a0), 0.0, -R_IN + R_IN * math.sin(a0)),
-                        (cx_start + R_IN * math.cos(a1), 0.0, -R_IN + R_IN * math.sin(a1)),
-                    ],
+                    [(cx, 0.0, -R_IN), (cx + R_IN * math.cos(a0), 0.0, -R_IN + R_IN * math.sin(a0)), (cx + R_IN * math.cos(a1), 0.0, -R_IN + R_IN * math.sin(a1))],
                     d_col,
                 )
-                self._poly(
-                    p, cam,
-                    [
-                        (cx_start + R_IN * math.cos(a0), 0.002, -R_IN + R_IN * math.sin(a0)),
-                        (cx_start + (R_IN + tw) * math.cos(a0), 0.002, -R_IN + (R_IN + tw) * math.sin(a0)),
-                        (cx_start + (R_IN + tw) * math.cos(a1), 0.002, -R_IN + (R_IN + tw) * math.sin(a1)),
-                        (cx_start + R_IN * math.cos(a1), 0.002, -R_IN + R_IN * math.sin(a1)),
-                    ],
-                    c1 if k % 2 == 0 else c2,
-                )
-                self._poly(
-                    p, cam,
-                    [
-                        (cx_start + (R_IN - 0.2) * math.cos(a0), 0.01, -R_IN + (R_IN - 0.2) * math.sin(a0)),
-                        (cx_start + R_IN * math.cos(a0), 0.01, -R_IN + R_IN * math.sin(a0)),
-                        (cx_start + R_IN * math.cos(a1), 0.01, -R_IN + R_IN * math.sin(a1)),
-                        (cx_start + (R_IN - 0.2) * math.cos(a1), 0.01, -R_IN + (R_IN - 0.2) * math.sin(a1)),
-                    ],
-                    "#f1f5f9",
-                )
 
-        # ---- corsie del rettilineo principale con texture granulare in prospettiva reale!
+        # ---- 3. Pista 400m completa (2 rettilinei + bretella 100m + 2 curve)
         n = len(self._runners)
-        t_seg = 16.0
-        tx = math.floor(xa / t_seg) * t_seg
-        while tx < xb:
-            x0, x1 = max(xa, tx), min(xb, tx + t_seg + 0.08)
-            if x1 > x0 + 0.1:
-                for i in range(n):
-                    z0, z1 = i * LANE_W, (i + 1) * LANE_W
-                    col = c1 if i % 2 == 0 else c2
-                    self._textured_ground_quad(
+        # Rettilineo principale + bretella partenza 100 m (-22m .. STRAIGHT)
+        for seg_x0 in (-22.0, 0.0, 21.0, 42.0, 63.0):
+            seg_x1 = 0.0 if seg_x0 < 0 else min(STRAIGHT, seg_x0 + 21.2)
+            for i in range(n):
+                z0, z1 = i * LANE_W, (i + 1) * LANE_W
+                col = c1 if i % 2 == 0 else c2
+                self._textured_ground_quad(
+                    p, cam,
+                    [(seg_x0, 0.004, z0), (seg_x1, 0.004, z0), (seg_x1, 0.004, z1), (seg_x0, 0.004, z1)],
+                    self._track_tile(col), col,
+                )
+        # Rettilineo opposto
+        for seg_x0 in (0.0, 21.0, 42.0, 63.0):
+            seg_x1 = min(STRAIGHT, seg_x0 + 21.2)
+            for i in range(n):
+                z0 = -2.0 * R_IN - (i + 1) * LANE_W
+                z1 = -2.0 * R_IN - i * LANE_W
+                col = c1 if i % 2 == 0 else c2
+                self._textured_ground_quad(
+                    p, cam,
+                    [(seg_x0, 0.004, z0), (seg_x1, 0.004, z0), (seg_x1, 0.004, z1), (seg_x0, 0.004, z1)],
+                    self._track_tile(col), col,
+                )
+        # Curve 1 e 2 (16 spicchi ciascuna per raccordi lisci anche da vicino)
+        for cx, a_start in ((STRAIGHT, -math.pi * 0.5), (0.0, math.pi * 0.5)):
+            steps = 16
+            for k in range(steps):
+                a0 = a_start + (math.pi * k) / steps
+                a1 = a_start + (math.pi * (k + 1)) / steps
+                c0, s0 = math.cos(a0), math.sin(a0)
+                c1_, s1_ = math.cos(a1), math.sin(a1)
+                # pista intera + linee bianche di corsia essenziali
+                self._textured_ground_quad(
+                    p, cam,
+                    [
+                        (cx + R_IN * c0, 0.004, -R_IN + R_IN * s0),
+                        (cx + (R_IN + tw) * c0, 0.004, -R_IN + (R_IN + tw) * s0),
+                        (cx + (R_IN + tw) * c1_, 0.004, -R_IN + (R_IN + tw) * s1_),
+                        (cx + R_IN * c1_, 0.004, -R_IN + R_IN * s1_),
+                    ],
+                    self._track_tile(c1 if k % 2 == 0 else c2), c1 if k % 2 == 0 else c2,
+                )
+                # cordolo bianco interno in curva
+                self._poly(
+                    p, cam,
+                    [
+                        (cx + (R_IN - 0.18) * c0, 0.012, -R_IN + (R_IN - 0.18) * s0),
+                        (cx + R_IN * c0, 0.012, -R_IN + R_IN * s0),
+                        (cx + R_IN * c1_, 0.012, -R_IN + R_IN * s1_),
+                        (cx + (R_IN - 0.18) * c1_, 0.012, -R_IN + (R_IN - 0.18) * s1_),
+                    ],
+                    "#f8fafc",
+                )
+                # linee bianche corsie in curva (1..n)
+                for li in range(1, n + 1):
+                    rl = R_IN + li * LANE_W
+                    self._line3(
                         p, cam,
-                        [(x0, 0.004, z0), (x1, 0.004, z0), (x1, 0.004, z1), (x0, 0.004, z1)],
-                        self._track_tile(col), col,
+                        (cx + rl * c0, 0.012, -R_IN + rl * s0),
+                        (cx + rl * c1_, 0.012, -R_IN + rl * s1_),
+                        0.025, QColor("#f8fafc"),
                     )
-            tx += t_seg
 
-        # cordolo interno in alluminio bianco
-        self._poly(p, cam, [(xa, 0.0, -0.22), (xb, 0.0, -0.22), (xb, 0.06, -0.22), (xa, 0.06, -0.22)], "#cbd5e1")
-        self._poly(p, cam, [(xa, 0.06, -0.22), (xb, 0.06, -0.22), (xb, 0.06, 0.0), (xa, 0.06, 0.0)], "#f8fafc")
-
-    def _draw_track_marks(self, p: QPainter, cam: Camera) -> None:
-        d = self._distance
-        n = len(self._runners)
-        tw = self._track_width()
-        cam_x = cam.pos[0]
-        xa, xb = max(-16.0, cam_x - 175.0), min(d + 24.0, cam_x + 32.0)
-
+        # ---- 4. Linee corsie rettilinei, partenza, traguardo e cartelloni LED
         for i in range(n + 1):
-            z = i * LANE_W
-            self._poly(p, cam, [(xa, 0.012, z - 0.025), (xb, 0.012, z - 0.025), (xb, 0.012, z + 0.025), (xa, 0.012, z + 0.025)], "#f8fafc")
+            z_h = i * LANE_W
+            z_b = -2.0 * R_IN - i * LANE_W
+            self._poly(p, cam, [(-22.0, 0.012, z_h - 0.025), (STRAIGHT, 0.012, z_h - 0.025), (STRAIGHT, 0.012, z_h + 0.025), (-22.0, 0.012, z_h + 0.025)], "#f8fafc")
+            self._poly(p, cam, [(0.0, 0.012, z_b - 0.025), (STRAIGHT, 0.012, z_b - 0.025), (STRAIGHT, 0.012, z_b + 0.025), (0.0, 0.012, z_b + 0.025)], "#f8fafc")
 
-        step = 10 if d <= 400 else 50
-        first = int(max(10, math.floor(xa / step) * step))
-        for mt in range(first, int(min(d - 1, xb)) + 1, step):
-            self._poly(p, cam, [(mt - 0.03, 0.011, 0.0), (mt + 0.03, 0.011, 0.0), (mt + 0.03, 0.011, tw), (mt - 0.03, 0.011, tw)], QColor(248, 250, 252, 85))
-
-        if xa <= 1.0:
-            self._poly(p, cam, [(-0.04, 0.013, 0.0), (0.04, 0.013, 0.0), (0.04, 0.013, tw), (-0.04, 0.013, tw)], "#ffffff")
+        # Linea bianca di partenza 100 m (x = STRAIGHT - 100) e numeri corsia
+        if not self._is_oval_race():
+            sx0 = STRAIGHT - 100.0
+            self._poly(p, cam, [(sx0 - 0.04, 0.013, 0.0), (sx0 + 0.04, 0.013, 0.0), (sx0 + 0.04, 0.013, tw), (sx0 - 0.04, 0.013, tw)], "#ffffff")
             for i in range(n):
                 zc = self._lane_z(i)
                 self._textured_quad(
                     p, cam,
-                    [(0.45, 0.014, zc - 0.32), (1.05, 0.014, zc - 0.32), (1.05, 0.014, zc + 0.32), (0.45, 0.014, zc + 0.32)],
+                    [(sx0 + 0.45, 0.014, zc - 0.32), (sx0 + 1.05, 0.014, zc - 0.32), (sx0 + 1.05, 0.014, zc + 0.32), (sx0 + 0.45, 0.014, zc + 0.32)],
                     self._lane_num_pm(i + 1),
                 )
+        elif self._event == "1500m":
+            # linea di partenza a cascata dei 1500m (300m prima del traguardo = in controrettilineo)
+            pts_w = [oval_pose(1500.0, i * LANE_W, ref_lat=0.52)[:2] for i in range(n + 1)]
+            for k in range(n):
+                self._line3(p, cam, (pts_w[k][0], 0.014, pts_w[k][1]), (pts_w[k + 1][0], 0.014, pts_w[k + 1][1]), 0.04, QColor("#ffffff"))
 
-        if self._event.startswith("4x"):
-            for k in (1, 2, 3):
-                cx = d * k / 4.0
-                if xa <= cx + 10 and xb >= cx - 10:
-                    self._poly(p, cam, [(cx - 10, 0.013, 0.0), (cx + 10, 0.013, 0.0), (cx + 10, 0.013, tw), (cx - 10, 0.013, tw)], QColor(250, 204, 21, 24))
-                    for zx in (cx - 10.0, cx + 10.0):
-                        self._poly(p, cam, [(zx - 0.06, 0.014, 0.0), (zx + 0.06, 0.014, 0.0), (zx + 0.06, 0.014, tw), (zx - 0.06, 0.014, tw)], "#facc15")
+        # Traguardo fisso su x = STRAIGHT (rettilineo principale)
+        self._poly(p, cam, [(STRAIGHT - 0.04, 0.014, 0.0), (STRAIGHT + 0.04, 0.014, 0.0), (STRAIGHT + 0.04, 0.014, tw), (STRAIGHT - 0.04, 0.014, tw)], "#ffffff")
+        cells = max(4, int(tw / 0.28))
+        cw = tw / cells
+        for j in range(cells):
+            for k in range(2):
+                x0 = STRAIGHT + 0.04 + k * 0.24
+                self._poly(p, cam, [(x0, 0.014, j * cw), (x0 + 0.24, 0.014, j * cw), (x0 + 0.24, 0.014, (j + 1) * cw), (x0, 0.014, (j + 1) * cw)], "#f8fafc" if (j + k) % 2 == 0 else "#0f172a")
 
-        if xb >= d - 0.5 and xa <= d + 1.0:
-            self._poly(p, cam, [(d - 0.04, 0.014, 0.0), (d + 0.04, 0.014, 0.0), (d + 0.04, 0.014, tw), (d - 0.04, 0.014, tw)], "#ffffff")
-            cells = max(4, int(tw / 0.28))
-            cw = tw / cells
-            for j in range(cells):
-                for k in range(2):
-                    x0 = d + 0.04 + k * 0.24
-                    col = "#f8fafc" if (j + k) % 2 == 0 else "#0f172a"
-                    self._poly(p, cam, [(x0, 0.014, j * cw), (x0 + 0.24, 0.014, j * cw), (x0 + 0.24, 0.014, (j + 1) * cw), (x0, 0.014, (j + 1) * cw)], col)
+        # Cartelloni LED sempre sullo sfondo rispetto alla camera (mai davanti alle corsie né specchiati)
+        seg = 7.0
+        bx = -14.0
+        idx = 0
+        cam_inside = cam.pos[2] < 0.0
+        while bx < STRAIGHT:
+            bx1 = min(STRAIGHT, bx + seg - 0.15)
+            pm = self._board(idx)
+            if not cam_inside:
+                # camera esterna al rettilineo principale: cartelloni lungo il bordo interno (leggibili sx->dx)
+                self._textured_quad(p, cam, [(bx, 0.85, -1.4), (bx1, 0.85, -1.4), (bx1, 0.04, -1.4), (bx, 0.04, -1.4)], pm)
+            elif bx >= 0.0:
+                # camera dall'interno dell'ovale: cartelloni lungo il perimetro esterno di entrambi i rettilinei
+                zb = -2.0 * R_IN - tw - 1.6
+                zh = tw + 1.8
+                self._textured_quad(p, cam, [(bx, 0.90, zb), (bx1, 0.90, zb), (bx1, 0.04, zb), (bx, 0.04, zb)], pm)
+                self._textured_quad(p, cam, [(bx1, 0.90, zh), (bx, 0.90, zh), (bx, 0.04, zh), (bx1, 0.04, zh)], pm)
+            bx += seg
+            idx += 1
 
     def _draw_official(self, p: QPainter, cam: Camera, x: float, z: float, cap_col: str = "#f8fafc") -> None:
-        """Giudice di gara a bordo pista (camicia chiara, pantaloni scuri, scarpe, cappellino)."""
         c = cam.to_cam((x, 0.9, z))
         if c[2] < NEAR * 2 or c[2] > 75.0:
             return
@@ -878,78 +976,50 @@ class Track3DWidget(TrackRaceWidget):
             p.setBrush(QColor(cap_col))
             p.drawChord(QRectF(hx - r * 1.1, hy - r * 1.15, 2.2 * r, 1.6 * r), 15 * 16, 150 * 16)
 
-    def _draw_blocks_and_props(self, p: QPainter, cam: Camera, leader_x: float) -> None:
-        d = self._distance
+    def _draw_props(self, p: QPainter, cam: Camera, poses: Sequence[Tuple[float, float, float, float]]) -> None:
         n = len(self._runners)
         tw = self._track_width()
-        cam_x = cam.pos[0]
 
-        # blocchi di partenza 3D + coni gialli con numero corsia + giudice di partenza
-        if cam_x > -4.0 and cam_x < 45.0:
+        # blocchi e coni nei 100 m
+        if not self._is_oval_race() and cam.to_cam((STRAIGHT - 100.0, 0.0, tw * 0.5))[2] > -10.0:
+            sx0 = STRAIGHT - 100.0
             for i in range(n):
                 z = self._lane_z(i)
-                self._poly(p, cam, [(-0.85, 0.02, z - 0.04), (-0.15, 0.02, z - 0.04), (-0.15, 0.05, z + 0.04), (-0.85, 0.05, z + 0.04)], "#94a3b8")
-                for bx in (-0.36, -0.66):
+                self._poly(p, cam, [(sx0 - 0.85, 0.02, z - 0.04), (sx0 - 0.15, 0.02, z - 0.04), (sx0 - 0.15, 0.05, z + 0.04), (sx0 - 0.85, 0.05, z + 0.04)], "#94a3b8")
+                for bx in (sx0 - 0.36, sx0 - 0.66):
                     self._poly(p, cam, [(bx - 0.12, 0.02, z - 0.18), (bx, 0.14, z - 0.18), (bx, 0.14, z + 0.18), (bx - 0.12, 0.02, z + 0.18)], "#1e293b")
                     self._poly(p, cam, [(bx - 0.02, 0.14, z - 0.18), (bx + 0.02, 0.14, z - 0.18), (bx + 0.02, 0.14, z + 0.18), (bx - 0.02, 0.14, z + 0.18)], "#e2e8f0")
-                # cono giallo accanto al blocco
-                self._textured_quad(
-                    p, cam,
-                    [(-1.15, 0.34, z + 0.38), (-1.15, 0.34, z + 0.12), (-1.15, 0.01, z + 0.12), (-1.15, 0.01, z + 0.38)],
-                    self._cone_pm(i + 1),
-                )
-            self._draw_official(p, cam, -2.6, -1.8)
+                self._textured_quad(p, cam, [(sx0 - 1.25, 0.34, z + 0.38), (sx0 - 1.25, 0.34, z + 0.12), (sx0 - 1.25, 0.01, z + 0.12), (sx0 - 1.25, 0.01, z + 0.38)], self._cone_pm(i + 1))
+            self._draw_official(p, cam, sx0 - 2.6, -1.8)
 
-        # cartelloni LED lungo il bordo interno (z = -1.35)
-        seg = 6.0
-        x = math.floor(max(-16.0, cam_x - 145.0) / seg) * seg
-        while x < min(d + 18.0, cam_x + 22.0):
-            pm = self._board(int(x // seg))
-            self._textured_quad(
-                p, cam,
-                [(x, 0.85, -1.35), (x + seg - 0.15, 0.85, -1.35), (x + seg - 0.15, 0.04, -1.35), (x, 0.04, -1.35)],
-                pm,
-            )
-            x += seg
-
-        # carrello Rail-Cam motorizzato che segue il capofila sul binario esterno
-        if self._cam_label == "BROADCAST":
-            rx = _clamp(leader_x + 0.5, 2.0, d - 2.0)
-            rz = tw + 1.0
-            self._poly(p, cam, [(rx - 0.55, 0.08, rz - 0.25), (rx + 0.55, 0.08, rz - 0.25), (rx + 0.55, 0.30, rz + 0.25), (rx - 0.55, 0.30, rz + 0.25)], "#0f172a")
-            self._poly(p, cam, [(rx - 0.22, 0.30, rz - 0.15), (rx + 0.22, 0.30, rz - 0.15), (rx + 0.22, 0.68, rz + 0.15), (rx - 0.22, 0.68, rz + 0.15)], "#334155")
-
-        # portale d'arrivo, torretta fotofinish e giudici all'arrivo
-        if cam_x >= d - 95.0:
+        # portale d'arrivo fisso a x = STRAIGHT
+        if cam.to_cam((STRAIGHT, 2.0, tw * 0.5))[2] > -15.0:
             for z in (-0.85, tw + 0.85):
-                self._line3(p, cam, (d, 0.0, z), (d, 5.2, z), 0.13, QColor("#e2e8f0"))
-                self._line3(p, cam, (d + 0.35, 0.0, z), (d + 0.35, 5.2, z), 0.07, QColor("#94a3b8"))
-            self._line3(p, cam, (d, 5.2, -0.85), (d, 5.2, tw + 0.85), 0.15, QColor("#e2e8f0"))
-            self._textured_quad(
-                p, cam,
-                [(d, 5.15, tw + 0.85), (d, 5.15, -0.85), (d, 4.25, -0.85), (d, 4.25, tw + 0.85)],
-                self._gantry_pm(),
-            )
-            # palo telecamera fotofinish giallo
-            self._line3(p, cam, (d, 0.0, -2.2), (d, 3.8, -2.2), 0.08, QColor("#cbd5e1"))
-            self._poly(p, cam, [(d - 0.22, 3.7, -2.35), (d + 0.22, 3.7, -2.35), (d + 0.22, 4.1, -2.05), (d - 0.22, 4.1, -2.05)], "#facc15")
-            # centralina cronometraggio gialla a bordo pista
-            self._poly(p, cam, [(d - 0.4, 0.0, -0.8), (d + 0.4, 0.0, -0.8), (d + 0.4, 0.9, -0.8), (d - 0.4, 0.9, -0.8)], "#eab308")
-            self._draw_official(p, cam, d + 2.2, -2.8)
+                self._line3(p, cam, (STRAIGHT, 0.0, z), (STRAIGHT, 5.2, z), 0.13, QColor("#e2e8f0"))
+                self._line3(p, cam, (STRAIGHT + 0.35, 0.0, z), (STRAIGHT + 0.35, 5.2, z), 0.07, QColor("#94a3b8"))
+            self._line3(p, cam, (STRAIGHT, 5.2, -0.85), (STRAIGHT, 5.2, tw + 0.85), 0.15, QColor("#e2e8f0"))
+            self._textured_quad(p, cam, [(STRAIGHT, 5.15, tw + 0.85), (STRAIGHT, 5.15, -0.85), (STRAIGHT, 4.25, -0.85), (STRAIGHT, 4.25, tw + 0.85)], self._gantry_pm())
+            self._line3(p, cam, (STRAIGHT, 0.0, -2.2), (STRAIGHT, 3.8, -2.2), 0.08, QColor("#cbd5e1"))
+            self._poly(p, cam, [(STRAIGHT - 0.22, 3.7, -2.35), (STRAIGHT + 0.22, 3.7, -2.35), (STRAIGHT + 0.22, 4.1, -2.05), (STRAIGHT - 0.22, 4.1, -2.05)], "#facc15")
+            self._poly(p, cam, [(STRAIGHT - 0.4, 0.0, -0.8), (STRAIGHT + 0.4, 0.0, -0.8), (STRAIGHT + 0.4, 0.9, -0.8), (STRAIGHT - 0.4, 0.9, -0.8)], "#eab308")
+            self._draw_official(p, cam, STRAIGHT + 2.2, -2.8)
 
-        if not any(self._has_finished(r) for r in self._runners):
-            self._line3(p, cam, (d, 1.08, 0.0), (d, 1.08, tw), 0.025, QColor("#ef4444"))
-        elif self.race_time < self._winner_time + 1.5 * self._scale:
-            self._line3(p, cam, (d, 1.08, 0.0), (d + 0.8, 0.72, 0.9), 0.022, QColor("#ef4444"))
-            self._line3(p, cam, (d, 1.08, tw), (d + 0.8, 0.72, tw - 0.9), 0.022, QColor("#ef4444"))
+            if not any(self._has_finished(r) for r in self._runners):
+                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT, 1.08, tw), 0.025, QColor("#ef4444"))
+            elif self.race_time < self._winner_time + 1.5 * self._scale:
+                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT + 0.8, 0.72, 0.9), 0.022, QColor("#ef4444"))
+                self._line3(p, cam, (STRAIGHT, 1.08, tw), (STRAIGHT + 0.8, 0.72, tw - 0.9), 0.022, QColor("#ef4444"))
 
-    # ---- atleti 3D ombreggiati
+    # ---- atleti 3D orientati lungo qualsiasi tangente dell'ovale
     def _draw_athlete(
         self,
         p: QPainter,
         cam: Camera,
         x: float,
         z: float,
+        yaw: float,
+        curv: float,
+        meters_done: float,
         phase: float,
         ratio: float,
         kit: QColor,
@@ -962,143 +1032,167 @@ class Track3DWidget(TrackRaceWidget):
     ) -> None:
         d = self._distance
         t_anim = self._t
-        if self.race_time <= 0.0:
+        use_blocks = not self._is_pack_race()
+        cf, sf = math.cos(yaw), math.sin(yaw)
+        rf, rz_f = -sf, cf  # vettore unitario verso destra (esterno corsia)
+
+        # lieve inclinazione verso l'interno quando si corre in curva!
+        bank = -0.14 * ratio if curv > 0 else 0.0
+
+        def to_world(lf: float, ly: float, lr: float) -> Vec:
+            lr_b = lr + ly * bank
+            return (x + lf * cf + lr_b * rf, ly, z + lf * sf + lr_b * rz_f)
+
+        if self.race_time <= 0.0 and use_blocks:
             set_blend = _clamp((t_anim - GUN_AT * 0.45) / 0.38, 0.0, 1.0)
             hip_h = _lerp(0.46, 0.78, set_blend)
-            hip_x = _lerp(x - 0.58, x - 0.50, set_blend)
-            sh_x = _lerp(x - 0.16, x - 0.12, set_blend)
+            hip_lf = _lerp(-0.58, -0.50, set_blend)
+            sh_lf = _lerp(-0.16, -0.12, set_blend)
             sh_y = _lerp(0.54, 0.65, set_blend)
-            lean = math.atan2(sh_x - hip_x, sh_y - hip_h)
+            lean = math.atan2(sh_lf - hip_lf, sh_y - hip_h)
             crouch_mode = True
+            drive_blend = 0.0
+            standing_start = False
+        elif self.race_time <= 0.0:
+            # partenza in piedi nei 1500m
+            hip_h, hip_lf, lean = 0.94, -0.10, 0.22
+            crouch_mode = False
+            standing_start = True
             drive_blend = 0.0
         else:
             crouch_mode = False
+            standing_start = False
             drive_blend = _clamp(self.race_time / 1.6, 0.0, 1.0)
-            finish_dip = 0.25 * _clamp((x - (d - 1.4)) / 1.4, 0.0, 1.0) if x <= d + 0.2 else 0.0
-            lean = 0.06 if celebrate else (_lerp(0.68, 0.14 + 0.14 * ratio, drive_blend) + finish_dip)
+            finish_dip = 0.25 * _clamp((meters_done - (d - 1.4)) / 1.4, 0.0, 1.0) if meters_done <= d + 0.2 else 0.0
+            lean = 0.06 if celebrate else (_lerp(0.68 if use_blocks else 0.22, 0.14 + 0.14 * ratio, drive_blend) + finish_dip)
             bounce = 0.045 * abs(math.sin(phase)) * ratio
             hip_h = 0.93 + bounce
-            hip_x = x
+            hip_lf = 0.0
 
-        # ombra morbida direzionale proiettata sul tartan
+        # ombra morbida proiettata sul tartan
         sun_dx, sun_dz = -0.22, -0.18
+        cx_s, _, cz_s = to_world(hip_lf, 0.0, 0.0)
         self._textured_ground_quad(
             p, cam,
             [
-                (hip_x + sun_dx - 0.52, 0.015, z + sun_dz - 0.30),
-                (hip_x + sun_dx + 0.52, 0.015, z + sun_dz - 0.30),
-                (hip_x + sun_dx + 0.52, 0.015, z + sun_dz + 0.30),
-                (hip_x + sun_dx - 0.52, 0.015, z + sun_dz + 0.30),
+                (cx_s + sun_dx - 0.50, 0.015, cz_s + sun_dz - 0.28),
+                (cx_s + sun_dx + 0.50, 0.015, cz_s + sun_dz - 0.28),
+                (cx_s + sun_dx + 0.50, 0.015, cz_s + sun_dz + 0.28),
+                (cx_s + sun_dx - 0.50, 0.015, cz_s + sun_dz + 0.28),
             ],
             self._shadow_pm(), "#0f172a",
         )
 
-        twist = 0.0 if (crouch_mode or celebrate) else 0.16 * ratio * math.sin(phase)
+        twist = 0.0 if (crouch_mode or standing_start or celebrate) else 0.16 * ratio * math.sin(phase)
         s_lean, c_lean = math.sin(lean), math.cos(lean)
-        hip = (hip_x, hip_h, z)
         torso_len = 0.56
         if crouch_mode:
-            sh_mid = (sh_x, sh_y, z)
-            neck_top = (sh_mid[0] + 0.055, sh_mid[1] + 0.015, z)
-            head = (neck_top[0] + 0.05, neck_top[1] - 0.015, z)
+            sh_y_val, sh_lf_val = sh_y, sh_lf
+            neck_lf, neck_y = sh_lf_val + 0.055, sh_y_val + 0.015
+            head_lf, head_y = neck_lf + 0.05, neck_y - 0.015
         else:
-            sh_mid = (hip_x + torso_len * s_lean, hip_h + torso_len * c_lean, z)
-            neck_top = (sh_mid[0] + 0.11 * s_lean, sh_mid[1] + 0.11 * c_lean, z)
-            head = (neck_top[0] + 0.11 * s_lean, neck_top[1] + 0.11 * c_lean, z)
+            sh_lf_val = hip_lf + torso_len * s_lean
+            sh_y_val = hip_h + torso_len * c_lean
+            neck_lf, neck_y = sh_lf_val + 0.11 * s_lean, sh_y_val + 0.11 * c_lean
+            head_lf, head_y = neck_lf + 0.11 * s_lean, neck_y + 0.11 * c_lean
 
         shorts = QColor("#0f172a")
         spike_col = kit.lighter(135) if is_player else QColor("#f8fafc")
-        amp = 0.50 + 0.58 * ratio
-        near_sign = 1.0 if cam.pos[2] > z else -1.0
+        amp = 0.48 + 0.56 * ratio
+        # determina quale lato dell'atleta (destro +1 o sinistro -1) è più vicino alla camera
+        cam_vec = _sub(cam.pos, (x, 0.9, z))
+        near_sign = 1.0 if (cam_vec[0] * rf + cam_vec[2] * rz_f) >= 0.0 else -1.0
 
-        def leg_chain(origin: Vec, thigh_a: float, knee_flex: float) -> Tuple[Vec, Vec, Vec]:
+        def leg_local(thigh_a: float, knee_flex: float, side: float) -> Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]]:
             l1, l2 = 0.46, 0.45
-            knee = (origin[0] + l1 * math.sin(thigh_a), origin[1] - l1 * math.cos(thigh_a), origin[2])
+            kn = (hip_lf + l1 * math.sin(thigh_a), hip_h - 0.02 - l1 * math.cos(thigh_a), side * 0.105)
             shin_a = thigh_a - knee_flex
-            ankle = (knee[0] + l2 * math.sin(shin_a), max(0.03, knee[1] - l2 * math.cos(shin_a)), origin[2])
-            toe = (ankle[0] + 0.16 * math.cos(shin_a * 0.4), max(0.02, ankle[1] - 0.03), origin[2])
-            return knee, ankle, toe
+            ak = (kn[0] + l2 * math.sin(shin_a), max(0.03, kn[1] - l2 * math.cos(shin_a)), side * 0.105)
+            to = (ak[0] + 0.16 * math.cos(shin_a * 0.4), max(0.02, ak[1] - 0.03), side * 0.105)
+            return kn, ak, to
 
-        def arm_chain(origin: Vec, upper_a: float, elbow_bend: float) -> Tuple[Vec, Vec]:
+        def arm_local(sh_lf_s: float, upper_a: float, elbow_bend: float, side: float) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
             l1, l2 = 0.30, 0.27
-            elbow = (origin[0] + l1 * math.sin(upper_a), origin[1] - l1 * math.cos(upper_a), origin[2])
+            el = (sh_lf_s + l1 * math.sin(upper_a), sh_y_val - 0.03 - l1 * math.cos(upper_a), side * 0.195)
             fore_a = upper_a + elbow_bend
-            hand = (elbow[0] + l2 * math.sin(fore_a), elbow[1] - l2 * math.cos(fore_a), origin[2])
-            return elbow, hand
+            ha = (el[0] + l2 * math.sin(fore_a), el[1] - l2 * math.cos(fore_a), side * 0.195)
+            return el, ha
 
         def draw_side(side: float) -> None:
             is_near = side == near_sign
             shade_skin = skin if is_near else skin.darker(128)
             shade_shorts = shorts if is_near else shorts.darker(125)
             ph = phase + (0.0 if side > 0 else math.pi)
-            hip_s = (hip[0], hip[1] - 0.02, hip[2] + side * 0.105)
-            sh_s = (sh_mid[0] - side * 0.14 * twist, sh_mid[1] - 0.03, sh_mid[2] + side * 0.195)
+            hip_l = (hip_lf, hip_h - 0.02, side * 0.105)
+            sh_lf_s = sh_lf_val - side * 0.14 * twist
+            sh_l = (sh_lf_s, sh_y_val - 0.03, side * 0.195)
 
             if crouch_mode:
                 if side > 0:
-                    knee = (x - 0.24, _lerp(0.24, 0.46, set_blend), hip_s[2])
-                    ankle = (x - 0.42, 0.13, hip_s[2])
-                    toe = (x - 0.34, 0.04, hip_s[2])
+                    kn_l = (-0.24, _lerp(0.24, 0.46, set_blend), side * 0.105)
+                    ak_l = (-0.42, 0.13, side * 0.105)
+                    to_l = (-0.34, 0.04, side * 0.105)
                 else:
-                    knee = (x - 0.36, _lerp(0.11, 0.32, set_blend), hip_s[2])
-                    ankle = (x - 0.70, 0.13, hip_s[2])
-                    toe = (x - 0.62, 0.04, hip_s[2])
-                elbow = (x - 0.08, (sh_s[1] + 0.04) * 0.52, sh_s[2])
-                hand = (x - 0.05, 0.03, sh_s[2])
+                    kn_l = (-0.36, _lerp(0.11, 0.32, set_blend), side * 0.105)
+                    ak_l = (-0.70, 0.13, side * 0.105)
+                    to_l = (-0.62, 0.04, side * 0.105)
+                el_l = (-0.08, (sh_y_val + 0.04) * 0.52, side * 0.195)
+                ha_l = (-0.05, 0.03, side * 0.195)
+            elif standing_start:
+                kn_l, ak_l, to_l = leg_local(0.28 * side, 0.25 if side > 0 else 0.45, side)
+                el_l, ha_l = arm_local(sh_lf_s, -0.35 * side, 1.3, side)
             elif celebrate:
                 thigh_a = 0.22 * math.sin(ph)
-                knee, ankle, toe = leg_chain(hip_s, thigh_a, 0.25 + 0.35 * max(0.0, math.sin(ph)))
-                elbow = (sh_s[0] + 0.06, sh_s[1] + 0.20, sh_s[2] + side * 0.18)
-                hand = (elbow[0] + 0.04, elbow[1] + 0.24, elbow[2] + side * 0.08)
+                kn_l, ak_l, to_l = leg_local(thigh_a, 0.25 + 0.35 * max(0.0, math.sin(ph)), side)
+                el_l = (sh_lf_s + 0.06, sh_y_val + 0.20, side * 0.36)
+                ha_l = (sh_lf_s + 0.10, sh_y_val + 0.44, side * 0.44)
             else:
                 thigh_a = amp * math.sin(ph) + 0.15 * (1.0 - drive_blend)
                 knee_flex = 0.28 + 1.55 * ratio * max(0.0, math.sin(ph + 1.25))
-                knee, ankle, toe = leg_chain(hip_s, thigh_a, knee_flex)
+                kn_l, ak_l, to_l = leg_local(thigh_a, knee_flex, side)
                 arm_a = -amp * 1.15 * math.sin(ph)
-                elbow, hand = arm_chain(sh_s, arm_a, 1.35 + 0.35 * max(0.0, math.sin(ph)))
+                el_l, ha_l = arm_local(sh_lf_s, arm_a, 1.35 + 0.35 * max(0.0, math.sin(ph)), side)
 
-            mid_thigh = (_lerp(hip_s[0], knee[0], 0.55), _lerp(hip_s[1], knee[1], 0.55), hip_s[2])
-            self._shaded_limb(p, cam, hip_s, knee, 0.092, 0.060, shade_skin)
-            self._shaded_limb(p, cam, hip_s, mid_thigh, 0.105, 0.088, shade_shorts)
-            calf_mid = (_lerp(knee[0], ankle[0], 0.38), _lerp(knee[1], ankle[1], 0.38), knee[2])
-            self._shaded_limb(p, cam, knee, calf_mid, 0.060, 0.068, shade_skin)
-            self._shaded_limb(p, cam, calf_mid, ankle, 0.065, 0.036, shade_skin)
-            self._shaded_limb(p, cam, ankle, toe, 0.042, 0.028, spike_col if is_near else spike_col.darker(120))
+            mid_l = (_lerp(hip_l[0], kn_l[0], 0.55), _lerp(hip_l[1], kn_l[1], 0.55), hip_l[2])
+            calf_l = (_lerp(kn_l[0], ak_l[0], 0.38), _lerp(kn_l[1], ak_l[1], 0.38), kn_l[2])
+            hip_w, kn_w, ak_w, to_w = to_world(*hip_l), to_world(*kn_l), to_world(*ak_l), to_world(*to_l)
+            mid_w, calf_w = to_world(*mid_l), to_world(*calf_l)
+            sh_w, el_w, ha_w = to_world(*sh_l), to_world(*el_l), to_world(*ha_l)
 
-            self._shaded_limb(p, cam, sh_s, elbow, 0.058, 0.045, shade_skin)
-            self._shaded_limb(p, cam, elbow, hand, 0.044, 0.028, shade_skin)
+            self._shaded_limb(p, cam, hip_w, kn_w, 0.092, 0.060, shade_skin)
+            self._shaded_limb(p, cam, hip_w, mid_w, 0.105, 0.088, shade_shorts)
+            self._shaded_limb(p, cam, kn_w, calf_w, 0.060, 0.068, shade_skin)
+            self._shaded_limb(p, cam, calf_w, ak_w, 0.065, 0.036, shade_skin)
+            self._shaded_limb(p, cam, ak_w, to_w, 0.042, 0.028, spike_col if is_near else spike_col.darker(120))
+            self._shaded_limb(p, cam, sh_w, el_w, 0.058, 0.045, shade_skin)
+            self._shaded_limb(p, cam, el_w, ha_w, 0.044, 0.028, shade_skin)
             if has_baton and side > 0 and not crouch_mode:
-                b_dir = (0.14 * s_lean + 0.10, 0.14 * c_lean, 0.0)
+                b_fwd, b_up = 0.14 * s_lean + 0.10, 0.14 * c_lean
                 self._shaded_limb(
                     p, cam,
-                    (hand[0] - b_dir[0], hand[1] - b_dir[1], hand[2]),
-                    (hand[0] + b_dir[0], hand[1] + b_dir[1], hand[2]),
+                    to_world(ha_l[0] - b_fwd, ha_l[1] - b_up, ha_l[2]),
+                    to_world(ha_l[0] + b_fwd, ha_l[1] + b_up, ha_l[2]),
                     0.022, 0.022, QColor("#facc15"),
                 )
 
-        far = -near_sign
-        draw_side(far)
+        draw_side(-near_sign)
 
-        self._shaded_limb(p, cam, (hip[0], hip[1] - 0.04, hip[2]), (hip[0] + 0.10 * s_lean, hip[1] + 0.11 * c_lean, hip[2]), 0.145, 0.140, shorts)
-        waist_l = (hip[0] + 0.10 * s_lean, hip[1] + 0.10 * c_lean, z - 0.12)
-        waist_r = (hip[0] + 0.10 * s_lean, hip[1] + 0.10 * c_lean, z + 0.12)
-        sh_l = (sh_mid[0] + 0.14 * twist, sh_mid[1], z - 0.18)
-        sh_r = (sh_mid[0] - 0.14 * twist, sh_mid[1], z + 0.18)
-        self._poly(p, cam, [waist_l, waist_r, sh_r, sh_l], kit.lighter(108))
-        self._poly(p, cam, [waist_l, (hip[0] + 0.10 * s_lean, hip[1] + 0.10 * c_lean, z), sh_mid, sh_l], kit.darker(120))
+        self._shaded_limb(p, cam, to_world(hip_lf, hip_h - 0.04, 0.0), to_world(hip_lf + 0.10 * s_lean, hip_h + 0.11 * c_lean, 0.0), 0.145, 0.140, shorts)
+        wl = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, -0.12)
+        wr = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.12)
+        sl = to_world(sh_lf_val + 0.14 * twist, sh_y_val, -0.18)
+        sr = to_world(sh_lf_val - 0.14 * twist, sh_y_val, 0.18)
+        self._poly(p, cam, [wl, wr, sr, sl], kit.lighter(108))
+        self._poly(p, cam, [wl, to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.0), to_world(sh_lf_val, sh_y_val, 0.0), sl], kit.darker(120))
 
-        # pettorale di gara bianco (con numero leggibile nelle riprese ravvicinate)
-        chest_lo = (hip[0] + 0.24 * s_lean, hip[1] + 0.24 * c_lean, z)
-        chest_hi = (hip[0] + 0.44 * s_lean, hip[1] + 0.44 * c_lean, z)
-        bib_pts = [
-            (chest_lo[0] + 0.04, chest_lo[1], z - 0.09),
-            (chest_lo[0] + 0.04, chest_lo[1], z + 0.09),
-            (chest_hi[0] + 0.04, chest_hi[1], z + 0.09),
-            (chest_hi[0] + 0.04, chest_hi[1], z - 0.09),
-        ]
+        # pettorale di gara sul torace
+        ch_lo = hip_lf + 0.24 * s_lean
+        ch_hi = hip_lf + 0.44 * s_lean
+        y_lo, y_hi = hip_h + 0.24 * c_lean, hip_h + 0.44 * c_lean
+        bib_pts = [to_world(ch_lo + 0.04, y_lo, -0.09), to_world(ch_lo + 0.04, y_lo, 0.09), to_world(ch_hi + 0.04, y_hi, 0.09), to_world(ch_hi + 0.04, y_hi, -0.09)]
         self._poly(p, cam, bib_pts, "#f8fafc")
         if not crouch_mode:
-            bc = cam.to_cam(((chest_lo[0] + chest_hi[0]) * 0.5 + 0.05, (chest_lo[1] + chest_hi[1]) * 0.5, z))
+            bc = cam.to_cam(to_world((ch_lo + ch_hi) * 0.5 + 0.05, (y_lo + y_hi) * 0.5, 0.0))
             if NEAR <= bc[2] < 22.0:
                 bx, by = cam.proj(bc)
                 bf = QFont(self.font())
@@ -1109,11 +1203,10 @@ class Track3DWidget(TrackRaceWidget):
                 p.drawText(QRectF(bx - 16, by - 10, 32, 20), Qt.AlignmentFlag.AlignCenter, str(bib))
                 p.setPen(Qt.PenStyle.NoPen)
 
-        self._shaded_limb(p, cam, sh_mid, neck_top, 0.062, 0.052, skin.darker(108))
+        self._shaded_limb(p, cam, to_world(sh_lf_val, sh_y_val, 0.0), to_world(neck_lf, neck_y, 0.0), 0.062, 0.052, skin.darker(108))
         draw_side(near_sign)
 
-        # testa scolpita con gradiente radiale
-        hc = cam.to_cam(head)
+        hc = cam.to_cam(to_world(head_lf, head_y, 0.0))
         if hc[2] >= NEAR:
             hx, hy = cam.proj(hc)
             r = max(2.2, 0.114 * cam.f / hc[2])
@@ -1145,26 +1238,15 @@ class Track3DWidget(TrackRaceWidget):
                 p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor("#fbbf24"))
-                p.drawPolygon(
-                    QPolygonF(
-                        [
-                            QPointF(hx - 5, rect.bottom()),
-                            QPointF(hx + 5, rect.bottom()),
-                            QPointF(hx, rect.bottom() + 6),
-                        ]
-                    )
-                )
+                p.drawPolygon(QPolygonF([QPointF(hx - 5, rect.bottom()), QPointF(hx + 5, rect.bottom()), QPointF(hx, rect.bottom() + 6)]))
 
     def _draw_rain_overlay(self, p: QPainter, w: int, h: int) -> None:
         if self._weather != WeatherCondition.PIOGGIA:
             return
-        pen = QPen(QColor(203, 213, 225, 55), 1.1)
-        p.setPen(pen)
-        phase = int(self._t * 60)
-        rng = random.Random(phase % 17)
+        p.setPen(QPen(QColor(203, 213, 225, 55), 1.1))
+        rng = random.Random(int(self._t * 60) % 17)
         for _ in range(55):
-            rx = rng.randint(0, w)
-            ry = rng.randint(0, h)
+            rx, ry = rng.randint(0, w), rng.randint(0, h)
             p.drawLine(rx, ry, rx - 8, ry + 22)
         p.setPen(Qt.PenStyle.NoPen)
 
@@ -1178,24 +1260,24 @@ class Track3DWidget(TrackRaceWidget):
             p.end()
             return
         meters = [self.meters(r) for r in self._runners]
-        cam = self._make_camera(meters, w, h)
+        poses = self._runner_world_poses(meters)
+        cam = self._make_camera(meters, poses, w, h)
 
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         self._draw_sky(p, w, h)
-        self._draw_stadium_bowl(p, cam)
+        self._draw_oval_stadium(p, cam)
         p.setPen(Qt.PenStyle.NoPen)
-        self._draw_track_marks(p, cam)
 
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        leader_x = max(meters) if meters else 0.0
         leader_idx = max(range(n), key=lambda i: meters[i])
-        self._draw_blocks_and_props(p, cam, leader_x)
+        self._draw_props(p, cam, poses)
 
         is_relay = self._event.startswith("4x")
-        order = sorted(range(n), key=lambda i: -cam.to_cam((meters[i], 0.0, self._lane_z(i)))[2])
+        order = sorted(range(n), key=lambda i: -cam.to_cam((poses[i][0], 0.0, poses[i][1]))[2])
         for i in order:
             r = self._runners[i]
             s = r["s"]
+            rx, rz, ryaw, rcurv = poses[i]
             ratio = self._speed_ratio(r)
             phase = 2 * math.pi * (0.75 + 1.65 * ratio) * max(0.0, self._t - GUN_AT) + r["phase"]
             kit = QColor("#f59e0b") if s.is_player else self._kit(s.team_name)
@@ -1207,23 +1289,22 @@ class Track3DWidget(TrackRaceWidget):
             bib = (zlib.crc32(s.athlete_name.encode()) % 890) + 100
             celebrate = (i == leader_idx) and self.race_time > self._winner_time + 1.0 * self._scale
             self._draw_athlete(
-                p, cam, meters[i], self._lane_z(i), phase, ratio,
+                p, cam, rx, rz, ryaw, rcurv, meters[i], phase, ratio,
                 kit, self._skin(s.athlete_name), s.is_player, tag, bib, is_relay, celebrate=celebrate,
             )
 
         self._draw_rain_overlay(p, w, h)
-        # leggera vignettatura ottica da teleobiettivo
         vig = QRadialGradient(w * 0.5, h * 0.5, max(w, h) * 0.72)
         vig.setColorAt(0.75, QColor(0, 0, 0, 0))
-        vig.setColorAt(1.0, QColor(0, 0, 0, 70))
+        vig.setColorAt(1.0, QColor(0, 0, 0, 72))
         p.fillRect(0, 0, w, h, QBrush(vig))
 
         p.setPen(Qt.PenStyle.NoPen)
-        self._paint_hud(p, meters, w, h)
+        self._paint_hud(p, meters, poses, w, h)
         p.end()
 
-    # ---- HUD televisivo compatto (lascia libero il centro della ripresa)
-    def _paint_hud(self, p: QPainter, meters: Sequence[float], w: int, h: int) -> None:
+    # ---- HUD televisivo + radar ovale per le gare su più giri
+    def _paint_hud(self, p: QPainter, meters: Sequence[float], poses: Sequence[Tuple[float, float, float, float]], w: int, h: int) -> None:
         d = self._distance
         n = len(self._runners)
         res = self._result
@@ -1238,8 +1319,6 @@ class Track3DWidget(TrackRaceWidget):
             else (1, -meters[i]),
         )
 
-        # Lista di partenza compatta prima dello sparo, oppure ordine d'arrivo completo dopo la gara;
-        # durante la corsa resta solo una barra inferiore stile TV per non coprire lo stadio.
         show_full_board = (self.race_time <= 0.0) or self._done_all()
         if show_full_board:
             row_h = 20
@@ -1254,7 +1333,7 @@ class Track3DWidget(TrackRaceWidget):
             hdr_f.setBold(True)
             p.setFont(hdr_f)
             p.setPen(QColor("#38bdf8"))
-            hdr_txt = f"ORDINE D'ARRIVO · {self._event.upper()}" if self._done_all() else f"CORSIE · {self._event.upper()}"
+            hdr_txt = f"ORDINE D'ARRIVO · {self._event.upper()}" if self._done_all() else f"PARTENZA · {self._event.upper()}"
             p.drawText(QRectF(panel.left() + 10, panel.top() + 2, panel.width() - 20, 20), Qt.AlignmentFlag.AlignVCenter, hdr_txt)
 
             for rank, i in enumerate(order, start=1):
@@ -1283,17 +1362,16 @@ class Track3DWidget(TrackRaceWidget):
                     p.drawText(QRectF(panel.right() - 66, y, 58, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "RIT")
             p.setFont(font)
 
-        # Barra inferiore broadcast TV (cronometro + top 3/club + vento + badge camera)
+        # Barra inferiore broadcast TV
         bar_y = h - 42.0
-        bar_w = min(w - 24.0, 740.0)
+        bar_w = min(w - 24.0, 760.0)
         bar_x = (w - bar_w) / 2.0
         bar = QRectF(bar_x, bar_y, bar_w, 30)
-        p.setBrush(QColor(9, 15, 29, 222))
+        p.setBrush(QColor(9, 15, 29, 224))
         p.setPen(QPen(QColor(71, 85, 105, 190), 1))
         p.drawRoundedRect(bar, 5, 5)
         p.setPen(Qt.PenStyle.NoPen)
 
-        # tag evento + badge oro
         ev_rect = QRectF(bar.left() + 4, bar.top() + 4, 86, 22)
         p.setBrush(QColor("#b45309"))
         p.drawRoundedRect(ev_rect, 3, 3)
@@ -1304,24 +1382,29 @@ class Track3DWidget(TrackRaceWidget):
         p.setPen(QColor("#fef3c7"))
         p.drawText(ev_rect, Qt.AlignmentFlag.AlignCenter, self._event.upper())
 
-        # top 3 live compatto al centro della barra
         cx_pos = ev_rect.right() + 12
         for pos_idx, i in enumerate(order[:3], start=1):
             r = self._runners[i]
             s = r["s"]
             p.setPen(QColor("#fbbf24" if s.is_player else "#cbd5e1"))
             nm = s.team_name if self._event.startswith("4x") else s.athlete_name.split()[-1]
-            chunk = f"{pos_idx}° {_short(nm, 11)}"
-            p.drawText(QRectF(cx_pos, bar.top(), 118, 30), Qt.AlignmentFlag.AlignVCenter, chunk)
-            cx_pos += 118
+            p.drawText(QRectF(cx_pos, bar.top(), 114, 30), Qt.AlignmentFlag.AlignVCenter, f"{pos_idx}° {_short(nm, 11)}")
+            cx_pos += 114
 
-        # vento dentro la barra
-        if res is not None and res.wind_ms is not None:
+        # contatore giri nei 1500m / 4x400m oppure vento nei 100m
+        leader_m = max(meters) if meters else 0.0
+        if d >= 1500:
+            laps_total = 4
+            rem = max(0.0, d - leader_m)
+            lap_now = min(laps_total, max(1, laps_total - int(rem // 400)))
+            lap_txt = "ULTIMO GIRO" if (rem <= 400.0 and not self._done_all()) else f"GIRO {lap_now}/{laps_total}"
+            p.setPen(QColor("#facc15" if "ULTIMO" in lap_txt else "#38bdf8"))
+            p.drawText(QRectF(bar.right() - 238, bar.top(), 118, 30), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lap_txt)
+        elif res is not None and res.wind_ms is not None:
             arrow = "→" if res.wind_ms >= 0 else "←"
             p.setPen(QColor("#fca5a5" if res.wind_illegal else "#94a3b8"))
             p.drawText(QRectF(bar.right() - 235, bar.top(), 115, 30), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{arrow} {res.wind_ms:+.1f} m/s")
 
-        # cronometro stile Seiko/Omega sulla destra della barra
         clk_rect = QRectF(bar.right() - 112, bar.top() + 3, 108, 24)
         p.setBrush(QColor("#991b1b"))
         p.drawRoundedRect(clk_rect, 4, 4)
@@ -1333,7 +1416,7 @@ class Track3DWidget(TrackRaceWidget):
         p.drawText(clk_rect, Qt.AlignmentFlag.AlignCenter, format_race_time(self.race_clock))
         p.setFont(font)
 
-        # badge camera discreto in alto a destra (stile "LIVE | CAM")
+        # badge camera in alto a destra
         cam_pill = QRectF(w - 134, 12, 122, 22)
         p.setBrush(QColor(9, 15, 29, 185))
         p.setPen(QPen(QColor(51, 65, 85, 160), 1))
@@ -1346,14 +1429,25 @@ class Track3DWidget(TrackRaceWidget):
         p.drawText(QRectF(cam_pill.left() + 20, cam_pill.top(), cam_pill.width() - 24, cam_pill.height()), Qt.AlignmentFlag.AlignVCenter, self._cam_label)
         p.setFont(font)
 
-        # minimappa per distanze > 100m sopra la barra inferiore
-        if d > 100:
-            x0, x1, y = bar_x + 10, bar_x + bar_w - 10, bar_y - 14.0
-            p.fillRect(QRectF(x0, y, x1 - x0, 3), QColor(51, 65, 85, 200))
+        # radar ovale compatto in basso a destra per le gare sull'ovale (400m, 1500m, staffette)
+        if self._is_oval_race():
+            rw, rh = 112.0, 56.0
+            rx0, ry0 = w - rw - 14.0, bar_y - rh - 10.0
+            p.setBrush(QColor(9, 15, 29, 195))
+            p.setPen(QPen(QColor(71, 85, 105, 180), 1))
+            p.drawRoundedRect(QRectF(rx0, ry0, rw, rh), 8, 8)
+            p.setPen(QPen(QColor("#475569"), 5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(rx0 + 12, ry0 + 10, rw - 24, rh - 20), 16, 16)
+            p.setPen(Qt.PenStyle.NoPen)
             for i, r in enumerate(self._runners):
-                mx = x0 + (x1 - x0) * max(0.0, min(1.0, meters[i] / d))
-                p.setBrush(QColor("#fbbf24" if r["s"].is_player else "#94a3b8"))
-                p.drawEllipse(QPointF(mx, y + 1.5), 4.0, 4.0)
+                px_m, pz_m, _, _ = poses[i]
+                nx = (px_m + R_IN) / (STRAIGHT + 2 * R_IN)
+                nz = (-pz_m) / (2 * R_IN)
+                mx = rx0 + 12 + _clamp(nx, 0.0, 1.0) * (rw - 24)
+                my = ry0 + 10 + _clamp(1.0 - nz, 0.0, 1.0) * (rh - 20)
+                p.setBrush(QColor("#fbbf24" if r["s"].is_player else "#cbd5e1"))
+                p.drawEllipse(QPointF(mx, my), 3.4 if r["s"].is_player else 2.5, 3.4 if r["s"].is_player else 2.5)
 
         # banner partenza / fotofinish / record
         phase_txt = self.start_phase
