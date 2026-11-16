@@ -29,7 +29,32 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
+# Applied with ALTER TABLE so v2 saves survive the upgrade.
+V3_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [
+        ("event_attitude_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("gym_level", "INTEGER NOT NULL DEFAULT 0"),
+        ("stand_seats", "INTEGER NOT NULL DEFAULT 500"),
+        ("fidelity", "INTEGER NOT NULL DEFAULT 100"),
+        ("scouting_points_used", "INTEGER NOT NULL DEFAULT 0"),
+        ("bankrupt", "INTEGER NOT NULL DEFAULT 0"),
+        ("league_table_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ],
+    "athletes": [
+        ("in_youth_squad", "INTEGER NOT NULL DEFAULT 0"),
+        ("fans", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "competition_history": [
+        ("is_home", "INTEGER NOT NULL DEFAULT 0"),
+        ("spectators", "INTEGER NOT NULL DEFAULT 0"),
+        ("ticket_income", "INTEGER NOT NULL DEFAULT 0"),
+        ("team_standings_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("player_team", "TEXT NOT NULL DEFAULT ''"),
+    ],
+}
 
 
 def get_default_save_path() -> Path:
@@ -57,7 +82,13 @@ class DatabaseManager:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             current_ver = conn.execute("PRAGMA user_version").fetchone()[0]
-            if current_ver != SCHEMA_VERSION:
+            if current_ver == 2:
+                # Upgrade path: keep the save, just add the new v3 columns
+                for table, columns in V3_COLUMNS.items():
+                    for col_name, col_def in columns:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            elif current_ver != SCHEMA_VERSION:
                 conn.executescript(
                     """
                     DROP TABLE IF EXISTS game_state;
@@ -90,7 +121,14 @@ class DatabaseManager:
                     objectives_json TEXT NOT NULL,
                     milestones_json TEXT NOT NULL,
                     news_log_json TEXT NOT NULL,
-                    pending_dilemma_json TEXT
+                    pending_dilemma_json TEXT,
+                    event_attitude_json TEXT NOT NULL DEFAULT '{}',
+                    gym_level INTEGER NOT NULL DEFAULT 0,
+                    stand_seats INTEGER NOT NULL DEFAULT 500,
+                    fidelity INTEGER NOT NULL DEFAULT 100,
+                    scouting_points_used INTEGER NOT NULL DEFAULT 0,
+                    bankrupt INTEGER NOT NULL DEFAULT 0,
+                    league_table_json TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -116,7 +154,9 @@ class DatabaseManager:
                     is_youth_prospect INTEGER NOT NULL DEFAULT 0,
                     personal_best REAL,
                     personal_best_display TEXT,
-                    doping_boost_weeks INTEGER NOT NULL DEFAULT 0
+                    doping_boost_weeks INTEGER NOT NULL DEFAULT 0,
+                    in_youth_squad INTEGER NOT NULL DEFAULT 0,
+                    fans INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS staff (
@@ -149,7 +189,12 @@ class DatabaseManager:
                     total_prestige_gained INTEGER NOT NULL,
                     travel_cost INTEGER NOT NULL,
                     promoted_to TEXT,
-                    results_json TEXT NOT NULL
+                    results_json TEXT NOT NULL,
+                    is_home INTEGER NOT NULL DEFAULT 0,
+                    spectators INTEGER NOT NULL DEFAULT 0,
+                    ticket_income INTEGER NOT NULL DEFAULT 0,
+                    team_standings_json TEXT NOT NULL DEFAULT '[]',
+                    player_team TEXT NOT NULL DEFAULT ''
                 );
                 """
             )
@@ -204,8 +249,9 @@ class DatabaseManager:
                     id, team_name, game_mode, budget, week, season_number, season_phase,
                     start_date, prestige, reputation, tier, track_condition, member_fees_weekly,
                     event_lineup_json, club_records_json, objectives_json, milestones_json,
-                    news_log_json, pending_dilemma_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
+                    stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -227,6 +273,13 @@ class DatabaseManager:
                     json.dumps(state.milestones),
                     json.dumps(state.news_log),
                     dilemma_json,
+                    json.dumps(state.event_attitude),
+                    state.gym_level,
+                    state.stand_seats,
+                    state.fidelity,
+                    state.scouting_points_used,
+                    1 if state.bankrupt else 0,
+                    json.dumps(state.league_table),
                 ),
             )
 
@@ -236,8 +289,9 @@ class DatabaseManager:
                     id, name, age, specialty, speed, stamina, strength, technique,
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
-                    is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
+                    in_youth_squad, fans
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -264,6 +318,8 @@ class DatabaseManager:
                         a.personal_best,
                         a.personal_best_display,
                         a.doping_boost_weeks,
+                        1 if a.in_youth_squad else 0,
+                        a.fans,
                     )
                     for a in state.athletes
                 ],
@@ -303,8 +359,9 @@ class DatabaseManager:
                 """
                 INSERT INTO competition_history (
                     week, tier, season_phase, meet_name, weather, track_surface,
-                    total_prize_money, total_prestige_gained, travel_cost, promoted_to, results_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    total_prize_money, total_prestige_gained, travel_cost, promoted_to, results_json,
+                    is_home, spectators, ticket_income, team_standings_json, player_team
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -332,6 +389,8 @@ class DatabaseManager:
                                     "wind_illegal": er.wind_illegal,
                                     "is_pb": er.is_pb,
                                     "is_club_record": er.is_club_record,
+                                    "attitude": er.attitude,
+                                    "withdrew_injured": er.withdrew_injured,
                                     "standings": [
                                         {
                                             "athlete_name": s.athlete_name,
@@ -349,6 +408,11 @@ class DatabaseManager:
                                 for er in c.event_results
                             ]
                         ),
+                        1 if c.is_home else 0,
+                        c.spectators,
+                        c.ticket_income,
+                        json.dumps([[t, p] for t, p in c.team_standings]),
+                        c.player_team,
                     )
                     for c in state.competition_history
                 ],
@@ -386,6 +450,8 @@ class DatabaseManager:
                     personal_best=r["personal_best"],
                     personal_best_display=r["personal_best_display"],
                     doping_boost_weeks=r["doping_boost_weeks"],
+                    in_youth_squad=bool(r["in_youth_squad"]),
+                    fans=r["fans"],
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
@@ -446,6 +512,8 @@ class DatabaseManager:
                             is_pb=er.get("is_pb", False),
                             is_club_record=er.get("is_club_record", False),
                             standings=standings,
+                            attitude=er.get("attitude", "Normale"),
+                            withdrew_injured=er.get("withdrew_injured", False),
                         )
                     )
                 history.append(
@@ -465,6 +533,13 @@ class DatabaseManager:
                             if r["promoted_to"]
                             else None
                         ),
+                        is_home=bool(r["is_home"]),
+                        spectators=r["spectators"],
+                        ticket_income=r["ticket_income"],
+                        team_standings=[
+                            (str(t), int(p)) for t, p in json.loads(r["team_standings_json"])
+                        ],
+                        player_team=r["player_team"],
                     )
                 )
 
@@ -514,4 +589,13 @@ class DatabaseManager:
                 milestones=json.loads(row["milestones_json"]),
                 news_log=json.loads(row["news_log_json"]),
                 pending_dilemma=pending_dilemma,
+                event_attitude=json.loads(row["event_attitude_json"]),
+                gym_level=row["gym_level"],
+                stand_seats=row["stand_seats"],
+                fidelity=row["fidelity"],
+                scouting_points_used=row["scouting_points_used"],
+                bankrupt=bool(row["bankrupt"]),
+                league_table={
+                    str(k): int(v) for k, v in json.loads(row["league_table_json"]).items()
+                },
             )

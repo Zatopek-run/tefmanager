@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
+    ATTITUDE_EFFECTS,
+    BANKRUPTCY_THRESHOLD,
+    DEBT_WEEKLY_INTEREST,
+    DNF_MARK,
     EVENTS,
+    GYM_TRAINING_BONUS_PER_LEVEL,
+    GYM_UPKEEP_PER_LEVEL,
+    TEAM_POINTS,
+    TICKET_PRICE,
     TIER_CONFIG,
+    YOUTH_TRAINING_MULT,
+    RaceAttitude,
     Athlete,
     CompetitionSummary,
     CompetitionTier,
@@ -33,6 +44,7 @@ from models.generator import (
     get_meet_name,
     get_rival_teams,
     maybe_generate_dilemma,
+    senior_wage,
 )
 
 
@@ -97,6 +109,7 @@ def apply_weekly_training(
     hired_roles: Optional[Set[StaffRole]] = None,
     leader_present: bool = False,
     rng: Optional[random.Random] = None,
+    gym_level: int = 0,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
@@ -160,6 +173,9 @@ def apply_weekly_training(
         coach_bonus = 1.25
 
     personality_growth = 1.15 if athlete.personality == Personality.PERFEZIONISTA else 1.0
+    facility_growth = 1.0 + gym_level * GYM_TRAINING_BONUS_PER_LEVEL
+    if athlete.in_youth_squad:
+        facility_growth *= YOUTH_TRAINING_MULT
     period_growth = {
         PeriodizationPhase.PREP_GENERALE: 1.05,
         PeriodizationPhase.PREP_SPECIFICA: 1.25,
@@ -173,7 +189,10 @@ def apply_weekly_training(
         if current >= cap:
             return
         headroom = max(0.20, (cap - current) / 45.0)
-        chance = min(0.95, base_chance * age_factor * coach_bonus * personality_growth * period_growth * headroom)
+        chance = min(
+            0.95,
+            base_chance * age_factor * coach_bonus * personality_growth * period_growth * facility_growth * headroom
+        )
         if r.random() < chance:
             delta = 2 if (max_gain >= 2 and r.random() < 0.25 and current < cap - 3) else 1
             setattr(athlete, stat_name, clamp_stat(current + delta, 1, cap))
@@ -217,6 +236,15 @@ def apply_weekly_training(
 
     athlete.fatigue = clamp_stat(athlete.fatigue + fatigue_add, 0, 100)
     athlete.form = _recalculate_form(athlete, rested, tapering, has_mental, leader_present)
+
+    # Veterans past their peak window slowly lose physical qualities
+    years_past_peak = athlete.age - (high_peak + 1)
+    if years_past_peak > 0 and r.random() < min(0.5, 0.10 * years_past_peak):
+        stat_name = r.choice(["speed", "stamina", "strength"])
+        current = getattr(athlete, stat_name)
+        if current > 1:
+            setattr(athlete, stat_name, current - 1)
+            gains.append(f"{athlete.name}: -1 {stat_name.capitalize()} (età)")
 
     # Injury risk check when overloaded
     if not rested and not tapering and athlete.fatigue >= 68:
@@ -346,17 +374,45 @@ def _evaluate_objectives(state: GameState, summary: Optional[CompetitionSummary]
                         obj.completed = True
 
 
+def _is_better(event_def: EventDefinition, new: float, old: float) -> bool:
+    return new < old if event_def.lower_is_better else new > old
+
+
+def _compute_ticket_income(
+    state: GameState, weather: WeatherCondition, rng: random.Random
+) -> Tuple[int, int]:
+    """Spectators & ticket income for a home meet (capped by stand capacity)."""
+    demand = (300 + state.prestige * 4 + state.tier.order * 900) * (0.6 + state.reputation / 250.0)
+    if weather == WeatherCondition.PIOGGIA and state.season_phase != SeasonPhase.INDOOR:
+        demand *= 0.7
+    demand *= rng.uniform(0.85, 1.15)
+    spectators = int(min(state.stand_seats, max(0.0, demand)))
+    return spectators, spectators * TICKET_PRICE[state.tier.value]
+
+
+def _rival_only_points(rivals: List[str], team_points: Dict[str, int], rng: random.Random) -> None:
+    """When the club enters nobody in an event, the rivals still score among themselves."""
+    order = list(rivals)
+    rng.shuffle(order)
+    for place, team in enumerate(order, start=1):
+        team_points[team] = team_points.get(team, 0) + TEAM_POINTS.get(place, 0)
+
+
 def simulate_competition(
     state: GameState,
     rng: Optional[random.Random] = None,
 ) -> CompetitionSummary:
-    """Simulate the current week's competition across active events with wind, weather & records."""
+    """Simulate the current week's meet: wind, weather, race attitude, team scoring & home gate."""
     r = rng or random.Random()
     tier_cfg = TIER_CONFIG[state.tier]
     rivals = get_rival_teams(state.tier)
     roles = _hired_roles(state)
     has_mental = StaffRole.MENTAL_COACH in roles
-    leader_present = any(a.personality == Personality.LEADER and not a.is_injured for a in state.athletes)
+    has_doctor = StaffRole.DOCTOR in roles
+    leader_present = any(
+        a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
+    )
+    is_home = state.next_meet_is_home
 
     weather = (
         WeatherCondition.SERENO
@@ -369,9 +425,15 @@ def simulate_competition(
         else ("Tartan Standard" if state.track_condition >= 55 else "Tartan Usurato")
     )
 
-    athlete_by_id: Dict[int, Athlete] = {a.id: a for a in state.athletes if a.id is not None}
+    athlete_by_id: Dict[int, Athlete] = {
+        a.id: a for a in state.main_squad if a.id is not None
+    }
+    fan_mult = {0: 3, 1: 6, 2: 12, 3: 25}[state.tier.order]
 
     event_results: List[EventResult] = []
+    team_points: Dict[str, int] = {state.team_name: 0}
+    for team in rivals:
+        team_points.setdefault(team, 0)
     total_prize = 0
     total_prestige = 0
 
@@ -381,7 +443,11 @@ def simulate_competition(
         player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
 
         if player_athlete is None or player_athlete.is_injured:
+            _rival_only_points(rivals, team_points, r)
             continue
+
+        attitude = state.attitude_for(event_name)
+        att = ATTITUDE_EFFECTS[attitude]
 
         wind_ms: Optional[float] = (
             _roll_meet_wind(weather, state.season_phase, r) if event_def.wind_affected else None
@@ -390,10 +456,34 @@ def simulate_competition(
 
         standings: List[EventStanding] = []
 
-        p_score = _compute_athlete_event_score(
-            player_athlete, event_def, weather, state.track_condition, has_mental, r
-        )
-        p_val, p_disp = _score_to_mark(event_def, p_score, wind_ms)
+        # In-race injury check: attitude & accumulated fatigue drive the risk
+        injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
+        if has_doctor:
+            injury_chance *= 0.55
+        withdrew = r.random() < injury_chance
+
+        if withdrew:
+            p_val = 9999.0 if event_def.lower_is_better else 0.0
+            p_disp = DNF_MARK
+            weeks_out = r.randint(1, 3) + (1 if attitude == RaceAttitude.AGGRESSIVO else 0)
+            player_athlete.injured_weeks = max(player_athlete.injured_weeks, weeks_out)
+            player_athlete.form = clamp_stat(player_athlete.form - 15, 5, 100)
+            state.news_log.insert(
+                0,
+                f"Sett. {state.week}: {player_athlete.name} si ritira nei {event_name} per un "
+                f"problema muscolare (atteggiamento {attitude.value}) — stop di {weeks_out} sett.",
+            )
+        else:
+            p_score = _compute_athlete_event_score(
+                player_athlete, event_def, weather, state.track_condition, has_mental, r
+            )
+            p_score += att["score"]
+            if att["sigma"] > 0:
+                p_score += r.gauss(0.0, att["sigma"])  # all-out efforts are less predictable
+            if is_home:
+                p_score += 1.0  # home crowd
+            p_val, p_disp = _score_to_mark(event_def, p_score, wind_ms)
+
         standings.append(
             EventStanding(
                 athlete_name=player_athlete.name,
@@ -406,11 +496,11 @@ def simulate_competition(
             )
         )
 
-        # Match fatigue
-        player_athlete.fatigue = clamp_stat(player_athlete.fatigue + 7, 0, 100)
+        # Match fatigue scales with attitude
+        player_athlete.fatigue = clamp_stat(player_athlete.fatigue + int(att["fatigue"]), 0, 100)
         player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
 
-        # 7 AI opponents
+        # 7 AI opponents, one per rival club
         opp_base = tier_cfg["opponent_skill"]
         for i in range(7):
             opp_name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
@@ -430,29 +520,30 @@ def simulate_competition(
             )
 
         standings.sort(key=lambda s: s.mark_value, reverse=not event_def.lower_is_better)
+        if withdrew:
+            # A withdrawn athlete is always classified last
+            standings.sort(key=lambda s: s.is_player)
         player_place = 1
         for idx, standing in enumerate(standings, start=1):
             standing.placement = idx
             if standing.is_player:
                 player_place = idx
+            if not (standing.is_player and withdrew):
+                team_points[standing.team_name] = team_points.get(standing.team_name, 0) + TEAM_POINTS.get(idx, 0)
 
         # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
         is_pb = False
         is_club_rec = False
-        if not wind_illegal:
-            if player_athlete.personal_best is None or (
-                (event_def.lower_is_better and p_val < player_athlete.personal_best)
-                or (not event_def.lower_is_better and p_val > player_athlete.personal_best)
+        if not wind_illegal and not withdrew:
+            if player_athlete.personal_best is None or _is_better(
+                event_def, p_val, player_athlete.personal_best
             ):
                 player_athlete.personal_best = p_val
                 player_athlete.personal_best_display = p_disp
                 is_pb = True
 
             existing_rec = state.club_records.get(event_name)
-            if existing_rec is None or (
-                (event_def.lower_is_better and p_val < existing_rec[0])
-                or (not event_def.lower_is_better and p_val > existing_rec[0])
-            ):
+            if existing_rec is None or _is_better(event_def, p_val, existing_rec[0]):
                 state.club_records[event_name] = (p_val, p_disp, player_athlete.name)
                 is_club_rec = True
                 state.milestones.insert(
@@ -461,18 +552,16 @@ def simulate_competition(
                 )
 
             # Historic benchmark check
-            if (event_def.lower_is_better and p_val < event_def.historic_mark) or (
-                not event_def.lower_is_better and p_val > event_def.historic_mark
-            ):
+            if _is_better(event_def, p_val, event_def.historic_mark):
                 milestone_msg = (
                     f"Sett. {state.week}: MOMENTO STORICO! {player_athlete.name} abbatte il muro "
                     f"{event_def.historic_label} ({p_disp})!"
                 )
                 if milestone_msg not in state.milestones:
                     state.milestones.insert(0, milestone_msg)
-        elif player_athlete.personal_best is None or (
-            (event_def.lower_is_better and p_val < player_athlete.personal_best)
-            or (not event_def.lower_is_better and p_val > player_athlete.personal_best)
+        elif not withdrew and (
+            player_athlete.personal_best is None
+            or _is_better(event_def, p_val, player_athlete.personal_best)
         ):
             state.news_log.insert(
                 0,
@@ -483,8 +572,15 @@ def simulate_competition(
         prize_multipliers = {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}
         prestige_table = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}
 
-        prize = int(tier_cfg["prize_base"] * prize_multipliers.get(player_place, 0.0))
-        prestige_gain = prestige_table.get(player_place, 1) + (5 if is_club_rec else 0)
+        if withdrew:
+            prize = 0
+            prestige_gain = 0
+        else:
+            prize = int(tier_cfg["prize_base"] * prize_multipliers.get(player_place, 0.0))
+            prestige_gain = prestige_table.get(player_place, 1) + (5 if is_club_rec else 0)
+            # Fans follow athletes who place well, set PBs and break records
+            fan_gain = max(0, 9 - player_place) * fan_mult + (5 if is_pb else 0) + (10 if is_club_rec else 0)
+            player_athlete.fans += fan_gain
 
         total_prize += prize
         total_prestige += prestige_gain
@@ -503,34 +599,66 @@ def simulate_competition(
                 is_pb=is_pb,
                 is_club_record=is_club_rec,
                 standings=standings,
+                attitude=attitude.value,
+                withdrew_injured=withdrew,
             )
         )
 
-    travel_cost = tier_cfg["travel_cost"]
-    state.budget += total_prize - travel_cost
+    team_standings = sorted(team_points.items(), key=lambda kv: kv[1], reverse=True)
+    team_place = next(
+        (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
+        len(team_standings),
+    )
+    team_bonus = {1: 10, 2: 6, 3: 3}.get(team_place, 0)
+    total_prestige += team_bonus
+    for team, pts in team_points.items():
+        state.league_table[team] = state.league_table.get(team, 0) + pts
+
+    # Home meets: no bus trip, but the gate brings ticket income and wears the track
+    spectators, ticket_income = (0, 0)
+    if is_home:
+        spectators, ticket_income = _compute_ticket_income(state, weather, r)
+        travel_cost = 0
+        state.track_condition = clamp_stat(state.track_condition - 3, 25, 100)
+    else:
+        travel_cost = tier_cfg["travel_cost"]
+    state.budget += total_prize + ticket_income - travel_cost
     state.prestige += total_prestige
 
+    meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
     if total_prize > 0:
         state.transactions.insert(
             0,
             Transaction(
                 id=None,
                 week=state.week,
-                description=f"Premi {get_meet_name(state.week, state.tier, state.season_phase.value)}",
+                description=f"Premi {meet_name}",
                 category="Premi Gara",
                 amount=total_prize,
             ),
         )
-    state.transactions.insert(
-        0,
-        Transaction(
-            id=None,
-            week=state.week,
-            description=f"Trasferta in pullman ({state.tier.value})",
-            category="Trasferte",
-            amount=-travel_cost,
-        ),
-    )
+    if is_home:
+        state.transactions.insert(
+            0,
+            Transaction(
+                id=None,
+                week=state.week,
+                description=f"Biglietteria meeting in casa ({spectators:,} spettatori)",
+                category="Biglietti",
+                amount=ticket_income,
+            ),
+        )
+    else:
+        state.transactions.insert(
+            0,
+            Transaction(
+                id=None,
+                week=state.week,
+                description=f"Trasferta in pullman ({state.tier.value})",
+                category="Trasferte",
+                amount=-travel_cost,
+            ),
+        )
 
     meet_tier = state.tier
     promoted_to: Optional[CompetitionTier] = None
@@ -540,6 +668,7 @@ def simulate_competition(
         if state.prestige >= required:
             state.tier = next_tier
             promoted_to = next_tier
+            state.league_table = {}  # new category, new rivals
             promo_msg = f"Sett. {state.week}: PROMOZIONE! {state.team_name} sale in categoria {next_tier.value}!"
             state.news_log.insert(0, promo_msg)
             state.milestones.insert(0, promo_msg)
@@ -548,7 +677,7 @@ def simulate_competition(
         week=state.week,
         tier=meet_tier,
         season_phase=state.season_phase,
-        meet_name=get_meet_name(state.week, meet_tier, state.season_phase.value),
+        meet_name=meet_name,
         weather=weather,
         track_surface=track_surface,
         event_results=event_results,
@@ -556,15 +685,54 @@ def simulate_competition(
         total_prestige_gained=total_prestige,
         travel_cost=travel_cost,
         promoted_to=promoted_to,
+        is_home=is_home,
+        spectators=spectators,
+        ticket_income=ticket_income,
+        team_standings=team_standings,
+        player_team=state.team_name,
     )
     state.competition_history.insert(0, summary)
+    venue = f"in casa, {spectators:,} spettatori" if is_home else "in trasferta"
     state.news_log.insert(
         0,
-        f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}) — "
-        f"+${total_prize:,} premi, -{travel_cost:,}$ trasferta, +{total_prestige} prestigio.",
+        f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}, {venue}) — "
+        f"società {team_place}ª con {team_points[state.team_name]} pt, "
+        f"+${total_prize:,} premi, +{total_prestige} prestigio.",
     )
     _evaluate_objectives(state, summary)
     return summary
+
+
+def weekly_finances(state: GameState) -> Dict[str, int]:
+    """Projected recurring weekly income & expenses (excluding meets and one-off costs)."""
+    tier_cfg = TIER_CONFIG[state.tier]
+    rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
+    fidelity_mult = 0.8 + 0.2 * (state.fidelity / 100.0)
+    sponsor = round(tier_cfg["weekly_sponsor"] * rep_mult * fidelity_mult)
+    individual = sum(a.fans // 4 for a in state.main_squad if a.age >= 18)
+    athlete_wages = sum(a.weekly_wage for a in state.main_squad)
+    staff_cost = sum(s.weekly_cost for s in state.staff if s.hired)
+    gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
+    income = sponsor + individual + state.member_fees_weekly
+    expenses = athlete_wages + staff_cost + gym_upkeep
+    return {
+        "sponsor": sponsor,
+        "individual_sponsors": individual,
+        "member_fees": state.member_fees_weekly,
+        "income": income,
+        "athlete_wages": athlete_wages,
+        "staff_cost": staff_cost,
+        "gym_upkeep": gym_upkeep,
+        "expenses": expenses,
+        "net": income - expenses,
+    }
+
+
+def promote_youth_athlete(state: GameState, athlete: Athlete) -> None:
+    """Move an academy kid to the main squad: starts being paid, form capped like a debut."""
+    athlete.in_youth_squad = False
+    athlete.weekly_wage = senior_wage(athlete)
+    athlete.form = min(athlete.form, 75)
 
 
 def advance_week(
@@ -582,7 +750,9 @@ def advance_week(
         travel_cost = comp_summary.travel_cost
 
     roles = _hired_roles(state)
-    leader_present = any(a.personality == Personality.LEADER and not a.is_injured for a in state.athletes)
+    leader_present = any(
+        a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
+    )
 
     injuries: List[str] = []
     recoveries: List[str] = []
@@ -591,7 +761,11 @@ def advance_week(
 
     for athlete in state.athletes:
         gains, injury_note, recovery_note, scandal_note = apply_weekly_training(
-            athlete, hired_roles=roles, leader_present=leader_present, rng=r
+            athlete,
+            hired_roles=roles,
+            leader_present=leader_present,
+            rng=r,
+            gym_level=state.gym_level,
         )
         stat_gains.extend(gains)
         if injury_note:
@@ -607,62 +781,54 @@ def advance_week(
             state.news_log.insert(0, f"Sett. {completed_week}: {scandal_note}")
             state.milestones.insert(0, f"Sett. {completed_week}: {scandal_note}")
 
-    # Weekly finances: sponsor scaled by ethical reputation + member fees vs athlete & staff wages
-    tier_cfg = TIER_CONFIG[state.tier]
-    rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
-    sponsor_income = round(tier_cfg["weekly_sponsor"] * rep_mult)
-    member_fees = state.member_fees_weekly
-    total_income = sponsor_income + member_fees
+    # Weekly finances: club sponsor (reputation & fidelity), personal sponsors, fees vs wages & upkeep
+    fin = weekly_finances(state)
+    state.budget += fin["net"]
 
-    athlete_wages = sum(a.weekly_wage for a in state.athletes)
-    staff_cost = sum(s.weekly_cost for s in state.staff if s.hired)
-
-    state.budget += total_income - athlete_wages - staff_cost
-    state.transactions.insert(
-        0,
-        Transaction(
-            id=None,
-            week=completed_week,
-            description=f"Sponsor Locali ({state.tier.value}, Rep {state.reputation}%)",
-            category="Sponsor",
-            amount=sponsor_income,
-        ),
-    )
-    state.transactions.insert(
-        0,
-        Transaction(
-            id=None,
-            week=completed_week,
-            description="Quote Tesserati & Contributi",
-            category="Quote Sociali",
-            amount=member_fees,
-        ),
-    )
-    state.transactions.insert(
-        0,
-        Transaction(
-            id=None,
-            week=completed_week,
-            description=f"Stipendi Atleti ({len(state.athletes)})",
-            category="Stipendi Atleti",
-            amount=-athlete_wages,
-        ),
-    )
-    if staff_cost > 0:
-        hired_count = sum(1 for s in state.staff if s.hired)
+    def ledger(description: str, category: str, amount: int) -> None:
         state.transactions.insert(
             0,
-            Transaction(
-                id=None,
-                week=completed_week,
-                description=f"Compensi Staff ({hired_count} specialisti)",
-                category="Staff",
-                amount=-staff_cost,
-            ),
+            Transaction(id=None, week=completed_week, description=description, category=category, amount=amount),
         )
+
+    ledger(
+        f"Sponsor Società ({state.tier.value}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)",
+        "Sponsor",
+        fin["sponsor"],
+    )
+    if fin["individual_sponsors"] > 0:
+        ledger("Sponsor Individuali Atleti (in base ai fan)", "Sponsor", fin["individual_sponsors"])
+    ledger("Quote Tesserati & Contributi", "Quote Sociali", fin["member_fees"])
+    ledger(f"Stipendi Atleti ({len(state.main_squad)})", "Stipendi Atleti", -fin["athlete_wages"])
+    if fin["staff_cost"] > 0:
+        hired_count = sum(1 for s in state.staff if s.hired)
+        ledger(f"Compensi Staff ({hired_count} specialisti)", "Staff", -fin["staff_cost"])
+    if fin["gym_upkeep"] > 0:
+        ledger(f"Gestione Palestra (livello {state.gym_level})", "Impianto", -fin["gym_upkeep"])
+
+    # Debt: interest on the negative balance, bankruptcy below the threshold
+    if state.budget < 0:
+        interest = int(math.ceil(-state.budget * DEBT_WEEKLY_INTEREST))
+        state.budget -= interest
+        ledger("Interessi passivi sul debito (5%)", "Interessi", -interest)
+        state.news_log.insert(
+            0, f"Sett. {completed_week}: Conto in rosso! Pagati ${interest:,} di interessi."
+        )
+        if state.budget < BANKRUPTCY_THRESHOLD and not state.bankrupt:
+            state.bankrupt = True
+            msg = (
+                f"Sett. {completed_week}: FALLIMENTO! Il debito ha superato "
+                f"${-BANKRUPTCY_THRESHOLD:,}: la società viene messa in liquidazione."
+            )
+            state.news_log.insert(0, msg)
+            state.milestones.insert(0, msg)
 
     # Gradual tartan track wear
     state.track_condition = clamp_stat(state.track_condition - r.randint(1, 3), 25, 100)
+
+    # Sponsors slowly regain trust in a stable squad; scouting budget resets
+    state.fidelity = min(100, state.fidelity + 2)
+    state.scouting_points_used = 0
 
     state.week += 1
 
@@ -673,6 +839,7 @@ def advance_week(
         state.season_phase = cycle[next_idx]
         if state.season_phase == SeasonPhase.OUTDOOR:
             state.season_number += 1
+            state.league_table = {}
             for a in state.athletes:
                 a.age += 1
         state.news_log.insert(
@@ -680,10 +847,19 @@ def advance_week(
             f"Sett. {state.week}: Inizia la stagione {state.season_phase.value}!",
         )
 
+    # Academy kids turning 18 join the main squad automatically
+    for a in state.youth_squad:
+        if a.age >= 18:
+            promote_youth_athlete(state, a)
+            state.news_log.insert(
+                0, f"Sett. {state.week}: {a.name} compie 18 anni e passa in Prima Squadra dal vivaio."
+            )
+
     if state.is_competition_week:
+        venue = "IN CASA" if state.next_meet_is_home else "in trasferta"
         state.news_log.insert(
             0,
-            f"Sett. {state.week}: Settimana di Gara! Verifica la formazione e valuta lo Scarico (Tapering).",
+            f"Sett. {state.week}: Settimana di Gara ({venue})! Verifica formazione, atteggiamento e Scarico.",
         )
 
     _evaluate_objectives(state, comp_summary)
@@ -693,13 +869,14 @@ def advance_week(
 
     state.news_log = state.news_log[:70]
     state.milestones = state.milestones[:40]
+    state.transactions = state.transactions[:400]
 
     return WeekAdvanceReport(
         completed_week=completed_week,
         new_week=state.week,
-        weekly_income=total_income,
-        weekly_wages=athlete_wages,
-        staff_cost=staff_cost,
+        weekly_income=fin["income"],
+        weekly_wages=fin["athlete_wages"],
+        staff_cost=fin["staff_cost"],
         travel_cost=travel_cost,
         injuries=injuries,
         recoveries=recoveries,

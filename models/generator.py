@@ -66,6 +66,8 @@ def generate_athlete(
     rng: Optional[random.Random] = None,
     existing_names: Optional[set[str]] = None,
     youth_prospect: bool = False,
+    age_range: Optional[tuple[int, int]] = None,
+    base_offset: int = 0,
 ) -> Athlete:
     """Procedurally generate an athlete with discipline age curve, resilience, and personality."""
     r = rng or random.Random()
@@ -78,7 +80,9 @@ def generate_athlete(
         name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
 
     chosen_specialty = specialty or r.choice(list(Specialty))
-    if youth_prospect:
+    if age_range is not None:
+        age = r.randint(*age_range)
+    elif youth_prospect:
         age = r.randint(15, 17)
     else:
         low_peak, high_peak = chosen_specialty.peak_age_range
@@ -90,7 +94,7 @@ def generate_athlete(
         CompetitionTier.NAZIONALE: 67,
         CompetitionTier.INTERNAZIONALE: 79,
     }
-    base = base_map[tier] - (10 if youth_prospect else 0)
+    base = base_map[tier] - (10 if youth_prospect else 0) + base_offset
 
     def roll(bias: int = 0) -> int:
         return clamp_stat(r.gauss(base + bias, 7))
@@ -142,8 +146,7 @@ def generate_athlete(
         injured_weeks=0,
         is_youth_prospect=youth_prospect,
     )
-    wage_base = 80 if youth_prospect else 100
-    athlete.weekly_wage = clamp_stat(wage_base + athlete.overall * 4.2, 95, 950)
+    athlete.weekly_wage = senior_wage(athlete)
     return athlete
 
 
@@ -242,6 +245,47 @@ def generate_school_scouting_pool(
     return pool
 
 
+def generate_academy_prospects(
+    count: int,
+    rng: Optional[random.Random] = None,
+    specialty: Optional[Specialty] = None,
+    high_potential: bool = False,
+    existing_names: Optional[set[str]] = None,
+    allowed_specialties: Optional[List[Specialty]] = None,
+) -> List[Athlete]:
+    """Generate 14-17 year-old kids for the youth academy (vivaio).
+
+    They are raw (low current stats) but can carry high potential; a
+    "high potential" search guarantees Potential >= 85.
+    """
+    r = rng or random.Random()
+    used = set(existing_names or set())
+    pool_specs = allowed_specialties or list(Specialty)
+    kids: List[Athlete] = []
+    for _ in range(count):
+        kid = generate_athlete(
+            tier=CompetitionTier.PROVINCIALE,
+            specialty=specialty or r.choice(pool_specs),
+            rng=r,
+            existing_names=used,
+            youth_prospect=True,
+            age_range=(14, 17),
+            base_offset=-6,
+        )
+        kid.potential = r.randint(85, 97) if high_potential else r.randint(68, 95)
+        kid.in_youth_squad = True
+        kid.weekly_wage = 0
+        used.add(kid.name)
+        kids.append(kid)
+    return kids
+
+
+def senior_wage(athlete: Athlete) -> int:
+    """Weekly wage for a main-squad athlete (academy kids are unpaid)."""
+    wage_base = 80 if athlete.is_youth_prospect else 100
+    return clamp_stat(wage_base + athlete.overall * 4.2, 95, 950)
+
+
 def create_initial_staff() -> List[StaffMember]:
     """Create the 6 specialized club staff candidates."""
     return [
@@ -330,7 +374,9 @@ def build_default_lineup(
     used_ids: set[int] = set()
     for event_name in targets:
         event_def = EVENTS[event_name]
-        candidates = [a for a in athletes if not a.is_injured and a.id is not None]
+        candidates = [
+            a for a in athletes if not a.is_injured and not a.in_youth_squad and a.id is not None
+        ]
         if not candidates:
             lineup[event_name] = None
             continue

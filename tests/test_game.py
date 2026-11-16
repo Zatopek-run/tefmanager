@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import random
 import tempfile
@@ -17,12 +18,14 @@ from models.database import DatabaseManager
 from models.entities import (
     CompetitionTier,
     PeriodizationPhase,
+    RaceAttitude,
+    Specialty,
     SeasonPhase,
     TrainingFocus,
     WeatherCondition,
 )
 from models.generator import generate_vertical_slice_roster
-from models.simulation import advance_week, apply_weekly_training
+from models.simulation import advance_week, apply_weekly_training, weekly_finances
 
 
 class TestVerticalSliceAndMechanics(unittest.TestCase):
@@ -112,8 +115,272 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
             self.assertEqual(ctrl.state.season_phase, SeasonPhase.CROSS)
 
 
+class TestMaxithlonInspiredMechanics(unittest.TestCase):
+    """Youth academy, scouting points, race attitude, home gate, club league, debt, fidelity."""
+
+    def _ctrl(self, tmpdir: str, seed: int = 1, mode: str = "vertical_slice") -> GameController:
+        db = DatabaseManager(db_path=Path(tmpdir) / f"m{seed}.db")
+        ctrl = GameController(db_manager=db, rng=random.Random(seed))
+        if mode != "vertical_slice":
+            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+        return ctrl
+
+    def test_scouting_points_and_escalating_fees(self) -> None:
+        from controllers.game_controller import scouting_search_cost
+
+        self.assertEqual(scouting_search_cost(0, 0), (2, 150))
+        self.assertEqual(scouting_search_cost(3, 2), (4, 1850))  # 7 pts total (2200) - 3 pts (350)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir)
+            budget = ctrl.state.budget
+            kids = ctrl.run_youth_scouting(specialty=Specialty.JUMPS, high_potential=True)
+            self.assertTrue(1 <= len(kids) <= 4)
+            for k in kids:
+                self.assertTrue(14 <= k.age <= 17)
+                self.assertEqual(k.specialty, Specialty.JUMPS)
+                self.assertGreaterEqual(k.potential, 85)
+            self.assertEqual(ctrl.state.scouting_points_left, 4)
+            self.assertEqual(ctrl.state.budget, budget - 600)
+            ctrl.run_youth_scouting(specialty=Specialty.JUMPS, high_potential=True)
+            self.assertEqual(ctrl.state.scouting_points_left, 0)
+            self.assertEqual(ctrl.run_youth_scouting(), [])  # out of points
+            ctrl.advance_week()
+            self.assertEqual(ctrl.state.scouting_points_left, 8)
+            self.assertEqual(ctrl.scouting_results, [])  # unsigned kids leave
+
+    def test_youth_squad_rules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=4)
+            kids = []
+            while not kids:
+                kids = ctrl.run_youth_scouting()
+            kid = kids[0]
+            self.assertTrue(ctrl.sign_youth(kid))
+            self.assertIn(kid, ctrl.state.youth_squad)
+            self.assertEqual(kid.weekly_wage, 0)
+            # Never selected for meets
+            ctrl.auto_fill_lineup()
+            self.assertNotIn(kid.id, ctrl.state.event_lineup.values())
+            # Trains faster than an identical main-squad athlete
+            twin = copy.deepcopy(kid)
+            twin.in_youth_squad = False
+            for a in (kid, twin):
+                a.potential, a.speed, a.stamina, a.strength, a.technique = 95, 40, 40, 40, 40
+                a.training_focus = TrainingFocus.TECHNIQUE
+                a.age = 16
+            for seed in range(40):
+                for a in (kid, twin):
+                    a.fatigue = 0
+                    apply_weekly_training(a, rng=random.Random(seed))
+            self.assertGreater(kid.technique, twin.technique)
+            # Promotion: joins main squad and gets paid
+            self.assertTrue(ctrl.promote_youth(kid.id))
+            self.assertFalse(kid.in_youth_squad)
+            self.assertGreater(kid.weekly_wage, 0)
+
+    def test_auto_promotion_at_18(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=5)
+            kids = []
+            while not kids:
+                kids = ctrl.run_youth_scouting()
+            kid = kids[0]
+            ctrl.sign_youth(kid)
+            kid.age = 18
+            ctrl.advance_week()
+            self.assertFalse(kid.in_youth_squad)
+
+    def test_race_attitude_tradeoffs(self) -> None:
+        from models import simulation as sim
+
+        means = {}
+        fatigue = {}
+        for attitude in (RaceAttitude.PRUDENTE, RaceAttitude.AGGRESSIVO):
+            marks, fat = [], []
+            for seed in range(60):
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    ctrl = self._ctrl(tmpdir, seed=7)
+                    ctrl.state.week = 4
+                    for ev in ctrl.state.active_events:
+                        ctrl.state.event_attitude[ev] = attitude.value
+                    sprinter_id = ctrl.state.event_lineup["100m"]
+                    sprinter = next(a for a in ctrl.state.athletes if a.id == sprinter_id)
+                    sprinter.fatigue = 20
+                    summary = sim.simulate_competition(ctrl.state, rng=random.Random(seed))
+                    res = next(er for er in summary.event_results if er.event_name == "100m")
+                    if not res.withdrew_injured:
+                        marks.append(next(s.mark_value for s in res.standings if s.is_player))
+                        fat.append(sprinter.fatigue)
+            means[attitude] = sum(marks) / len(marks)
+            fatigue[attitude] = sum(fat) / len(fat)
+        self.assertLess(means[RaceAttitude.AGGRESSIVO], means[RaceAttitude.PRUDENTE])  # faster
+        self.assertGreater(fatigue[RaceAttitude.AGGRESSIVO], fatigue[RaceAttitude.PRUDENTE])
+
+    def test_withdrawal_is_last_and_scores_nothing(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=8)
+            ctrl.state.week = 4
+            for a in ctrl.state.athletes:
+                a.fatigue = 100  # near-certain in-race injury
+            ctrl.state.event_attitude = {ev: "Aggressivo" for ev in ctrl.state.active_events}
+            summary = None
+            for seed in range(20):
+                summary = sim.simulate_competition(ctrl.state, rng=random.Random(seed))
+                if any(er.withdrew_injured for er in summary.event_results):
+                    break
+                for a in ctrl.state.athletes:
+                    a.injured_weeks, a.fatigue = 0, 100
+            assert summary is not None
+            dnf = next(er for er in summary.event_results if er.withdrew_injured)
+            self.assertEqual(dnf.placement, dnf.total_competitors)
+            self.assertEqual(dnf.prize_money, 0)
+            self.assertEqual(dnf.player_mark, "Ritirato")
+            athlete = next(a for a in ctrl.state.athletes if a.name == dnf.player_athlete_name)
+            self.assertTrue(athlete.is_injured)
+
+    def test_home_meet_gate_and_away_travel(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=9)
+            ctrl.state.week = 4  # meet #1: home
+            self.assertTrue(ctrl.state.next_meet_is_home)
+            home = sim.simulate_competition(ctrl.state, rng=random.Random(1))
+            self.assertTrue(home.is_home)
+            self.assertEqual(home.travel_cost, 0)
+            self.assertGreater(home.ticket_income, 0)
+            self.assertLessEqual(home.spectators, ctrl.state.stand_seats)
+            ctrl.state.week = 8  # meet #2: away
+            away = sim.simulate_competition(ctrl.state, rng=random.Random(1))
+            self.assertFalse(away.is_home)
+            self.assertGreater(away.travel_cost, 0)
+            self.assertEqual(away.ticket_income, 0)
+
+    def test_club_league_points(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=10)
+            ctrl.state.week = 4
+            ctrl.state.prestige = -1000  # keep the same category for this test
+            ctrl.state.event_lineup["1500m"] = None  # empty slot: rivals still score
+            summary = sim.simulate_competition(ctrl.state, rng=random.Random(2))
+            self.assertEqual(len(summary.team_standings), 8)
+            # 3 events x (8+7+...+1 = 36) points, minus the empty slot's 8th place point
+            self.assertEqual(sum(p for _t, p in summary.team_standings), 3 * 36 - 1)
+            self.assertEqual(dict(summary.team_standings), ctrl.state.league_table)
+            self.assertGreater(summary.team_placement, 0)
+
+    def test_facilities_gym_and_stands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=11)
+            budget = ctrl.state.budget
+            self.assertTrue(ctrl.upgrade_gym())
+            self.assertEqual(ctrl.state.gym_level, 1)
+            self.assertEqual(ctrl.state.budget, budget - 2500)
+            self.assertTrue(ctrl.expand_stands())
+            self.assertEqual(ctrl.state.stand_seats, 1000)
+            fin = weekly_finances(ctrl.state)
+            self.assertEqual(fin["gym_upkeep"], 40)
+
+    def test_debt_interest_and_bankruptcy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=12)
+            ctrl.state.week = 2
+            ctrl.state.budget = -10000
+            ctrl.advance_week()
+            self.assertTrue(any(t.category == "Interessi" for t in ctrl.state.transactions))
+            self.assertFalse(ctrl.state.bankrupt)
+            ctrl.state.budget = -30000
+            ctrl.advance_week()
+            self.assertTrue(ctrl.state.bankrupt)
+            week = ctrl.state.week
+            self.assertIsNone(ctrl.advance_week())  # game over: no more weeks
+            self.assertEqual(ctrl.state.week, week)
+
+    def test_fidelity_and_individual_sponsors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=13)
+            base = weekly_finances(ctrl.state)
+            star = ctrl.state.main_squad[0]
+            star.age, star.fans = 25, 400
+            self.assertEqual(weekly_finances(ctrl.state)["individual_sponsors"], 100)
+            ctrl.release_athlete(ctrl.state.main_squad[-1].id)
+            self.assertEqual(ctrl.state.fidelity, 92)
+            self.assertLess(weekly_finances(ctrl.state)["sponsor"], base["sponsor"])
+
+    def test_veterans_decline(self) -> None:
+        roster = generate_vertical_slice_roster(rng=random.Random(3))
+        vet = roster[0]
+        vet.age = 36
+        vet.potential = vet.speed  # no headroom to grow back
+        vet.training_focus = TrainingFocus.REST
+        start = vet.speed + vet.stamina + vet.strength
+        for seed in range(30):
+            apply_weekly_training(vet, rng=random.Random(seed))
+        self.assertLess(vet.speed + vet.stamina + vet.strength, start)
+
+    def test_sqlite_v3_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=14)
+            kids = []
+            while not kids:
+                kids = ctrl.run_youth_scouting()
+            ctrl.sign_youth(kids[0])
+            ctrl.state.event_attitude["100m"] = "Aggressivo"
+            ctrl.upgrade_gym()
+            for _ in range(4):
+                ctrl.advance_week()
+                if ctrl.state.pending_dilemma is not None:
+                    ctrl.resolve_dilemma(accepted=False)
+            loaded = ctrl.db.load_game()
+            assert loaded is not None
+            self.assertEqual(len(loaded.youth_squad), len(ctrl.state.youth_squad))
+            self.assertEqual(loaded.event_attitude, ctrl.state.event_attitude)
+            self.assertEqual(loaded.gym_level, 1)
+            self.assertEqual(loaded.league_table, ctrl.state.league_table)
+            self.assertEqual(loaded.fidelity, ctrl.state.fidelity)
+            comp = loaded.competition_history[0]
+            orig = ctrl.state.competition_history[0]
+            self.assertEqual(comp.team_standings, orig.team_standings)
+            self.assertEqual(comp.ticket_income, orig.ticket_income)
+            self.assertEqual(comp.event_results[0].attitude, orig.event_results[0].attitude)
+            self.assertEqual(
+                [a.fans for a in loaded.athletes], [a.fans for a in ctrl.state.athletes]
+            )
+
+    def test_v2_save_is_migrated_not_wiped(self) -> None:
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "old.db"
+            ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(15))
+            ctrl.state.team_name = "Vecchio Salvataggio"
+            ctrl.db.save_game(ctrl.state)
+            # Downgrade the file to the v2 layout (drop v3 columns, reset version)
+            from models.database import V3_COLUMNS
+
+            conn = sqlite3.connect(path)
+            try:
+                for table, cols in V3_COLUMNS.items():
+                    for col, _def in cols:
+                        conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+                conn.execute("PRAGMA user_version = 2")
+                conn.commit()
+            finally:
+                conn.close()
+            loaded = DatabaseManager(db_path=path).load_game()
+            assert loaded is not None
+            self.assertEqual(loaded.team_name, "Vecchio Salvataggio")
+            self.assertEqual(len(loaded.athletes), 10)
+            self.assertEqual(loaded.stand_seats, 500)
+            self.assertEqual(loaded.youth_squad, [])
+
+
 class TestPyQtViewsV2(unittest.TestCase):
-    """Smoke tests for MainWindow (5 tabs) and updated Dialogs."""
+    """Smoke tests for MainWindow (6 tabs) and updated Dialogs."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -134,7 +401,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             win = MainWindow(controller=ctrl)
 
             self.assertEqual(win.windowTitle(), "Track & Field Manager")
-            self.assertEqual(win.tabs.count(), 5)
+            self.assertEqual(win.tabs.count(), 6)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)
             self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 3)
             self.assertEqual(win.staff_tab.table.rowCount(), 6)
@@ -153,7 +420,16 @@ class TestPyQtViewsV2(unittest.TestCase):
             assert rep.competition_summary is not None
             comp_dlg = CompetitionResultsDialog(rep.competition_summary)
             self.assertEqual(comp_dlg.events_table.rowCount(), 3)
+            self.assertEqual(comp_dlg.team_table.rowCount(), 8)
             comp_dlg.close()
+
+            # Youth academy tab reflects scouting and signing
+            kids = ctrl.run_youth_scouting()
+            self.assertEqual(win.youth_tab.results_table.rowCount(), len(kids))
+            ctrl.sign_youth(kids[0])
+            self.assertEqual(win.youth_tab.youth_table.rowCount(), 1)
+            self.assertEqual(win.roster_tab.table.rowCount(), 10)  # academy kids stay out of the roster
+            self.assertEqual(win.calendar_tab.lineup_table.columnCount(), 5)
 
             if ctrl.state.pending_dilemma is not None:
                 dil_dlg = EthicalDilemmaDialog(ctrl.state.pending_dilemma)

@@ -1,4 +1,4 @@
-"""Tab views for Dashboard, Roster & Periodization, Calendar & Meets, Staff, and Finances."""
+"""Tab views for Dashboard, Roster, Youth Academy, Calendar & Meets, Staff & Facilities, and Finances."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -24,13 +25,29 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.entities import (
+    BANKRUPTCY_THRESHOLD,
     EVENTS,
+    GYM_MAX_LEVEL,
+    GYM_TRAINING_BONUS_PER_LEVEL,
+    GYM_UPKEEP_PER_LEVEL,
+    STAND_EXPANSION_SEATS,
+    STAND_MAX_SEATS,
+    TICKET_PRICE,
     TIER_CONFIG,
+    WEEKLY_SCOUTING_POINTS,
+    YOUTH_SQUAD_MAX,
     CompetitionSummary,
     GameState,
     PeriodizationPhase,
+    RaceAttitude,
+    Specialty,
     TrainingFocus,
+    gym_upgrade_cost,
+    stand_expansion_cost,
 )
+from controllers.game_controller import scouting_search_cost
+from models.generator import get_rival_teams
+from models.simulation import weekly_finances
 from views.dialogs import CompetitionResultsDialog, RecruitAthleteDialog
 
 
@@ -147,17 +164,19 @@ class DashboardTab(QWidget):
         root.addLayout(bottom_row, stretch=1)
 
     def refresh(self, state: GameState) -> None:
-        cfg = TIER_CONFIG[state.tier]
-        rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
-        income = round(cfg["weekly_sponsor"] * rep_mult) + state.member_fees_weekly
-        wages = sum(a.weekly_wage for a in state.athletes) + sum(
-            s.weekly_cost for s in state.staff if s.hired
-        )
-        net = income - wages
+        net = weekly_finances(state)["net"]
 
         self.budget_val.setText(f"${state.budget:,}")
+        self.budget_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
         sign = "+" if net >= 0 else ""
-        self.budget_sub.setText(f"Flusso netto {sign}${net:,}/sett")
+        if state.bankrupt:
+            self.budget_sub.setText("SOCIETÀ FALLITA — avvia una nuova partita")
+        elif state.budget < 0:
+            self.budget_sub.setText(
+                f"In rosso: 5% interessi/sett, fallimento sotto -${-BANKRUPTCY_THRESHOLD:,}"
+            )
+        else:
+            self.budget_sub.setText(f"Flusso netto {sign}${net:,}/sett")
 
         self.prestige_val.setText(f"{state.prestige} pt")
         self.prestige_sub.setText(f"Reputazione Etica: {state.reputation}%")
@@ -183,9 +202,12 @@ class DashboardTab(QWidget):
         else:
             self.records_label.setText("Record Sociali: nessun record ancora omologato.")
 
-        fit_count = sum(1 for a in state.athletes if not a.is_injured)
-        self.squad_val.setText(f"{fit_count}/{len(state.athletes)} Sani")
-        self.squad_sub.setText(f"Pista in Tartan: {state.track_condition}%")
+        squad = state.main_squad
+        fit_count = sum(1 for a in squad if not a.is_injured)
+        self.squad_val.setText(f"{fit_count}/{len(squad)} Sani")
+        self.squad_sub.setText(
+            f"Vivaio {len(state.youth_squad)}/{YOUTH_SQUAD_MAX} · Pista {state.track_condition}%"
+        )
 
         if state.is_vertical_slice_complete:
             self.comp_val.setText("Prototipo OK")
@@ -199,14 +221,15 @@ class DashboardTab(QWidget):
             rem = state.weeks_until_competition
             self.comp_val.setText(f"Tra {rem} sett.")
             self.comp_val.setStyleSheet("")
-            self.comp_sub.setText(f"{state.season_phase.value}")
+            venue = "In casa" if state.next_meet_is_home else "In trasferta"
+            self.comp_sub.setText(f"{venue} · {state.season_phase.value}")
 
         self.objectives_list.clear()
         for obj in state.objectives:
             prefix = "[COMPLETATO] " if obj.completed else "[ ] "
             self.objectives_list.addItem(f"{prefix}{obj.title}")
 
-        sorted_athletes = sorted(state.athletes, key=lambda a: a.overall, reverse=True)
+        sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)
         self.top_table.setRowCount(len(sorted_athletes))
         for row, a in enumerate(sorted_athletes):
             vals = [
@@ -273,7 +296,7 @@ class RosterTab(QWidget):
         btn_recover.clicked.connect(self._recover_selected)
         toolbar.addWidget(btn_recover)
 
-        btn_recruit = QPushButton("Scouting Studentesco")
+        btn_recruit = QPushButton("Mercato Svincolati")
         btn_recruit.setObjectName("PrimaryButton")
         btn_recruit.clicked.connect(self._open_recruit_dialog)
         toolbar.addWidget(btn_recruit)
@@ -292,7 +315,7 @@ class RosterTab(QWidget):
         hint.setObjectName("SubTitle")
         root.addWidget(hint)
 
-        self.table = QTableWidget(0, 15)
+        self.table = QTableWidget(0, 16)
         self.table.setHorizontalHeaderLabels(
             [
                 "Nome",
@@ -308,6 +331,7 @@ class RosterTab(QWidget):
                 "Fatica",
                 "Stato",
                 "PB",
+                "Fan",
                 "Allenamento",
                 "Periodizzazione",
             ]
@@ -322,16 +346,17 @@ class RosterTab(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(13, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(14, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(15, QHeaderView.ResizeMode.ResizeToContents)
 
         root.addWidget(self.table, stretch=1)
 
     def refresh(self, state: GameState) -> None:
         self._athlete_row_ids = []
-        self.table.setRowCount(len(state.athletes))
+        squad = state.main_squad
+        self.table.setRowCount(len(squad))
 
-        for row, a in enumerate(state.athletes):
+        for row, a in enumerate(squad):
             self._athlete_row_ids.append(a.id or -1)
             name_str = f"{a.name} *" if a.is_youth_prospect else a.name
             cells = [
@@ -348,6 +373,7 @@ class RosterTab(QWidget):
                 str(a.fatigue),
                 a.status_label,
                 a.personal_best_display or "—",
+                f"{a.fans:,}",
             ]
             for col, text in enumerate(cells):
                 item = QTableWidgetItem(text)
@@ -378,7 +404,7 @@ class RosterTab(QWidget):
             focus_combo.currentIndexChanged.connect(
                 lambda _i, c=focus_combo, aid=a.id: self._on_focus_changed(aid, c)
             )
-            self.table.setCellWidget(row, 13, focus_combo)
+            self.table.setCellWidget(row, 14, focus_combo)
 
             period_combo = QComboBox()
             for phase in PeriodizationPhase:
@@ -390,7 +416,7 @@ class RosterTab(QWidget):
             period_combo.currentIndexChanged.connect(
                 lambda _i, c=period_combo, aid=a.id: self._on_period_changed(aid, c)
             )
-            self.table.setCellWidget(row, 14, period_combo)
+            self.table.setCellWidget(row, 15, period_combo)
 
     def _on_focus_changed(self, athlete_id: Optional[int], combo: QComboBox) -> None:
         if athlete_id is not None and isinstance(combo.currentData(), TrainingFocus):
@@ -468,13 +494,17 @@ class CalendarTab(QWidget):
         lineup_layout = QVBoxLayout(lineup_panel)
         lineup_layout.setContentsMargins(14, 12, 14, 12)
 
-        lineup_title = QLabel("Convocazioni Gara (Vento > +2.0 m/s annulla i record nei 100m e Lungo)")
+        lineup_title = QLabel(
+            "Convocazioni & Atteggiamento (Aggressivo: risultato migliore ma più fatica e rischio "
+            "di ritiro; Prudente: il contrario)"
+        )
+        lineup_title.setWordWrap(True)
         lineup_title.setObjectName("SectionHeader")
         lineup_layout.addWidget(lineup_title)
 
-        self.lineup_table = QTableWidget(0, 4)
+        self.lineup_table = QTableWidget(0, 5)
         self.lineup_table.setHorizontalHeaderLabels(
-            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato"]
+            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato", "Atteggiamento"]
         )
         self.lineup_table.setAlternatingRowColors(True)
         self.lineup_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -484,6 +514,31 @@ class CalendarTab(QWidget):
 
         lineup_layout.addWidget(self.lineup_table)
         root.addWidget(lineup_panel, stretch=1)
+
+        lower_row = QHBoxLayout()
+        lower_row.setSpacing(12)
+
+        league_panel = QFrame()
+        league_panel.setObjectName("SectionPanel")
+        league_layout = QVBoxLayout(league_panel)
+        league_layout.setContentsMargins(14, 12, 14, 12)
+        self.league_title = QLabel("Classifica di Lega")
+        self.league_title.setObjectName("SectionHeader")
+        league_layout.addWidget(self.league_title)
+        league_hint = QLabel(
+            "Punti per piazzamento in ogni gara (1° = 8 … 8° = 1). Gare senza convocato regalano punti ai rivali."
+        )
+        league_hint.setObjectName("SubTitle")
+        league_hint.setWordWrap(True)
+        league_layout.addWidget(league_hint)
+        self.league_table = QTableWidget(0, 3)
+        self.league_table.setHorizontalHeaderLabels(["Pos", "Società", "Punti"])
+        self.league_table.setAlternatingRowColors(True)
+        self.league_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.league_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.league_table.verticalHeader().setVisible(False)
+        league_layout.addWidget(self.league_table)
+        lower_row.addWidget(league_panel, stretch=2)
 
         hist_panel = QFrame()
         hist_panel.setObjectName("SectionPanel")
@@ -500,9 +555,9 @@ class CalendarTab(QWidget):
         hist_header.addWidget(view_btn)
         hist_layout.addLayout(hist_header)
 
-        self.history_table = QTableWidget(0, 6)
+        self.history_table = QTableWidget(0, 7)
         self.history_table.setHorizontalHeaderLabels(
-            ["Sett.", "Meeting", "Meteo", "Categoria", "Premi", "Prestigio"]
+            ["Sett.", "Meeting", "Sede", "Meteo", "Società", "Premi", "Prestigio"]
         )
         self.history_table.setAlternatingRowColors(True)
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -512,7 +567,8 @@ class CalendarTab(QWidget):
         self.history_table.cellDoubleClicked.connect(lambda _r, _c: self._open_selected_history())
         hist_layout.addWidget(self.history_table)
 
-        root.addWidget(hist_panel, stretch=1)
+        lower_row.addWidget(hist_panel, stretch=3)
+        root.addLayout(lower_row, stretch=1)
 
     def refresh(self, state: GameState) -> None:
         if state.is_vertical_slice_complete:
@@ -529,9 +585,10 @@ class CalendarTab(QWidget):
             self.cycle_label.setStyleSheet("color: #fbbf24;")
         else:
             rem = state.weeks_until_competition
+            venue = "in casa" if state.next_meet_is_home else "in trasferta"
             self.cycle_label.setText(
                 f"Sett. {state.week} ({state.current_date:%d %b %Y}) — "
-                f"Prossimo meeting tra {rem} settimana/e (Sett. {state.week + rem})."
+                f"Prossimo meeting {venue} tra {rem} settimana/e (Sett. {state.week + rem})."
             )
             self.cycle_label.setStyleSheet("")
 
@@ -553,7 +610,7 @@ class CalendarTab(QWidget):
 
             combo = QComboBox()
             combo.addItem("-- Nessun Atleta --", None)
-            for a in state.athletes:
+            for a in state.main_squad:
                 if a.is_injured:
                     continue
                 label = f"{a.name} ({a.specialty.value}, OVR {a.overall}, Forma {a.form})"
@@ -569,15 +626,42 @@ class CalendarTab(QWidget):
             self._event_combos[event_name] = combo
             self.lineup_table.setCellWidget(row, 3, combo)
 
+            att_combo = QComboBox()
+            for att in RaceAttitude:
+                att_combo.addItem(att.value, att)
+            att_combo.setCurrentIndex(max(0, att_combo.findData(state.attitude_for(event_name))))
+            att_combo.currentIndexChanged.connect(
+                lambda _i, en=event_name, c=att_combo: self.controller.set_event_attitude(
+                    en, c.currentData()
+                )
+            )
+            self.lineup_table.setCellWidget(row, 4, att_combo)
+
+        table = dict(state.league_table)
+        if not table:  # new season or category: everyone starts from zero
+            table = {team: 0 for team in [state.team_name, *get_rival_teams(state.tier)]}
+        league_rows = sorted(table.items(), key=lambda kv: kv[1], reverse=True)
+        self.league_title.setText(f"Classifica di Lega — {state.tier.value}")
+        self.league_table.setRowCount(len(league_rows))
+        for row, (team, pts) in enumerate(league_rows):
+            for col, text in enumerate((str(row + 1), team, str(pts))):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if team == state.team_name:
+                    item.setForeground(QColor("#38bdf8"))
+                self.league_table.setItem(row, col, item)
+
         self._history_list = list(state.competition_history)
         self.history_table.setRowCount(len(self._history_list))
         for row, comp in enumerate(self._history_list):
+            team_place = comp.team_placement
             vals = [
                 f"Sett. {comp.week}",
                 comp.meet_name,
+                f"Casa ({comp.spectators:,})" if comp.is_home else "Trasferta",
                 comp.weather.value,
-                comp.tier.value,
-                f"${comp.total_prize_money:,}",
+                f"{team_place}ª" if team_place else "—",
+                f"${comp.total_prize_money + comp.ticket_income:,}",
                 f"+{comp.total_prestige_gained}",
             ]
             for col, text in enumerate(vals):
@@ -623,6 +707,45 @@ class StaffTab(QWidget):
         track_layout.addWidget(maint_btn)
         root.addWidget(track_card)
 
+        facilities_row = QHBoxLayout()
+        facilities_row.setSpacing(12)
+
+        gym_card = QFrame()
+        gym_card.setObjectName("StatCard")
+        gym_layout = QVBoxLayout(gym_card)
+        gym_layout.setContentsMargins(14, 12, 14, 12)
+        self.gym_label = QLabel("Palestra")
+        self.gym_label.setObjectName("SectionHeader")
+        self.gym_sub = QLabel("")
+        self.gym_sub.setObjectName("SubTitle")
+        self.gym_sub.setWordWrap(True)
+        self.gym_btn = QPushButton("Amplia Palestra")
+        self.gym_btn.setObjectName("PrimaryButton")
+        self.gym_btn.clicked.connect(self.controller.upgrade_gym)
+        gym_layout.addWidget(self.gym_label)
+        gym_layout.addWidget(self.gym_sub)
+        gym_layout.addWidget(self.gym_btn)
+        facilities_row.addWidget(gym_card)
+
+        stand_card = QFrame()
+        stand_card.setObjectName("StatCard")
+        stand_layout = QVBoxLayout(stand_card)
+        stand_layout.setContentsMargins(14, 12, 14, 12)
+        self.stand_label = QLabel("Tribune")
+        self.stand_label.setObjectName("SectionHeader")
+        self.stand_sub = QLabel("")
+        self.stand_sub.setObjectName("SubTitle")
+        self.stand_sub.setWordWrap(True)
+        self.stand_btn = QPushButton("Amplia Tribune")
+        self.stand_btn.setObjectName("PrimaryButton")
+        self.stand_btn.clicked.connect(self.controller.expand_stands)
+        stand_layout.addWidget(self.stand_label)
+        stand_layout.addWidget(self.stand_sub)
+        stand_layout.addWidget(self.stand_btn)
+        facilities_row.addWidget(stand_card)
+
+        root.addLayout(facilities_row)
+
         panel = QFrame()
         panel.setObjectName("SectionPanel")
         panel_layout = QVBoxLayout(panel)
@@ -653,6 +776,33 @@ class StaffTab(QWidget):
             f"Condizione Pista in Tartan: {state.track_condition}% "
             "(una pista usurata rallenta leggermente tempi e salti)"
         )
+        lvl = state.gym_level
+        self.gym_label.setText(f"Palestra — livello {lvl}/{GYM_MAX_LEVEL}")
+        self.gym_sub.setText(
+            f"+{int(lvl * GYM_TRAINING_BONUS_PER_LEVEL * 100)}% probabilità di miglioramento in allenamento · "
+            f"gestione ${lvl * GYM_UPKEEP_PER_LEVEL}/sett"
+        )
+        if lvl >= GYM_MAX_LEVEL:
+            self.gym_btn.setText("Livello massimo")
+            self.gym_btn.setEnabled(False)
+        else:
+            self.gym_btn.setText(f"Amplia a livello {lvl + 1} (${gym_upgrade_cost(lvl):,})")
+            self.gym_btn.setEnabled(True)
+
+        price = TICKET_PRICE[state.tier.value]
+        self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")
+        self.stand_sub.setText(
+            f"Nei meeting in casa niente trasferta e incasso biglietti (${price}/biglietto in "
+            f"{state.tier.value}). Il pubblico cresce con prestigio, categoria e reputazione."
+        )
+        if state.stand_seats >= STAND_MAX_SEATS:
+            self.stand_btn.setText("Capienza massima")
+            self.stand_btn.setEnabled(False)
+        else:
+            self.stand_btn.setText(
+                f"+{STAND_EXPANSION_SEATS} posti (${stand_expansion_cost(state.stand_seats):,})"
+            )
+            self.stand_btn.setEnabled(True)
         self.table.setRowCount(len(state.staff))
         for row, s in enumerate(state.staff):
             vals = [
@@ -722,27 +872,33 @@ class FinancesTab(QWidget):
         root.addWidget(ledger_panel, stretch=1)
 
     def refresh(self, state: GameState) -> None:
-        rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
-        sponsor = round(TIER_CONFIG[state.tier]["weekly_sponsor"] * rep_mult)
-        income = sponsor + state.member_fees_weekly
-        athlete_wages = sum(a.weekly_wage for a in state.athletes)
-        staff_wages = sum(s.weekly_cost for s in state.staff if s.hired)
-        expenses = athlete_wages + staff_wages
-        net = income - expenses
+        fin = weekly_finances(state)
+        net = fin["net"]
 
         self.balance_val.setText(f"${state.budget:,}")
-        self.balance_sub.setText("Cassa disponibile")
+        self.balance_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
+        self.balance_sub.setText(
+            f"Fedeltà sponsor {state.fidelity}% (scende con acquisti/cessioni)"
+            if state.budget >= 0
+            else f"In rosso: 5% interessi/sett · fallimento sotto -${-BANKRUPTCY_THRESHOLD:,}"
+        )
 
-        self.sponsor_val.setText(f"+${income:,}")
-        self.sponsor_sub.setText(f"Sponsor ${sponsor:,} + Quote ${state.member_fees_weekly:,}")
+        self.sponsor_val.setText(f"+${fin['income']:,}")
+        self.sponsor_sub.setText(
+            f"Società ${fin['sponsor']:,} + Individuali ${fin['individual_sponsors']:,} "
+            f"+ Quote ${fin['member_fees']:,}"
+        )
 
-        self.payroll_val.setText(f"-${expenses:,}")
-        self.payroll_sub.setText(f"Atleti ${athlete_wages:,} + Staff ${staff_wages:,}")
+        self.payroll_val.setText(f"-${fin['expenses']:,}")
+        self.payroll_sub.setText(
+            f"Atleti ${fin['athlete_wages']:,} + Staff ${fin['staff_cost']:,} "
+            f"+ Palestra ${fin['gym_upkeep']:,}"
+        )
 
         sign = "+" if net >= 0 else ""
         self.net_val.setText(f"{sign}${net:,}")
         self.net_val.setStyleSheet("color: #34d399;" if net >= 0 else "color: #f87171;")
-        self.net_sub.setText("Esclusi premi gara e trasferte")
+        self.net_sub.setText("Esclusi premi, biglietti e trasferte")
 
         self.table.setRowCount(len(state.transactions))
         for row, tx in enumerate(state.transactions):
@@ -754,3 +910,239 @@ class FinancesTab(QWidget):
                 if col == 3:
                     item.setForeground(QColor("#34d399" if tx.amount >= 0 else "#f87171"))
                 self.table.setItem(row, col, item)
+
+
+class YouthTab(QWidget):
+    """Youth academy (vivaio): weekly scouting with points, faster training, promotion at 18."""
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._youth_row_ids: list[int] = []
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        squad_panel = QFrame()
+        squad_panel.setObjectName("SectionPanel")
+        squad_layout = QVBoxLayout(squad_panel)
+        squad_layout.setContentsMargins(14, 12, 14, 12)
+
+        head = QHBoxLayout()
+        self.squad_title = QLabel("Vivaio")
+        self.squad_title.setObjectName("SectionHeader")
+        head.addWidget(self.squad_title)
+        head.addStretch()
+        promote_btn = QPushButton("Promuovi in Prima Squadra")
+        promote_btn.setObjectName("PrimaryButton")
+        promote_btn.clicked.connect(self._promote_selected)
+        head.addWidget(promote_btn)
+        release_btn = QPushButton("Svincola")
+        release_btn.setObjectName("DangerButton")
+        release_btn.clicked.connect(self._release_selected)
+        head.addWidget(release_btn)
+        squad_layout.addLayout(head)
+
+        hint = QLabel(
+            "I ragazzi del vivaio (14-17 anni) non gareggiano e non prendono stipendio, ma si allenano "
+            "il 50% più in fretta. A 18 anni passano in Prima Squadra in automatico."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        squad_layout.addWidget(hint)
+
+        self.youth_table = QTableWidget(0, 11)
+        self.youth_table.setHorizontalHeaderLabels(
+            ["Nome", "Età", "Disciplina", "Carattere", "OVR/Pot", "Vel.", "Resist.",
+             "Forza", "Tecnica", "Fatica", "Allenamento"]
+        )
+        self.youth_table.setAlternatingRowColors(True)
+        self.youth_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.youth_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.youth_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.youth_table.verticalHeader().setVisible(False)
+        self.youth_table.verticalHeader().setDefaultSectionSize(38)
+        yh = self.youth_table.horizontalHeader()
+        yh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        yh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        yh.setSectionResizeMode(10, QHeaderView.ResizeMode.ResizeToContents)
+        squad_layout.addWidget(self.youth_table)
+        root.addWidget(squad_panel, stretch=1)
+
+        scout_panel = QFrame()
+        scout_panel.setObjectName("SectionPanel")
+        scout_layout = QVBoxLayout(scout_panel)
+        scout_layout.setContentsMargins(14, 12, 14, 12)
+
+        self.scout_title = QLabel("Osservatori")
+        self.scout_title.setObjectName("SectionHeader")
+        scout_layout.addWidget(self.scout_title)
+
+        scout_hint = QLabel(
+            f"Ogni settimana hai {WEEKLY_SCOUTING_POINTS} punti. Una ricerca costa 2 punti, "
+            "+1 per ogni filtro. Il costo in denaro cresce con i punti già spesi nella settimana. "
+            "I ragazzi segnalati e non presi se ne vanno a fine settimana."
+        )
+        scout_hint.setObjectName("SubTitle")
+        scout_hint.setWordWrap(True)
+        scout_layout.addWidget(scout_hint)
+
+        controls = QHBoxLayout()
+        self.spec_combo = QComboBox()
+        self.spec_combo.addItem("Qualsiasi disciplina", None)
+        for spec in Specialty:
+            self.spec_combo.addItem(f"Solo {spec.value} (+1 punto)", spec)
+        self.spec_combo.currentIndexChanged.connect(lambda _i: self._update_cost_label())
+        controls.addWidget(self.spec_combo)
+        self.high_pot_check = QCheckBox("Solo alto potenziale ≥85 (+1 punto)")
+        self.high_pot_check.toggled.connect(lambda _b: self._update_cost_label())
+        controls.addWidget(self.high_pot_check)
+        controls.addStretch()
+        self.cost_label = QLabel("")
+        self.cost_label.setObjectName("SubTitle")
+        controls.addWidget(self.cost_label)
+        self.search_btn = QPushButton("Avvia Ricerca")
+        self.search_btn.setObjectName("PrimaryButton")
+        self.search_btn.clicked.connect(self._run_search)
+        controls.addWidget(self.search_btn)
+        scout_layout.addLayout(controls)
+
+        self.results_table = QTableWidget(0, 7)
+        self.results_table.setHorizontalHeaderLabels(
+            ["Nome", "Età", "Disciplina", "Carattere", "OVR", "Potenziale", "Resilienza"]
+        )
+        self.results_table.setAlternatingRowColors(True)
+        self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.results_table.verticalHeader().setVisible(False)
+        scout_layout.addWidget(self.results_table)
+
+        sign_row = QHBoxLayout()
+        sign_row.addStretch()
+        sign_btn = QPushButton("Inserisci nel Vivaio")
+        sign_btn.setObjectName("PrimaryButton")
+        sign_btn.clicked.connect(self._sign_selected)
+        sign_row.addWidget(sign_btn)
+        scout_layout.addLayout(sign_row)
+
+        root.addWidget(scout_panel, stretch=1)
+
+    def _filters(self) -> tuple[Optional[Specialty], bool]:
+        spec = self.spec_combo.currentData()
+        return (spec if isinstance(spec, Specialty) else None), self.high_pot_check.isChecked()
+
+    def _update_cost_label(self) -> None:
+        state = self.controller.state
+        spec, high = self._filters()
+        filters = (1 if spec is not None else 0) + (1 if high else 0)
+        points, fee = scouting_search_cost(state.scouting_points_used, filters)
+        enough = points <= state.scouting_points_left
+        self.cost_label.setText(f"Costo: {points} punti · ${fee:,}")
+        self.search_btn.setEnabled(enough and len(state.youth_squad) < YOUTH_SQUAD_MAX)
+
+    def refresh(self, state: GameState) -> None:
+        youth = state.youth_squad
+        self.squad_title.setText(f"Vivaio — {len(youth)}/{YOUTH_SQUAD_MAX} ragazzi")
+        self.scout_title.setText(
+            f"Osservatori — {state.scouting_points_left}/{WEEKLY_SCOUTING_POINTS} punti disponibili questa settimana"
+        )
+
+        # Hide disciplines that are not played in the prototype
+        allowed = (
+            {Specialty.SPRINTS, Specialty.JUMPS, Specialty.MIDDLE_DISTANCE}
+            if state.game_mode == "vertical_slice"
+            else set(Specialty)
+        )
+        view = self.spec_combo.view()
+        for i in range(self.spec_combo.count()):
+            data = self.spec_combo.itemData(i)
+            if isinstance(data, Specialty):
+                view.setRowHidden(i, data not in allowed)
+        if isinstance(self.spec_combo.currentData(), Specialty) and self.spec_combo.currentData() not in allowed:
+            self.spec_combo.setCurrentIndex(0)
+
+        self._youth_row_ids = []
+        self.youth_table.setRowCount(len(youth))
+        for row, a in enumerate(youth):
+            self._youth_row_ids.append(a.id or -1)
+            cells = [
+                a.name, str(a.age), a.specialty.value, a.personality.value,
+                f"{a.overall}/{a.potential}", str(a.speed), str(a.stamina),
+                str(a.strength), str(a.technique), str(a.fatigue),
+            ]
+            for col, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 4 and a.potential >= 88:
+                    item.setForeground(QColor("#fbbf24"))
+                self.youth_table.setItem(row, col, item)
+
+            focus_combo = QComboBox()
+            for focus in TrainingFocus:
+                focus_combo.addItem(focus.value, focus)
+            idx = focus_combo.findData(a.training_focus)
+            if idx >= 0:
+                focus_combo.setCurrentIndex(idx)
+            focus_combo.currentIndexChanged.connect(
+                lambda _i, c=focus_combo, aid=a.id: self._on_focus_changed(aid, c)
+            )
+            self.youth_table.setCellWidget(row, 10, focus_combo)
+
+        results = self.controller.scouting_results
+        self.results_table.setRowCount(len(results))
+        for row, k in enumerate(results):
+            vals = [k.name, str(k.age), k.specialty.value, k.personality.value,
+                    str(k.overall), str(k.potential), str(k.resilience)]
+            for col, text in enumerate(vals):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 5 and k.potential >= 88:
+                    item.setForeground(QColor("#fbbf24"))
+                self.results_table.setItem(row, col, item)
+        if results:
+            self.results_table.selectRow(0)
+
+        self._update_cost_label()
+
+    def _on_focus_changed(self, athlete_id: Optional[int], combo: QComboBox) -> None:
+        if athlete_id is not None and isinstance(combo.currentData(), TrainingFocus):
+            self.controller.set_athlete_training(athlete_id, combo.currentData())
+
+    def _run_search(self) -> None:
+        spec, high = self._filters()
+        self.controller.run_youth_scouting(specialty=spec, high_potential=high)
+
+    def _sign_selected(self) -> None:
+        rows = self.results_table.selectionModel().selectedRows()
+        results = self.controller.scouting_results
+        if not rows or not (0 <= rows[0].row() < len(results)):
+            QMessageBox.information(self, "Vivaio", "Seleziona prima un ragazzo segnalato.")
+            return
+        self.controller.sign_youth(results[rows[0].row()])
+
+    def _selected_youth_id(self) -> Optional[int]:
+        rows = self.youth_table.selectionModel().selectedRows()
+        if not rows or not (0 <= rows[0].row() < len(self._youth_row_ids)):
+            QMessageBox.information(self, "Vivaio", "Seleziona prima un ragazzo del vivaio.")
+            return None
+        return self._youth_row_ids[rows[0].row()]
+
+    def _promote_selected(self) -> None:
+        aid = self._selected_youth_id()
+        if aid is not None:
+            self.controller.promote_youth(aid)
+
+    def _release_selected(self) -> None:
+        aid = self._selected_youth_id()
+        if aid is None:
+            return
+        athlete = next((a for a in self.controller.state.athletes if a.id == aid), None)
+        if athlete and QMessageBox.question(
+            self, "Conferma", f"Svincolare {athlete.name} dal vivaio?"
+        ) == QMessageBox.StandardButton.Yes:
+            self.controller.release_athlete(aid)

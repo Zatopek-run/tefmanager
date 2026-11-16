@@ -22,7 +22,14 @@ from views.dialogs import (
     NewGameDialog,
 )
 from views.styles import DARK_STYLESHEET
-from views.tabs import CalendarTab, DashboardTab, FinancesTab, RosterTab, StaffTab
+from views.tabs import (
+    CalendarTab,
+    DashboardTab,
+    FinancesTab,
+    RosterTab,
+    StaffTab,
+    YouthTab,
+)
 
 
 class MainWindow(QMainWindow):
@@ -104,14 +111,16 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.dashboard_tab = DashboardTab(self.controller)
         self.roster_tab = RosterTab(self.controller)
+        self.youth_tab = YouthTab(self.controller)
         self.calendar_tab = CalendarTab(self.controller)
         self.staff_tab = StaffTab(self.controller)
         self.finances_tab = FinancesTab(self.controller)
 
         self.tabs.addTab(self.dashboard_tab, "Dashboard")
-        self.tabs.addTab(self.roster_tab, "Rosa & Allenamenti")
-        self.tabs.addTab(self.calendar_tab, "Calendario & Gare")
-        self.tabs.addTab(self.staff_tab, "Staff & Impianto")
+        self.tabs.addTab(self.roster_tab, "Rosa && Allenamenti")
+        self.tabs.addTab(self.youth_tab, "Vivaio && Osservatori")
+        self.tabs.addTab(self.calendar_tab, "Calendario && Gare")
+        self.tabs.addTab(self.staff_tab, "Staff && Impianto")
         self.tabs.addTab(self.finances_tab, "Finanze")
 
         body_layout.addWidget(self.tabs)
@@ -141,13 +150,17 @@ class MainWindow(QMainWindow):
         self.hud_budget.setText(f"Bilancio: ${state.budget:,}")
         self.hud_prestige.setText(f"Prestigio: {state.prestige}")
 
-        if state.is_competition_week:
+        self.advance_btn.setEnabled(not state.bankrupt)
+        if state.bankrupt:
+            self.advance_btn.setText("Società Fallita")
+        elif state.is_competition_week:
             self.advance_btn.setText("Disputa Gara & Avanza")
         else:
             self.advance_btn.setText("Avanza Settimana")
 
         self.dashboard_tab.refresh(state)
         self.roster_tab.refresh(state)
+        self.youth_tab.refresh(state)
         self.calendar_tab.refresh(state)
         self.staff_tab.refresh(state)
         self.finances_tab.refresh(state)

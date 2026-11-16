@@ -44,18 +44,33 @@ class CompetitionResultsDialog(QDialog):
         title.setObjectName("AppTitle")
         layout.addWidget(title)
 
+        venue = (
+            f"In casa ({self.summary.spectators:,} spettatori)"
+            if self.summary.is_home
+            else "In trasferta"
+        )
         conditions = QLabel(
             f"Stagione: {self.summary.season_phase.value}  |  "
             f"Meteo: {self.summary.weather.value}  |  "
-            f"Pista: {self.summary.track_surface}"
+            f"Pista: {self.summary.track_surface}  |  {venue}"
         )
         conditions.setObjectName("SubTitle")
         layout.addWidget(conditions)
 
+        gate = (
+            f"Biglietti: +${self.summary.ticket_income:,}"
+            if self.summary.is_home
+            else f"Trasferta Pullman: -${self.summary.travel_cost:,}"
+        )
+        team_place = self.summary.team_placement
+        team_txt = (
+            f"Società: {team_place}ª su {len(self.summary.team_standings)}   |   "
+            if team_place
+            else ""
+        )
         totals = QLabel(
-            f"Premi Totali: ${self.summary.total_prize_money:,}   |   "
-            f"Trasferta Pullman: -${self.summary.travel_cost:,}   |   "
-            f"Prestigio: +{self.summary.total_prestige_gained}"
+            f"{team_txt}Premi Totali: ${self.summary.total_prize_money:,}   |   "
+            f"{gate}   |   Prestigio: +{self.summary.total_prestige_gained}"
         )
         totals.setObjectName("SectionHeader")
         layout.addWidget(totals)
@@ -75,9 +90,9 @@ class CompetitionResultsDialog(QDialog):
         summary_label.setObjectName("SubTitle")
         layout.addWidget(summary_label)
 
-        self.events_table = QTableWidget(len(self.summary.event_results), 7)
+        self.events_table = QTableWidget(len(self.summary.event_results), 8)
         self.events_table.setHorizontalHeaderLabels(
-            ["Gara", "Atleta", "Misura / Tempo", "Vento", "Posizione", "Premio", "Note"]
+            ["Gara", "Atleta", "Atteggiamento", "Misura / Tempo", "Vento", "Posizione", "Premio", "Note"]
         )
         self.events_table.setAlternatingRowColors(True)
         self.events_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -94,6 +109,8 @@ class CompetitionResultsDialog(QDialog):
                 wind_str = f"{res.wind_ms:+.1f} m/s"
 
             notes = []
+            if res.withdrew_injured:
+                notes.append("Ritirato per infortunio")
             if res.is_club_record:
                 notes.append("RECORD SOCIALE!")
             elif res.is_pb:
@@ -105,15 +122,20 @@ class CompetitionResultsDialog(QDialog):
             items = [
                 QTableWidgetItem(res.event_name),
                 QTableWidgetItem(res.player_athlete_name),
+                QTableWidgetItem(res.attitude),
                 QTableWidgetItem(res.player_mark),
                 QTableWidgetItem(wind_str),
-                QTableWidgetItem(f"#{res.placement} / {res.total_competitors}"),
+                QTableWidgetItem(
+                    "RIT." if res.withdrew_injured else f"#{res.placement} / {res.total_competitors}"
+                ),
                 QTableWidgetItem(f"${res.prize_money:,}"),
                 QTableWidgetItem(note_str),
             ]
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if col == 3 and res.wind_illegal:
+                if res.withdrew_injured:
+                    item.setForeground(QColor("#f87171"))
+                elif col == 4 and res.wind_illegal:
                     item.setForeground(QColor("#fbbf24"))
                 elif res.placement == 1:
                     item.setForeground(QColor("#fbbf24"))
@@ -124,17 +146,43 @@ class CompetitionResultsDialog(QDialog):
         self.events_table.itemSelectionChanged.connect(self._on_event_selected)
         layout.addWidget(self.events_table, stretch=1)
 
+        lower = QHBoxLayout()
+        lower.setSpacing(12)
+
+        standings_box = QVBoxLayout()
         standings_label = QLabel("Ordine d'arrivo completo:")
         standings_label.setObjectName("SectionHeader")
-        layout.addWidget(standings_label)
-
+        standings_box.addWidget(standings_label)
         self.standings_table = QTableWidget(0, 4)
         self.standings_table.setHorizontalHeaderLabels(["Pos", "Atleta", "Società", "Risultato"])
         self.standings_table.setAlternatingRowColors(True)
         self.standings_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.standings_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.standings_table.verticalHeader().setVisible(False)
-        layout.addWidget(self.standings_table, stretch=1)
+        standings_box.addWidget(self.standings_table)
+        lower.addLayout(standings_box, stretch=3)
+
+        team_box = QVBoxLayout()
+        team_label = QLabel("Classifica Società (meeting):")
+        team_label.setObjectName("SectionHeader")
+        team_box.addWidget(team_label)
+        self.team_table = QTableWidget(len(self.summary.team_standings), 3)
+        self.team_table.setHorizontalHeaderLabels(["Pos", "Società", "Punti"])
+        self.team_table.setAlternatingRowColors(True)
+        self.team_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.team_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.team_table.verticalHeader().setVisible(False)
+        for row, (team, pts) in enumerate(self.summary.team_standings):
+            for col, text in enumerate((str(row + 1), team, str(pts))):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if team == self.summary.player_team:
+                    item.setForeground(QColor("#38bdf8"))
+                self.team_table.setItem(row, col, item)
+        team_box.addWidget(self.team_table)
+        lower.addLayout(team_box, stretch=2)
+
+        layout.addLayout(lower, stretch=1)
 
         if self.summary.event_results:
             self.events_table.selectRow(0)

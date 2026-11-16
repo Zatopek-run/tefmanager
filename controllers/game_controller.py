@@ -9,7 +9,16 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from models.database import DatabaseManager
 from models.entities import (
+    BANKRUPTCY_THRESHOLD,
+    GYM_MAX_LEVEL,
+    SCOUTING_FEES,
+    SCOUTING_SEARCH_POINTS,
+    STAND_EXPANSION_SEATS,
+    STAND_MAX_SEATS,
     VERTICAL_SLICE_EVENTS,
+    YOUTH_SQUAD_MAX,
+    RaceAttitude,
+    Specialty,
     Athlete,
     CompetitionSummary,
     CompetitionTier,
@@ -19,18 +28,29 @@ from models.entities import (
     SeasonPhase,
     TrainingFocus,
     Transaction,
+    gym_upgrade_cost,
+    stand_expansion_cost,
 )
 from models.generator import (
     build_default_lineup,
     clamp_stat,
     create_initial_staff,
     create_season_objectives,
+    generate_academy_prospects,
     generate_initial_roster,
     generate_school_scouting_pool,
     generate_vertical_slice_roster,
     get_recruitment_fee,
 )
-from models.simulation import WeekAdvanceReport, advance_week
+from models.simulation import WeekAdvanceReport, advance_week, promote_youth_athlete
+
+
+def scouting_search_cost(points_used: int, filters: int) -> tuple[int, int]:
+    """Return (points, fee) for a youth search with `filters` extra criteria this week."""
+    points = SCOUTING_SEARCH_POINTS + filters
+    after = min(max(SCOUTING_FEES), points_used + points)
+    fee = SCOUTING_FEES[after] - SCOUTING_FEES[min(max(SCOUTING_FEES), points_used)]
+    return points, fee
 
 
 class GameController(QObject):
@@ -51,6 +71,8 @@ class GameController(QObject):
         self.db = db_manager or DatabaseManager()
         self.rng = rng or random.Random()
         self.state: GameState = self._load_or_create_initial_state()
+        # Last youth-scouting search results (transient: they leave if not signed this week)
+        self.scouting_results: List[Athlete] = []
 
     def _load_or_create_initial_state(self) -> GameState:
         saved = self.db.load_game()
@@ -124,6 +146,7 @@ class GameController(QObject):
     ) -> None:
         """Reset to a fresh career or vertical-slice prototype and persist immediately."""
         self.state = self._create_fresh_state(team_name=team_name, game_mode=game_mode)
+        self.scouting_results = []
         self.state_changed.emit(self.state)
         mode_label = "Prototipo Outdoor" if game_mode == "vertical_slice" else "Carriera Completa"
         self.status_message.emit(f"Nuova partita avviata ({mode_label}): {team_name}.")
@@ -138,6 +161,7 @@ class GameController(QObject):
             self.status_message.emit("Nessun salvataggio trovato.")
             return False
         self.state = loaded
+        self.scouting_results = []
         self.state_changed.emit(self.state)
         self.status_message.emit("Salvataggio caricato.")
         return True
@@ -274,6 +298,8 @@ class GameController(QObject):
         prospect.id = next_id
         self.state.athletes.append(prospect)
         self.state.budget -= fee
+        # Sponsors dislike squad turnover; young signings hurt fidelity less
+        self.state.fidelity = max(0, self.state.fidelity - (6 if prospect.age < 21 else 12))
         tag = "Talento Studentesco" if prospect.is_youth_prospect else "Tesseramento"
         self.state.transactions.insert(
             0,
@@ -301,13 +327,14 @@ class GameController(QObject):
         return True
 
     def release_athlete(self, athlete_id: int) -> bool:
-        if len(self.state.athletes) <= 1:
-            self.status_message.emit("Impossibile svincolare l'ultimo atleta rimasto.")
-            return False
-
         target = next((a for a in self.state.athletes if a.id == athlete_id), None)
         if target is None:
             return False
+        if not target.in_youth_squad and len(self.state.main_squad) <= 1:
+            self.status_message.emit("Impossibile svincolare l'ultimo atleta rimasto.")
+            return False
+        if not target.in_youth_squad:
+            self.state.fidelity = max(0, self.state.fidelity - 8)
 
         self.state.athletes = [a for a in self.state.athletes if a.id != athlete_id]
         for event_name, assigned_id in list(self.state.event_lineup.items()):
@@ -320,6 +347,137 @@ class GameController(QObject):
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Svincolato {target.name}.")
+        return True
+
+    # ------------------------------------------------------------------ race attitude
+    def set_event_attitude(self, event_name: str, attitude: RaceAttitude) -> None:
+        self.state.event_attitude[event_name] = attitude.value
+        self.status_message.emit(f"{event_name}: atteggiamento in gara -> {attitude.value}.")
+
+    # ------------------------------------------------------------------ youth academy
+    def run_youth_scouting(
+        self, specialty: Optional[Specialty] = None, high_potential: bool = False
+    ) -> List[Athlete]:
+        """Spend weekly scouting points (2 + 1 per filter) and money to find 1-4 kids (14-17)."""
+        filters = (1 if specialty is not None else 0) + (1 if high_potential else 0)
+        points, fee = scouting_search_cost(self.state.scouting_points_used, filters)
+        if points > self.state.scouting_points_left:
+            self.status_message.emit(
+                f"Punti scouting insufficienti ({self.state.scouting_points_left} rimasti, servono {points})."
+            )
+            return []
+        if fee > self.state.budget:
+            self.status_message.emit(f"Fondi insufficienti per la ricerca (${fee:,}).")
+            return []
+
+        allowed = (
+            [Specialty.SPRINTS, Specialty.JUMPS, Specialty.MIDDLE_DISTANCE]
+            if self.state.game_mode == "vertical_slice"
+            else None
+        )
+        kids = generate_academy_prospects(
+            count=self.rng.randint(1, 4),
+            rng=self.rng,
+            specialty=specialty,
+            high_potential=high_potential,
+            existing_names={a.name for a in self.state.athletes},
+            allowed_specialties=allowed,
+        )
+        self.state.scouting_points_used += points
+        self.state.budget -= fee
+        if fee > 0:
+            self.state.transactions.insert(
+                0,
+                Transaction(
+                    id=None,
+                    week=self.state.week,
+                    description=f"Osservatori vivaio ({points} punti)",
+                    category="Scouting",
+                    amount=-fee,
+                ),
+            )
+        self.scouting_results = kids
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(
+            f"Gli osservatori hanno segnalato {len(kids)} ragazzi (-{points} punti, -${fee:,})."
+        )
+        return kids
+
+    def sign_youth(self, prospect: Athlete) -> bool:
+        if len(self.state.youth_squad) >= YOUTH_SQUAD_MAX:
+            self.status_message.emit(f"Vivaio pieno ({YOUTH_SQUAD_MAX} posti): promuovi o svincola qualcuno.")
+            return False
+        if prospect not in self.scouting_results:
+            return False
+        prospect.id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
+        prospect.in_youth_squad = True
+        self.state.athletes.append(prospect)
+        self.scouting_results.remove(prospect)
+        self.state.news_log.insert(
+            0,
+            f"Sett. {self.state.week}: {prospect.name} ({prospect.age} anni, {prospect.specialty.value}) "
+            "entra nel vivaio.",
+        )
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"{prospect.name} inserito nel vivaio.")
+        return True
+
+    def promote_youth(self, athlete_id: int) -> bool:
+        athlete = next(
+            (a for a in self.state.youth_squad if a.id == athlete_id), None
+        )
+        if athlete is None:
+            return False
+        promote_youth_athlete(self.state, athlete)
+        msg = f"Sett. {self.state.week}: {athlete.name} promosso dal vivaio in Prima Squadra!"
+        self.state.news_log.insert(0, msg)
+        self.state.milestones.insert(0, msg)
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"{athlete.name} promosso (stipendio ${athlete.weekly_wage}/sett).")
+        return True
+
+    # ------------------------------------------------------------------ facilities
+    def _pay(self, cost: int, description: str, category: str) -> bool:
+        if self.state.budget < cost:
+            self.status_message.emit(f"Budget insufficiente: servono ${cost:,}.")
+            return False
+        self.state.budget -= cost
+        self.state.transactions.insert(
+            0,
+            Transaction(id=None, week=self.state.week, description=description, category=category, amount=-cost),
+        )
+        return True
+
+    def upgrade_gym(self) -> bool:
+        if self.state.gym_level >= GYM_MAX_LEVEL:
+            self.status_message.emit("Palestra già al livello massimo.")
+            return False
+        cost = gym_upgrade_cost(self.state.gym_level)
+        if not self._pay(cost, f"Ampliamento Palestra -> livello {self.state.gym_level + 1}", "Impianto"):
+            return False
+        self.state.gym_level += 1
+        self.state.news_log.insert(
+            0, f"Sett. {self.state.week}: Palestra ampliata al livello {self.state.gym_level}."
+        )
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"Palestra al livello {self.state.gym_level}.")
+        return True
+
+    def expand_stands(self) -> bool:
+        if self.state.stand_seats >= STAND_MAX_SEATS:
+            self.status_message.emit("Tribune già alla capienza massima.")
+            return False
+        cost = stand_expansion_cost(self.state.stand_seats)
+        if not self._pay(cost, f"Nuove tribune (+{STAND_EXPANSION_SEATS} posti)", "Impianto"):
+            return False
+        self.state.stand_seats = min(STAND_MAX_SEATS, self.state.stand_seats + STAND_EXPANSION_SEATS)
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"Tribune ampliate: {self.state.stand_seats:,} posti.")
         return True
 
     def resolve_dilemma(self, accepted: bool) -> None:
@@ -393,8 +551,14 @@ class GameController(QObject):
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
 
-    def advance_week(self) -> WeekAdvanceReport:
+    def advance_week(self) -> Optional[WeekAdvanceReport]:
+        if self.state.bankrupt:
+            self.status_message.emit(
+                f"Società fallita (debito oltre ${-BANKRUPTCY_THRESHOLD:,}): avvia una nuova partita."
+            )
+            return None
         report = advance_week(self.state, rng=self.rng)
+        self.scouting_results = []
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
         self.week_advanced.emit(report)

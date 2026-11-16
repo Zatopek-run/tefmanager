@@ -20,8 +20,8 @@ tefmanager/
 ├── views/
 │   ├── __init__.py
 │   ├── styles.py                  # Dark sports-management QSS theme
-│   ├── dialogs.py                 # Risultati gara (con vento), Scouting, Dilemmi Etici, Nuova Stagione
-│   ├── tabs.py                    # Dashboard, Rosa & Allenamenti, Calendario & Gare, Staff & Impianto, Finanze
+│   ├── dialogs.py                 # Risultati gara (vento, classifica società), Mercato, Dilemmi Etici, Nuova Stagione
+│   ├── tabs.py                    # Dashboard, Rosa, Vivaio & Osservatori, Calendario & Gare, Staff & Impianto, Finanze
 │   └── main_window.py             # QMainWindow & HUD
 └── tests/
     └── test_game.py               # Unit and offscreen PyQt6 smoke tests
@@ -31,6 +31,21 @@ tefmanager/
 
 - **Prototipo Outdoor**: 10 atleti, 3 discipline (`100m`, `Salto in Lungo`, `1500m`), 2 gare ufficiali (Settimana 4 e Settimana 8) per testare subito il loop di periodizzazione, recupero/fatica, vento (> +2.0 m/s non omologato), scouting studentesco, staff e dilemmi etici.
 - **Carriera Completa**: stagioni cicliche `Outdoor -> Cross -> Indoor`, 5 discipline (inclusi `400m` e `Getto del Peso`) e scalata da `Provinciale` a `Internazionale`.
+
+## Gestione del Club (v3)
+
+Meccaniche da gestionale di atletica online, adattate alla scala del gioco:
+
+- **Vivaio & Osservatori**: fino a 8 ragazzi di 14-17 anni che non gareggiano e non prendono stipendio, ma si allenano il 50% più in fretta. A 18 anni passano in Prima Squadra da soli; prima puoi promuoverli a mano. Ogni settimana hai 8 punti scouting: una ricerca costa 2 punti, +1 per ogni filtro (disciplina, potenziale ≥85). Il costo in denaro cresce con i punti già spesi nella settimana. I ragazzi segnalati e non presi se ne vanno a fine settimana.
+- **Atteggiamento in gara** (Prudente / Normale / Aggressivo), scelto per ogni gara: più spinta dà risultati migliori ma più fatica e un rischio maggiore di ritiro per infortunio. Il rischio sale con la fatica e scende se c'è il medico.
+- **Classifica a squadre**: in ogni gara i piazzamenti valgono punti (1° = 8 … 8° = 1). I punti formano la classifica del meeting e una classifica di lega cumulativa, che si azzera a ogni stagione o promozione. Le prime 3 società prendono prestigio extra; una gara senza convocato regala punti ai rivali.
+- **Impianto**: palestra (livelli 0-5, +6% di crescita in allenamento per livello, con costo di gestione) e tribune ampliabili. I meeting si alternano casa/trasferta: in casa non paghi la trasferta e incassi i biglietti, con gli spettatori limitati dalla capienza.
+- **Fan & sponsor individuali**: gli atleti guadagnano fan con piazzamenti, PB e record. I maggiorenni in Prima Squadra portano sponsor personali settimanali.
+- **Fedeltà sponsor**: ogni acquisto o cessione la abbassa (meno per gli under 21) e riduce lo sponsor della società; si recupera di +2 a settimana.
+- **Debito & fallimento**: con il saldo negativo paghi il 5% di interessi a settimana; sotto -$20.000 la società fallisce.
+- **Declino con l'età**: dopo la finestra di picco della specialità gli atleti perdono gradualmente velocità, resistenza e forza.
+
+I salvataggi v2 vengono migrati in automatico a v3 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita.
 
 ## How to Run
 

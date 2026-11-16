@@ -130,6 +130,56 @@ class WeatherCondition(str, Enum):
     CALDO = "Caldo"
 
 
+class RaceAttitude(str, Enum):
+    """How hard an athlete pushes in a race: trades performance for fatigue & injury risk."""
+
+    PRUDENTE = "Prudente"
+    NORMALE = "Normale"
+    AGGRESSIVO = "Aggressivo"
+
+
+# score bonus, post-race fatigue, base in-race injury chance, extra result variance (std dev)
+ATTITUDE_EFFECTS: Dict[RaceAttitude, Dict[str, float]] = {
+    RaceAttitude.PRUDENTE: {"score": -2.0, "fatigue": 4, "injury": 0.005, "sigma": 0.0},
+    RaceAttitude.NORMALE: {"score": 0.0, "fatigue": 7, "injury": 0.02, "sigma": 0.0},
+    RaceAttitude.AGGRESSIVO: {"score": 2.5, "fatigue": 11, "injury": 0.05, "sigma": 2.0},
+}
+
+# Club facilities & youth academy tuning
+YOUTH_SQUAD_MAX = 8
+YOUTH_TRAINING_MULT = 1.5
+WEEKLY_SCOUTING_POINTS = 8
+SCOUTING_SEARCH_POINTS = 2
+# Cumulative weekly scouting fee by total points used (each search pays the difference)
+SCOUTING_FEES: Dict[int, int] = {0: 0, 1: 0, 2: 150, 3: 350, 4: 600, 5: 1000, 6: 1500, 7: 2200, 8: 3000}
+GYM_MAX_LEVEL = 5
+GYM_TRAINING_BONUS_PER_LEVEL = 0.06
+GYM_UPKEEP_PER_LEVEL = 40
+STAND_EXPANSION_SEATS = 500
+STAND_MAX_SEATS = 20000
+TICKET_PRICE: Dict[str, int] = {
+    "Provinciale": 4,
+    "Regionale": 6,
+    "Nazionale": 9,
+    "Internazionale": 14,
+}
+DEBT_WEEKLY_INTEREST = 0.05
+BANKRUPTCY_THRESHOLD = -20000
+# Team points per finishing place (1st..8th) for the club league table
+TEAM_POINTS: Dict[int, int] = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
+DNF_MARK = "Ritirato"
+
+
+def gym_upgrade_cost(current_level: int) -> int:
+    return (current_level + 1) * 2500
+
+
+def stand_expansion_cost(current_seats: int) -> int:
+    """Seats get pricier as the stand grows (like real stadium expansions)."""
+    per_seat = 3 if current_seats < 5000 else (4 if current_seats < 10000 else 6)
+    return STAND_EXPANSION_SEATS * per_seat + 500
+
+
 class StaffRole(str, Enum):
     """Specialized club staff roles."""
 
@@ -238,6 +288,8 @@ class Athlete:
     personal_best: Optional[float] = None
     personal_best_display: Optional[str] = None
     doping_boost_weeks: int = 0
+    in_youth_squad: bool = False
+    fans: int = 0
 
     @property
     def power(self) -> int:
@@ -375,6 +427,8 @@ class EventResult:
     is_pb: bool = False
     is_club_record: bool = False
     standings: List[EventStanding] = field(default_factory=list)
+    attitude: str = RaceAttitude.NORMALE.value
+    withdrew_injured: bool = False
 
 
 @dataclass
@@ -392,6 +446,18 @@ class CompetitionSummary:
     total_prestige_gained: int
     travel_cost: int = 0
     promoted_to: Optional[CompetitionTier] = None
+    is_home: bool = False
+    spectators: int = 0
+    ticket_income: int = 0
+    team_standings: List[Tuple[str, int]] = field(default_factory=list)
+    player_team: str = ""
+
+    @property
+    def team_placement(self) -> int:
+        for idx, (team, _pts) in enumerate(self.team_standings, start=1):
+            if team == self.player_team:
+                return idx
+        return 0
 
 
 @dataclass
@@ -420,6 +486,38 @@ class GameState:
     milestones: List[str] = field(default_factory=list)
     news_log: List[str] = field(default_factory=list)
     pending_dilemma: Optional[EthicalDilemma] = None
+    event_attitude: Dict[str, str] = field(default_factory=dict)
+    gym_level: int = 0
+    stand_seats: int = 500
+    fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
+    scouting_points_used: int = 0
+    bankrupt: bool = False
+    league_table: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def main_squad(self) -> List[Athlete]:
+        return [a for a in self.athletes if not a.in_youth_squad]
+
+    @property
+    def youth_squad(self) -> List[Athlete]:
+        return [a for a in self.athletes if a.in_youth_squad]
+
+    @property
+    def scouting_points_left(self) -> int:
+        return max(0, WEEKLY_SCOUTING_POINTS - self.scouting_points_used)
+
+    def attitude_for(self, event_name: str) -> RaceAttitude:
+        raw = self.event_attitude.get(event_name, RaceAttitude.NORMALE.value)
+        try:
+            return RaceAttitude(raw)
+        except ValueError:
+            return RaceAttitude.NORMALE
+
+    @property
+    def next_meet_is_home(self) -> bool:
+        """Meets alternate home/away: odd-numbered meets are hosted in the club's own stadium."""
+        next_meet_week = self.week if self.is_competition_week else self.week + self.weeks_until_competition
+        return (next_meet_week // 4) % 2 == 1
 
     @property
     def active_events(self) -> List[str]:
