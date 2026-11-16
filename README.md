@@ -21,6 +21,7 @@ tefmanager/
 │   ├── __init__.py
 │   ├── styles.py                  # Dark sports-management QSS theme
 │   ├── dialogs.py                 # Risultati gara, Fine Stagione, Mercato, Assumi Allenatore, Dilemmi Etici, Nuova Partita
+│   ├── athlete_dialog.py          # Scheda Atleta (caratteristiche a colonne, allenamento, gare)
 │   ├── tabs.py                    # Dashboard, Rosa, Vivaio, Calendario & Gare, Staffette, Rivali, Staff & Impianto, Finanze
 │   └── main_window.py             # QMainWindow & HUD
 └── tests/

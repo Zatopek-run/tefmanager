@@ -875,6 +875,16 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertTrue(win.relay_tab._slot_combos["4x100m"][0].isEnabled())
             self.assertFalse(win.relay_tab._slot_combos["4x400m"][0].isEnabled())  # no 400m in prototype
 
+            from views.athlete_dialog import AthleteDetailDialog, stat_colors
+
+            self.assertEqual(stat_colors(85)[0], "#16a34a")
+            self.assertEqual(stat_colors(30)[0], "#ef4444")
+            self.assertEqual(stat_colors(80, invert=True)[0], "#ef4444")  # molta fatica = rosso
+            detail = AthleteDetailDialog(ctrl, ctrl.state.athletes[0].id)
+            self.assertEqual(detail.tabs.count(), 3)
+            detail.refresh()
+            detail.close()
+
             new_dlg = NewGameDialog()
             self.assertEqual(new_dlg.game_mode, "vertical_slice")
             new_dlg.close()

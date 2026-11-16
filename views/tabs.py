@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.game_controller import GameController
+from views.athlete_dialog import AthleteDetailDialog
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
     PROMOTION_SPOTS,
@@ -343,6 +344,10 @@ class RosterTab(QWidget):
         )
         toolbar.addWidget(btn_rest)
 
+        btn_detail = QPushButton("Scheda Atleta")
+        btn_detail.clicked.connect(self._open_detail_selected)
+        toolbar.addWidget(btn_detail)
+
         btn_recover = QPushButton("Recupero Selezionato ($250)")
         btn_recover.clicked.connect(self._recover_selected)
         toolbar.addWidget(btn_recover)
@@ -402,7 +407,19 @@ class RosterTab(QWidget):
         header.setSectionResizeMode(15, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(16, QHeaderView.ResizeMode.ResizeToContents)
 
+        self.table.cellDoubleClicked.connect(lambda row, _col: self._open_detail(row))
         root.addWidget(self.table, stretch=1)
+
+    def _open_detail_selected(self) -> None:
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
+            QMessageBox.information(self, "Scheda Atleta", "Seleziona prima un atleta nella tabella.")
+            return
+        self._open_detail(rows[0].row())
+
+    def _open_detail(self, row: int) -> None:
+        if 0 <= row < len(self._athlete_row_ids) and self._athlete_row_ids[row] != -1:
+            AthleteDetailDialog(self.controller, self._athlete_row_ids[row], parent=self).exec()
 
     def refresh(self, state: GameState) -> None:
         self._athlete_row_ids = []
