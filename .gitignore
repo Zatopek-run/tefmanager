@@ -13,3 +13,6 @@ venv/
 .pytest_cache/
 .vscode/
 .idea/
+
+# Materiale grezzo scaricato (video di riferimento, ecc.)
+raw/
