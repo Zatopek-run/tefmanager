@@ -33,10 +33,12 @@ from views.race_3d import (
     Vec,
     _clamp,
     _lerp,
+    draw_athlete_head_3d,
     draw_line3,
     draw_official_3d,
     draw_poly,
     draw_shaded_limb,
+    draw_singlet_torso_3d,
     draw_textured_ground_quad,
     draw_textured_quad,
     get_soft_shadow,
@@ -154,7 +156,7 @@ class Field3DSceneWidget(FieldSceneWidget):
             if t < run_end:
                 self._cam_label = "RUNWAY-CAM"
                 x_m = -14.0 + 14.0 * (t / run_end)
-                return Camera((x_m + 5.6, 1.55, 5.0), (x_m + 0.8, 0.92, 0.0), 30.0, w, h)
+                return Camera((x_m + 4.3, 1.40, 3.7), (x_m + 0.5, 1.02, 0.0), 28.0, w, h)
             self._cam_label = "PIT-CAM"
             mid = max(3.5, d * 0.54)
             return Camera((mid + 1.4, 2.55, 9.4), (mid - 0.1, 1.05, 0.0), 31.0, w, h)
@@ -167,7 +169,7 @@ class Field3DSceneWidget(FieldSceneWidget):
         d = cur["dist"]
         if t < 1.15:
             self._cam_label = "RING-CAM"
-            return Camera((2.4, 1.75, 4.4), (-1.1, 0.95, 0.0), 30.0, w, h)
+            return Camera((2.0, 1.65, 3.6), (-1.0, 1.05, 0.0), 28.0, w, h)
         self._cam_label = "SECTOR-CAM"
         s_ = _clamp((t - 1.0) / 1.05, 0.0, 1.0)
         fx = _lerp(1.5, d * 0.65, s_)
@@ -230,9 +232,17 @@ class Field3DSceneWidget(FieldSceneWidget):
         idx = 0
         while bx < x_max + 28.0:
             pm = get_sponsor_board(idx)
+            draw_poly(p, cam, [(bx, 0.015, z_board), (bx + bseg - 0.15, 0.015, z_board), (bx + bseg - 0.15, 0.015, z_board + 0.45), (bx, 0.015, z_board + 0.45)], QColor(15, 23, 42, 70))
             draw_textured_quad(p, cam, [(bx, 0.85, z_board), (bx + bseg - 0.15, 0.85, z_board), (bx + bseg - 0.15, 0.04, z_board), (bx, 0.04, z_board)], pm)
             bx += bseg
             idx += 1
+
+        # sagoma di materasso salto in alto sullo sfondo del prato per dare profondità allo stadio
+        hx0, hz0 = -10.5, z_board - 2.6
+        draw_poly(p, cam, [(hx0, 0.0, hz0 - 1.8), (hx0 + 3.6, 0.0, hz0 - 1.8), (hx0 + 3.6, 0.68, hz0), (hx0, 0.68, hz0)], "#1d4ed8")
+        draw_line3(p, cam, (hx0 - 0.2, 0.0, hz0 - 1.6), (hx0 - 0.2, 2.3, hz0 - 1.6), 0.05, QColor("#e2e8f0"))
+        draw_line3(p, cam, (hx0 + 3.8, 0.0, hz0 - 1.6), (hx0 + 3.8, 2.3, hz0 - 1.6), 0.05, QColor("#e2e8f0"))
+        draw_line3(p, cam, (hx0 - 0.2, 2.05, hz0 - 1.6), (hx0 + 3.8, 2.05, hz0 - 1.6), 0.025, QColor("#facc15"))
 
     # ---- atleta articolato 3D locale
     def _draw_actor(
@@ -269,8 +279,8 @@ class Field3DSceneWidget(FieldSceneWidget):
             to = (ak[0] + 0.16 * math.cos(sh_a * 0.4), max(0.02, ak[1] - 0.03), hs[2])
             mid_t = (_lerp(hs[0], kn[0], 0.55), _lerp(hs[1], kn[1], 0.55), hs[2])
             calf_m = (_lerp(kn[0], ak[0], 0.38), _lerp(kn[1], ak[1], 0.38), hs[2])
-            draw_shaded_limb(p, cam, hs, kn, 0.092, 0.060, col_s)
-            draw_shaded_limb(p, cam, hs, mid_t, 0.105, 0.088, col_sh)
+            draw_shaded_limb(p, cam, hs, kn, 0.084, 0.056, col_s)
+            draw_shaded_limb(p, cam, hs, mid_t, 0.092, 0.078, col_sh)
             draw_shaded_limb(p, cam, kn, calf_m, 0.060, 0.068, col_s)
             draw_shaded_limb(p, cam, calf_m, ak, 0.065, 0.036, col_s)
             draw_shaded_limb(p, cam, ak, to, 0.042, 0.028, spike_col if is_near else spike_col.darker(120))
@@ -285,6 +295,7 @@ class Field3DSceneWidget(FieldSceneWidget):
             ha = (el[0] + 0.27 * math.sin(fa), el[1] - 0.27 * math.cos(fa), ss[2])
             draw_shaded_limb(p, cam, ss, el, 0.058, 0.045, col_s)
             draw_shaded_limb(p, cam, el, ha, 0.044, 0.028, col_s)
+            draw_shaded_limb(p, cam, ha, (ha[0] + 0.05 * s_l, ha[1] - 0.02, ha[2]), 0.030, 0.018, col_s.darker(108))
             if shot_in_hand and is_near:
                 hc = cam.to_cam(ha)
                 if hc[2] >= NEAR:
@@ -299,35 +310,21 @@ class Field3DSceneWidget(FieldSceneWidget):
 
         draw_leg(-1.0, leg_l)
         draw_arm(-1.0, arm_l)
-        draw_shaded_limb(p, cam, (hip[0], hip[1] - 0.04, 0.0), (hip[0] + 0.10 * s_l, hip[1] + 0.11 * c_l, 0.0), 0.145, 0.140, shorts)
-        wl = (hip[0] + 0.10 * s_l, hip[1] + 0.10 * c_l, -0.12)
-        wr = (hip[0] + 0.10 * s_l, hip[1] + 0.10 * c_l, 0.12)
-        sl = (sh_mid[0], sh_mid[1], -0.18)
-        sr = (sh_mid[0], sh_mid[1], 0.18)
-        draw_poly(p, cam, [wl, wr, sr, sl], kit.lighter(108))
-        draw_poly(p, cam, [wl, (hip[0] + 0.10 * s_l, hip[1] + 0.10 * c_l, 0.0), sh_mid, sl], kit.darker(120))
-        ch_lo = (hip[0] + 0.24 * s_l + 0.04, hip[1] + 0.24 * c_l, 0.0)
-        ch_hi = (hip[0] + 0.44 * s_l + 0.04, hip[1] + 0.44 * c_l, 0.0)
-        draw_poly(p, cam, [(ch_lo[0], ch_lo[1], -0.09), (ch_lo[0], ch_lo[1], 0.09), (ch_hi[0], ch_hi[1], 0.09), (ch_hi[0], ch_hi[1], -0.09)], "#f8fafc")
+        sh_lf_val = x + 0.56 * s_l
+        sh_y_val = hip_h + 0.56 * c_l
+        draw_singlet_torso_3d(
+            p, cam,
+            lambda lf, ly, lr: (lf, ly, lr),
+            x, hip_h, sh_lf_val, sh_y_val,
+            s_l, c_l, 0.0, kit, skin, bib, False, self.font(),
+        )
         draw_shaded_limb(p, cam, sh_mid, neck, 0.062, 0.052, skin.darker(108))
         draw_leg(1.0, leg_r)
         draw_arm(1.0, arm_r)
-
-        hc = cam.to_cam(head)
-        if hc[2] >= NEAR:
-            hx, hy = cam.proj(hc)
-            r = max(2.4, 0.115 * cam.f / hc[2])
-            hg = QRadialGradient(hx + r * 0.25, hy - r * 0.25, r * 1.35)
-            hg.setColorAt(0.0, skin.lighter(118))
-            hg.setColorAt(0.55, skin)
-            hg.setColorAt(1.0, skin.darker(135))
-            p.setBrush(QBrush(hg))
-            p.drawEllipse(QPointF(hx, hy), r * 0.96, r * 1.12)
-            p.setBrush(QColor("#111827") if bib % 3 else QColor("#451a03"))
-            p.drawChord(QRectF(hx - r * 1.02, hy - r * 1.18, 2.04 * r, 2.10 * r), 35 * 16, 155 * 16)
-            if is_player:
-                p.setBrush(QColor("#fbbf24"))
-                p.drawChord(QRectF(hx - r * 1.0, hy - r * 1.12, 2.0 * r, 1.95 * r), 22 * 16, 136 * 16)
+        draw_athlete_head_3d(
+            p, cam, head, yaw=0.0, skin=skin, bib=bib,
+            is_player=is_player, crouch=False, effort=True, celebrate=False,
+        )
 
     # ---- Salto in Lungo 3D
     def _paint_long_jump(self, p: QPainter, cam: Camera) -> None:

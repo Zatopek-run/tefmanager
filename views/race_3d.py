@@ -374,9 +374,15 @@ def draw_shaded_limb(
         p.setBrush(QBrush(grad))
     else:
         p.setBrush(color)
-    p.drawPolygon(poly)
+    p.setPen(Qt.PenStyle.NoPen)
     p.drawEllipse(QPointF(ax, ay), ra, ra)
     p.drawEllipse(QPointF(bx, by), rb, rb)
+    p.drawPolygon(poly)
+    if mr >= 2.2:
+        p.setPen(QPen(QColor(15, 23, 42, 85), 0.85))
+        p.drawLine(QPointF(ax + nx * ra, ay + ny * ra), QPointF(bx + nx * rb, by + ny * rb))
+        p.drawLine(QPointF(ax - nx * ra, ay - ny * ra), QPointF(bx - nx * rb, by - ny * rb))
+        p.setPen(Qt.PenStyle.NoPen)
 
 
 def get_sponsor_board(idx: int) -> QPixmap:
@@ -411,6 +417,199 @@ def get_soft_shadow() -> QPixmap:
     return _SHARED_SHADOW
 
 
+def draw_athlete_head_3d(
+    p: QPainter,
+    cam: Camera,
+    head_pos: Vec,
+    yaw: float,
+    skin: QColor,
+    bib: int,
+    is_player: bool = False,
+    crouch: bool = False,
+    effort: bool = False,
+    celebrate: bool = False,
+    cap_col: Optional[str] = None,
+) -> Optional[Tuple[float, float, float, float]]:
+    """Disegna testa 3D scolpita con occhi, sopracciglia, naso, bocca, orecchie e capelli orientati alla camera.
+
+    Ritorna `(hx, hy, r, depth)` se visibile davanti al piano vicino.
+    """
+    hc = cam.to_cam(head_pos)
+    if hc[2] < NEAR:
+        return None
+    hx, hy = cam.proj(hc)
+    r = max(2.2, 0.116 * cam.f / hc[2])
+
+    fwd = (math.cos(yaw), 0.0, math.sin(yaw))
+    fx = _dot(fwd, cam.right)  # >0 guarda a destra sullo schermo, <0 a sinistra
+    fz = _dot(fwd, cam.fwd)    # <0 guarda verso la camera, >0 dà le spalle
+    front_vis = _clamp(0.60 - fz * 0.85, 0.0, 1.0)
+    face_shift = _clamp(fx, -0.85, 0.85) * 0.40
+
+    # orecchio sul lato posteriore rispetto alla direzione dello sguardo
+    if abs(fx) > 0.22 and r >= 4.0:
+        ear_x = hx - (1.0 if fx > 0 else -1.0) * r * 0.86
+        p.setBrush(skin.darker(118))
+        p.drawEllipse(QPointF(ear_x, hy + r * 0.06), r * 0.16, r * 0.25)
+
+    # cranio con gradiente sferico e contorno sottile per staccare dallo sfondo
+    hgrad = QRadialGradient(hx + r * (0.28 if fx >= 0 else -0.28), hy - r * 0.25, r * 1.40)
+    hgrad.setColorAt(0.0, skin.lighter(118))
+    hgrad.setColorAt(0.55, skin)
+    hgrad.setColorAt(1.0, skin.darker(138))
+    p.setBrush(QBrush(hgrad))
+    p.setPen(QPen(QColor(15, 23, 42, 95), 0.9) if r >= 3.2 else Qt.PenStyle.NoPen)
+    p.drawEllipse(QPointF(hx, hy), r * 0.94, r * 1.12)
+    p.setPen(Qt.PenStyle.NoPen)
+
+    # tratti del volto (visibili appena la testa supera ~4 px di raggio e non è completamente girata)
+    if r >= 4.0 and front_vis > 0.15:
+        ex_mid = hx + face_shift * r
+        eye_y = hy + (0.20 if crouch else -0.14) * r
+        nose_y = hy + (0.40 if crouch else 0.10) * r
+        mouth_y = hy + (0.62 if crouch else 0.42) * r
+        sep = r * 0.28 * (0.30 + 0.70 * front_vis)
+        eye_rx = max(1.0, r * 0.13 * (0.55 + 0.45 * front_vis))
+        eye_ry = max(0.8, r * 0.09)
+
+        # due occhi (o occhio in vista di profilo) con sclera, iride, pupilla e sopracciglia
+        eye_offsets = [-sep, sep * 0.78] if fx >= 0 else [-sep * 0.78, sep]
+        if front_vis < 0.32:
+            eye_offsets = [eye_offsets[1 if fx >= 0 else 0]]
+        brow_col = QColor("#111827") if bib % 3 else QColor("#3b1a08")
+        for eo in eye_offsets:
+            ex = ex_mid + eo
+            p.setBrush(skin.darker(118))
+            p.drawEllipse(QPointF(ex, eye_y), eye_rx * 1.22, eye_ry * 1.28)
+            p.setBrush(QColor("#f8fafc"))
+            p.drawEllipse(QPointF(ex, eye_y), eye_rx, eye_ry)
+            ir_x = ex + face_shift * eye_rx * 0.35
+            p.setBrush(QColor("#1e1b18"))
+            p.drawEllipse(QPointF(ir_x, eye_y), eye_rx * 0.56, eye_ry * 0.78)
+            if r >= 8.5:
+                p.setBrush(QColor("#ffffff"))
+                p.drawEllipse(QPointF(ir_x + eye_rx * 0.18, eye_y - eye_ry * 0.22), max(0.6, eye_rx * 0.20), max(0.6, eye_rx * 0.20))
+            # sopracciglio naturale
+            tilt = (0.03 if eo < 0 else -0.03) if effort else (-0.04 if celebrate else 0.0)
+            p.setPen(QPen(brow_col, max(0.9, r * 0.065), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(
+                QPointF(ex - eye_rx * 1.05, eye_y - eye_ry * 1.85 - tilt * r),
+                QPointF(ex + eye_rx * 1.05, eye_y - eye_ry * 1.85 + tilt * r),
+            )
+            p.setPen(Qt.PenStyle.NoPen)
+
+        # naso (ponte + punta leggermente ombreggiata)
+        nx = hx + face_shift * r * 1.20
+        p.setPen(QPen(skin.darker(132), max(0.8, r * 0.07), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(QPointF(ex_mid, eye_y + eye_ry * 0.6), QPointF(nx, nose_y))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(skin.darker(124))
+        p.drawEllipse(QPointF(nx, nose_y), max(0.8, r * 0.10), max(0.7, r * 0.07))
+
+        # bocca ed espressione (naturale e proporzionata)
+        mx = hx + face_shift * r * 1.02
+        mw = max(1.2, r * 0.24 * (0.6 + 0.4 * front_vis))
+        lip_col = skin.darker(155)
+        if celebrate:
+            p.setBrush(QColor("#6b2c26"))
+            p.drawChord(QRectF(mx - mw, mouth_y - r * 0.05, 2 * mw, r * 0.28), 180 * 16, 180 * 16)
+            p.setBrush(QColor("#f8fafc"))
+            p.drawRect(QRectF(mx - mw * 0.70, mouth_y - r * 0.01, mw * 1.40, max(1.0, r * 0.08)))
+        elif effort:
+            p.setBrush(QColor("#5c2824"))
+            p.drawEllipse(QPointF(mx, mouth_y + r * 0.02), mw * 0.72, max(0.9, r * 0.09))
+            if r >= 8.0:
+                p.setBrush(QColor("#e2e8f0"))
+                p.drawRect(QRectF(mx - mw * 0.45, mouth_y - r * 0.02, mw * 0.90, max(0.7, r * 0.045)))
+        else:
+            p.setPen(QPen(lip_col, max(0.9, r * 0.07), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawLine(QPointF(mx - mw * 0.70, mouth_y), QPointF(mx + mw * 0.70, mouth_y))
+            p.setPen(Qt.PenStyle.NoPen)
+
+    # capelli o cappellino da giudice
+    if cap_col is not None:
+        p.setBrush(QColor(cap_col))
+        p.drawChord(QRectF(hx - r * 1.08, hy - r * 1.20, 2.16 * r, 1.55 * r), 12 * 16, 156 * 16)
+        # visiera
+        visor_x = hx + (1.0 if fx >= 0 else -1.0) * r * 0.65
+        p.drawEllipse(QPointF(visor_x, hy - r * 0.45), r * 0.55, r * 0.16)
+    else:
+        hair = QColor("#111827") if bib % 3 != 0 else QColor("#451a03")
+        p.setBrush(hair)
+        style = bib % 4
+        if style == 1:  # volume riccio
+            p.drawChord(QRectF(hx - r * 1.06, hy - r * 1.28, 2.12 * r, 2.10 * r), 20 * 16, 170 * 16)
+        elif style == 2:  # capelli raccolti con chignon posteriore
+            p.drawChord(QRectF(hx - r * 1.00, hy - r * 1.16, 2.00 * r, 1.95 * r), 30 * 16, 150 * 16)
+            bun_x = hx - (1.0 if fx >= 0 else -1.0) * r * 0.98
+            p.drawEllipse(QPointF(bun_x, hy - r * 0.35), r * 0.34, r * 0.34)
+        else:  # taglio atletico corto
+            p.drawChord(QRectF(hx - r * 1.00, hy - r * 1.16, 2.00 * r, 1.90 * r), 30 * 16, 150 * 16)
+        if is_player:
+            p.setBrush(QColor("#fbbf24"))
+            p.drawRect(QRectF(hx - r * 0.96, hy - r * 0.56, 1.92 * r, max(1.4, r * 0.20)))
+
+    return (hx, hy, r, hc[2])
+
+
+def draw_singlet_torso_3d(
+    p: QPainter,
+    cam: Camera,
+    to_world,
+    hip_lf: float,
+    hip_h: float,
+    sh_lf_val: float,
+    sh_y_val: float,
+    s_lean: float,
+    c_lean: float,
+    twist: float,
+    kit: QColor,
+    skin: QColor,
+    bib: int,
+    crouch_mode: bool,
+    font_base: QFont,
+) -> None:
+    """Disegna bacino, pantaloncini con banda laterale, busto con canotta smanicata e pettorale."""
+    shorts = QColor("#0f172a")
+    draw_shaded_limb(p, cam, to_world(hip_lf, hip_h - 0.04, 0.0), to_world(hip_lf + 0.10 * s_lean, hip_h + 0.11 * c_lean, 0.0), 0.125, 0.122, shorts)
+    # torace muscolare base (spalle scoperte) + canotta sopra
+    wl = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, -0.125)
+    wr = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.125)
+    sl_out = to_world(sh_lf_val + 0.14 * twist, sh_y_val, -0.185)
+    sr_out = to_world(sh_lf_val - 0.14 * twist, sh_y_val, 0.185)
+    draw_poly(p, cam, [wl, wr, sr_out, sl_out], skin.darker(108))
+
+    # canotta smanicata con bretelle sulle spalle e fascia laterale
+    sl_in = to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.125)
+    sr_in = to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.125)
+    chest_mid_y = _lerp(hip_h + 0.10 * c_lean, sh_y_val, 0.72)
+    chest_mid_lf = _lerp(hip_lf + 0.10 * s_lean, sh_lf_val, 0.72)
+    draw_poly(p, cam, [wl, wr, to_world(chest_mid_lf, chest_mid_y, 0.145), to_world(chest_mid_lf, chest_mid_y, -0.145)], kit.lighter(108))
+    # bretelle sinistra e destra
+    draw_poly(p, cam, [to_world(chest_mid_lf, chest_mid_y, -0.145), to_world(chest_mid_lf, chest_mid_y, -0.065), to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.075), sl_in], kit.lighter(108))
+    draw_poly(p, cam, [to_world(chest_mid_lf, chest_mid_y, 0.065), to_world(chest_mid_lf, chest_mid_y, 0.145), sr_in, to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.075)], kit.lighter(108))
+    # ombra laterale sul busto
+    draw_poly(p, cam, [wl, to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.0), to_world(chest_mid_lf, chest_mid_y, 0.0), to_world(chest_mid_lf, chest_mid_y, -0.145)], kit.darker(120))
+
+    # pettorale di gara bianco con numero
+    ch_lo = hip_lf + 0.22 * s_lean
+    ch_hi = hip_lf + 0.42 * s_lean
+    y_lo, y_hi = hip_h + 0.22 * c_lean, hip_h + 0.42 * c_lean
+    bib_pts = [to_world(ch_lo + 0.04, y_lo, -0.09), to_world(ch_lo + 0.04, y_lo, 0.09), to_world(ch_hi + 0.04, y_hi, 0.09), to_world(ch_hi + 0.04, y_hi, -0.09)]
+    draw_poly(p, cam, bib_pts, "#f8fafc")
+    if not crouch_mode:
+        bc = cam.to_cam(to_world((ch_lo + ch_hi) * 0.5 + 0.05, (y_lo + y_hi) * 0.5, 0.0))
+        if NEAR <= bc[2] < 24.0:
+            bx, by = cam.proj(bc)
+            bf = QFont(font_base)
+            bf.setPointSize(max(6, int(0.11 * cam.f / bc[2])))
+            bf.setBold(True)
+            p.setFont(bf)
+            p.setPen(QColor("#0f172a"))
+            p.drawText(QRectF(bx - 16, by - 10, 32, 20), Qt.AlignmentFlag.AlignCenter, str(bib))
+            p.setPen(Qt.PenStyle.NoPen)
+
+
 def draw_official_3d(p: QPainter, cam: Camera, x: float, z: float, cap_col: str = "#f8fafc") -> None:
     c = cam.to_cam((x, 0.9, z))
     if c[2] < NEAR * 2 or c[2] > 75.0:
@@ -427,14 +626,7 @@ def draw_official_3d(p: QPainter, cam: Camera, x: float, z: float, cap_col: str 
     for sz in (-0.21, 0.21):
         draw_shaded_limb(p, cam, (x, 1.38, z + sz), (x + 0.04, 0.95, z + sz), 0.050, 0.038, QColor("#d9a066"))
     draw_shaded_limb(p, cam, (x, 1.40, z), (x, 1.54, z), 0.052, 0.048, QColor("#d9a066"))
-    hc = cam.to_cam((x, 1.66, z))
-    if hc[2] >= NEAR:
-        hx, hy = cam.proj(hc)
-        r = max(2.0, 0.10 * cam.f / hc[2])
-        p.setBrush(QColor("#d9a066"))
-        p.drawEllipse(QPointF(hx, hy), r, r * 1.1)
-        p.setBrush(QColor(cap_col))
-        p.drawChord(QRectF(hx - r * 1.1, hy - r * 1.15, 2.2 * r, 1.6 * r), 15 * 16, 150 * 16)
+    draw_athlete_head_3d(p, cam, (x, 1.66, z), yaw=0.4, skin=QColor("#d9a066"), bib=1, cap_col=cap_col)
 
 
 # --------------------------------------------------------------------------- vista 3D
@@ -610,7 +802,7 @@ class Track3DWidget(TrackRaceWidget):
             if self.race_time > self._winner_time + 1.0 * self._scale:
                 self._cam_label = "WINNER-CAM"
                 wx, wz, _, _ = poses[leader_idx]
-                return Camera((wx + 6.2, 1.45, wz + 6.2), (wx - 1.2, 1.0, wz), 30.0, w, h)
+                return Camera((wx + 4.4, 1.48, wz + 4.4), (wx - 0.8, 1.15, wz), 27.0, w, h)
             if leader >= d - 13.0:
                 self._cam_label = "FINISH-CAM"
                 return Camera((STRAIGHT + 4.4, 4.4, tw + 16.0), (STRAIGHT - 1.2, 0.85, tw * 0.48), 28.0, w, h)
@@ -627,9 +819,9 @@ class Track3DWidget(TrackRaceWidget):
         # Post-arrivo: Winner-Cam ravvicinata
         if self.race_time > self._winner_time + 1.0 * self._scale:
             self._cam_label = "WINNER-CAM"
-            pos = (lx + 5.8 * fwd_x - 5.2 * in_x, 1.5, lz + 5.8 * fwd_z - 5.2 * in_z)
-            target = (lx - 1.0 * fwd_x, 1.0, lz - 1.0 * fwd_z)
-            return Camera(pos, target, 30.0, w, h)
+            pos = (lx + 4.4 * fwd_x - 4.0 * in_x, 1.48, lz + 4.4 * fwd_z - 4.0 * in_z)
+            target = (lx - 0.8 * fwd_x, 1.12, lz - 0.8 * fwd_z)
+            return Camera(pos, target, 27.0, w, h)
 
         # Volata sul rettilineo finale (ultimi 55m): Finish-Cam dal traguardo
         if leader >= d - 55.0:
@@ -648,9 +840,9 @@ class Track3DWidget(TrackRaceWidget):
         # Ripresa dinamica dall'interno pista verso il gruppo e le tribune curve sullo sfondo (stile 1500m TV!)
         self._cam_label = "OVAL-CAM"
         # in rettilineo/curva la camera sta sul prato interno guardando verso il gruppo e le tribune esterne
-        pos = (lx + 8.5 * fwd_x + 19.5 * in_x, 5.4, lz + 8.5 * fwd_z + 19.5 * in_z)
-        target = (lx - 1.5 * fwd_x, 0.95, lz - 1.5 * fwd_z)
-        return Camera(pos, target, 30.0, w, h)
+        pos = (lx + 7.2 * fwd_x + 15.2 * in_x, 4.6, lz + 7.2 * fwd_z + 15.2 * in_z)
+        target = (lx - 1.2 * fwd_x, 0.95, lz - 1.2 * fwd_z)
+        return Camera(pos, target, 28.0, w, h)
 
     # ---- primitive 3D (delegate alle funzioni condivise)
     def _poly(self, p: QPainter, cam: Camera, pts: Sequence[Vec], color) -> None:
@@ -889,6 +1081,28 @@ class Track3DWidget(TrackRaceWidget):
                     d_col,
                 )
 
+        # Attrezzi reali nelle lunette interne (materasso salto in alto + gabbia lanci)
+        # Materasso salto in alto nella lunetta est (x ~ STRAIGHT + 14)
+        hx0, hz0 = STRAIGHT + 12.0, -R_IN - 2.0
+        self._poly(p, cam, [(hx0, 0.0, hz0 - 3.0), (hx0 + 4.0, 0.0, hz0 - 3.0), (hx0 + 4.0, 0.72, hz0 + 3.0), (hx0, 0.72, hz0 + 3.0)], "#1d4ed8")
+        self._poly(p, cam, [(hx0, 0.72, hz0 - 3.0), (hx0 + 4.0, 0.72, hz0 - 3.0), (hx0 + 4.0, 0.72, hz0 + 3.0), (hx0, 0.72, hz0 + 3.0)], "#2563eb")
+        for rz_p in (hz0 - 2.4, hz0 + 2.4):
+            self._line3(p, cam, (hx0 - 0.3, 0.0, rz_p), (hx0 - 0.3, 2.5, rz_p), 0.06, QColor("#e2e8f0"))
+        self._line3(p, cam, (hx0 - 0.3, 2.25, hz0 - 2.4), (hx0 - 0.3, 2.25, hz0 + 2.4), 0.03, QColor("#facc15"))
+        # Gabbia lanci nella lunetta ovest (x ~ -16)
+        gx0, gz0 = -16.0, -R_IN
+        cage_pts = [
+            (gx0 + 4.2 * math.cos(math.pi * (0.65 + k * 0.175)), 0.0, gz0 + 4.2 * math.sin(math.pi * (0.65 + k * 0.175)))
+            for k in range(5)
+        ]
+        for k in range(4):
+            gp0, gp1 = cage_pts[k], cage_pts[k + 1]
+            self._poly(p, cam, [gp0, gp1, (gp1[0], 5.2, gp1[2]), (gp0[0], 5.2, gp0[2])], QColor(15, 23, 42, 65))
+            self._line3(p, cam, (gp0[0], 5.2, gp0[2]), (gp1[0], 5.2, gp1[2]), 0.06, QColor("#cbd5e1"))
+            self._line3(p, cam, (gp0[0], 2.6, gp0[2]), (gp1[0], 2.6, gp1[2]), 0.04, QColor("#94a3b8"))
+        for gp in cage_pts:
+            self._line3(p, cam, gp, (gp[0], 5.2, gp[2]), 0.07, QColor("#94a3b8"))
+
         # ---- 3. Pista 400m completa (2 rettilinei + bretella 100m + 2 curve)
         n = len(self._runners)
         # Rettilineo principale + bretella partenza 100 m (-22m .. STRAIGHT)
@@ -996,10 +1210,10 @@ class Track3DWidget(TrackRaceWidget):
             bx1 = min(STRAIGHT, bx + seg - 0.15)
             pm = self._board(idx)
             if not cam_inside:
-                # camera esterna al rettilineo principale: cartelloni lungo il bordo interno (leggibili sx->dx)
+                # ombra di contatto a terra + cartelloni lungo il bordo interno (leggibili sx->dx)
+                self._poly(p, cam, [(bx, 0.015, -1.4), (bx1, 0.015, -1.4), (bx1, 0.015, -0.9), (bx, 0.015, -0.9)], QColor(15, 23, 42, 70))
                 self._textured_quad(p, cam, [(bx, 0.85, -1.4), (bx1, 0.85, -1.4), (bx1, 0.04, -1.4), (bx, 0.04, -1.4)], pm)
             elif bx >= 0.0:
-                # camera dall'interno dell'ovale: cartelloni lungo il perimetro esterno di entrambi i rettilinei
                 zb = -2.0 * R_IN - tw - 1.6
                 zh = tw + 1.8
                 self._textured_quad(p, cam, [(bx, 0.90, zb), (bx1, 0.90, zb), (bx1, 0.04, zb), (bx, 0.04, zb)], pm)
@@ -1193,13 +1407,15 @@ class Track3DWidget(TrackRaceWidget):
             mid_w, calf_w = to_world(*mid_l), to_world(*calf_l)
             sh_w, el_w, ha_w = to_world(*sh_l), to_world(*el_l), to_world(*ha_l)
 
-            self._shaded_limb(p, cam, hip_w, kn_w, 0.092, 0.060, shade_skin)
-            self._shaded_limb(p, cam, hip_w, mid_w, 0.105, 0.088, shade_shorts)
+            self._shaded_limb(p, cam, hip_w, kn_w, 0.084, 0.056, shade_skin)
+            self._shaded_limb(p, cam, hip_w, mid_w, 0.092, 0.078, shade_shorts)
             self._shaded_limb(p, cam, kn_w, calf_w, 0.060, 0.068, shade_skin)
             self._shaded_limb(p, cam, calf_w, ak_w, 0.065, 0.036, shade_skin)
             self._shaded_limb(p, cam, ak_w, to_w, 0.042, 0.028, spike_col if is_near else spike_col.darker(120))
             self._shaded_limb(p, cam, sh_w, el_w, 0.058, 0.045, shade_skin)
             self._shaded_limb(p, cam, el_w, ha_w, 0.044, 0.028, shade_skin)
+            # mano scolpita
+            self._shaded_limb(p, cam, ha_w, to_world(ha_l[0] + 0.05 * s_lean, ha_l[1] - 0.02, ha_l[2]), 0.030, 0.018, shade_skin.darker(108))
             if has_baton and side > 0 and not crouch_mode:
                 b_fwd, b_up = 0.14 * s_lean + 0.10, 0.14 * c_lean
                 self._shaded_limb(
@@ -1211,53 +1427,22 @@ class Track3DWidget(TrackRaceWidget):
 
         draw_side(-near_sign)
 
-        self._shaded_limb(p, cam, to_world(hip_lf, hip_h - 0.04, 0.0), to_world(hip_lf + 0.10 * s_lean, hip_h + 0.11 * c_lean, 0.0), 0.145, 0.140, shorts)
-        wl = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, -0.12)
-        wr = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.12)
-        sl = to_world(sh_lf_val + 0.14 * twist, sh_y_val, -0.18)
-        sr = to_world(sh_lf_val - 0.14 * twist, sh_y_val, 0.18)
-        self._poly(p, cam, [wl, wr, sr, sl], kit.lighter(108))
-        self._poly(p, cam, [wl, to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.0), to_world(sh_lf_val, sh_y_val, 0.0), sl], kit.darker(120))
-
-        # pettorale di gara sul torace
-        ch_lo = hip_lf + 0.24 * s_lean
-        ch_hi = hip_lf + 0.44 * s_lean
-        y_lo, y_hi = hip_h + 0.24 * c_lean, hip_h + 0.44 * c_lean
-        bib_pts = [to_world(ch_lo + 0.04, y_lo, -0.09), to_world(ch_lo + 0.04, y_lo, 0.09), to_world(ch_hi + 0.04, y_hi, 0.09), to_world(ch_hi + 0.04, y_hi, -0.09)]
-        self._poly(p, cam, bib_pts, "#f8fafc")
-        if not crouch_mode:
-            bc = cam.to_cam(to_world((ch_lo + ch_hi) * 0.5 + 0.05, (y_lo + y_hi) * 0.5, 0.0))
-            if NEAR <= bc[2] < 22.0:
-                bx, by = cam.proj(bc)
-                bf = QFont(self.font())
-                bf.setPointSize(max(6, int(0.11 * cam.f / bc[2])))
-                bf.setBold(True)
-                p.setFont(bf)
-                p.setPen(QColor("#0f172a"))
-                p.drawText(QRectF(bx - 16, by - 10, 32, 20), Qt.AlignmentFlag.AlignCenter, str(bib))
-                p.setPen(Qt.PenStyle.NoPen)
+        draw_singlet_torso_3d(
+            p, cam, to_world, hip_lf, hip_h, sh_lf_val, sh_y_val,
+            s_lean, c_lean, twist, kit, skin, bib, crouch_mode, self.font(),
+        )
 
         self._shaded_limb(p, cam, to_world(sh_lf_val, sh_y_val, 0.0), to_world(neck_lf, neck_y, 0.0), 0.062, 0.052, skin.darker(108))
         draw_side(near_sign)
 
-        hc = cam.to_cam(to_world(head_lf, head_y, 0.0))
-        if hc[2] >= NEAR:
-            hx, hy = cam.proj(hc)
-            r = max(2.2, 0.114 * cam.f / hc[2])
-            hgrad = QRadialGradient(hx + r * 0.25, hy - r * 0.25, r * 1.35)
-            hgrad.setColorAt(0.0, skin.lighter(118))
-            hgrad.setColorAt(0.55, skin)
-            hgrad.setColorAt(1.0, skin.darker(135))
-            p.setBrush(QBrush(hgrad))
-            p.drawEllipse(QPointF(hx, hy), r * 0.96, r * 1.12)
-            hair = QColor("#111827") if bib % 3 != 0 else QColor("#451a03")
-            p.setBrush(hair)
-            p.drawChord(QRectF(hx - r * 1.02, hy - r * 1.18, 2.04 * r, 2.10 * r), 35 * 16, 155 * 16)
-            if is_player:
-                p.setBrush(QColor("#fbbf24"))
-                p.drawChord(QRectF(hx - r * 1.0, hy - r * 1.12, 2.0 * r, 1.95 * r), 22 * 16, 136 * 16)
-
-            if is_player and hc[2] < 85 and self._cam_label != "BLOCK-CAM":
+        effort = self.race_time > 0.0 and not celebrate
+        h_info = draw_athlete_head_3d(
+            p, cam, to_world(head_lf, head_y, 0.0), yaw, skin, bib,
+            is_player=is_player, crouch=crouch_mode, effort=effort, celebrate=celebrate,
+        )
+        if h_info is not None:
+            hx, hy, r, depth = h_info
+            if is_player and depth < 85 and self._cam_label != "BLOCK-CAM":
                 font = QFont(self.font())
                 font.setPointSize(9)
                 font.setBold(True)
