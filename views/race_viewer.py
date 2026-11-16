@@ -27,11 +27,14 @@ from PyQt6.QtWidgets import (
 
 from models.entities import EVENTS, CompetitionSummary, EventResult, EventStanding
 
-# Distanza percorsa (m) e durata dell'animazione del vincitore a velocità 1x (s)
+# Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
 TRACK_DISTANCES = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
-TRACK_DURATIONS = {"100m": 7.0, "400m": 10.0, "1500m": 14.0, "4x100m": 10.0, "4x400m": 13.0}
+TRACK_TARGET_SECONDS = {"100m": None, "400m": 24.0, "1500m": 26.0, "4x100m": 16.0, "4x400m": 28.0}
 FIELD_ROUNDS = 4
 DNF_PROGRESS = 0.42  # un atleta ritirato si ferma a questo punto della gara
+PRE_START_SECONDS = 3.0  # "Ai vostri posti" -> "Pronti" -> sparo
+GUN_AT = 2.4  # istante dello sparo nella sequenza di partenza
+REACTION_RANGE = (0.12, 0.22)  # tempo di reazione ai blocchi (fa parte del tempo ufficiale)
 
 
 def is_field_event(event_name: str) -> bool:
@@ -44,14 +47,64 @@ def _rng(*parts: object) -> random.Random:
     return random.Random(zlib.crc32("|".join(str(p) for p in parts).encode()))
 
 
-def track_progress(u: float, phase: float = 0.0, amp: float = 0.02) -> float:
-    """Frazione di percorso al tempo relativo `u` (0 = via, 1 = arrivo del singolo atleta).
+def _velocity(kind: str, u: float) -> float:
+    """Velocità relativa (sempre > 0) al tempo normalizzato u in [0, 1] per tipo di gara."""
+    if kind == "100m":  # forte accelerazione fino a ~60 m, poi leggero calo
+        return (1.0 - math.exp(-u / 0.14)) * (1.0 - 0.07 * max(0.0, (u - 0.6) / 0.4)) + 0.02
+    if kind == "400m":  # partenza veloce, calo nella seconda metà
+        return (1.0 - math.exp(-u / 0.05)) * (1.0 - 0.16 * u) + 0.02
+    if kind == "1500m":  # gruppo compatto, poi volata finale
+        return (1.0 - math.exp(-u / 0.02)) * (0.92 + 0.05 * u + 1.3 * max(0.0, u - 0.88) ** 1.4) + 0.02
+    # staffette: ogni frazione riparte (cambio al volo), con un po' di calo a fine frazione
+    s = (u * 4.0) % 1.0
+    return 0.72 + 0.28 * (1.0 - math.exp(-s / 0.2)) - 0.06 * s
 
-    Parte da 0, arriva esattamente a 1 e non torna mai indietro; `phase`/`amp` danno
-    piccoli sorpassi solo scenici. Con `amp` piccola la funzione è monotona.
+
+_CURVE_STEPS = 600
+_G_TABLES: dict = {}
+
+
+def _g_table(kind: str) -> List[float]:
+    """Spazio percorso (normalizzato, 0..1) a passi uniformi di tempo: integrale della velocità."""
+    table = _G_TABLES.get(kind)
+    if table is None:
+        cum = [0.0]
+        for i in range(1, _CURVE_STEPS + 1):
+            u0, u1 = (i - 1) / _CURVE_STEPS, i / _CURVE_STEPS
+            cum.append(cum[-1] + 0.5 * (_velocity(kind, u0) + _velocity(kind, u1)) / _CURVE_STEPS)
+        table = [c / cum[-1] for c in cum]
+        _G_TABLES[kind] = table
+    return table
+
+
+def curve_kind(event_name: str) -> str:
+    return "relay" if event_name.startswith("4x") else event_name
+
+
+def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006) -> float:
+    """Frazione di percorso (0..1) al tempo normalizzato `u`: 0 al via, 1 esatto all'arrivo.
+
+    Monotona crescente; `phase`/`amp` aggiungono solo piccoli sorpassi scenici.
     """
     u = max(0.0, min(1.0, u))
-    return u + amp * math.sin(math.pi * u) * math.sin(phase + 5.0 * u) * (1.0 - u)
+    table = _g_table(kind)
+    pos = u * _CURVE_STEPS
+    i = min(_CURVE_STEPS - 1, int(pos))
+    g = table[i] + (table[i + 1] - table[i]) * (pos - i)
+    return g + amp * math.sin(phase + 7.0 * u) * u * (1.0 - u)
+
+
+def reaction_time(seed: object, name: str) -> float:
+    return _rng(seed, "reaction", name).uniform(*REACTION_RANGE)
+
+
+def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0) -> float:
+    """Frazione di percorso al tempo di gara `race_t` (dallo sparo) per chi chiude in `mark` secondi.
+
+    Il tempo di reazione è incluso nel tempo ufficiale: corre per (mark - reaction) secondi
+    e taglia il traguardo esattamente a `mark`.
+    """
+    return curve_progress(curve_kind(event_name), (race_t - reaction) / max(1e-6, mark - reaction), phase)
 
 
 def format_race_time(seconds: float) -> str:
@@ -88,37 +141,65 @@ class TrackRaceWidget(QWidget):
         super().__init__(parent)
         self.setMinimumHeight(300)
         self._runners: List[dict] = []
+        self._event = "100m"
         self._winner_time = 1.0
-        self._duration = 8.0
-        self._t = 0.0  # secondi di animazione
+        self._scale = 1.0  # secondi di gara per secondo di animazione
+        self._t = 0.0  # secondi di animazione dall'inizio (compresa la sequenza di partenza)
         self._done = False
-        self._leader_text = ""
 
     def set_race(self, event_name: str, result: EventResult, seed: object) -> None:
+        self._event = event_name
         self._runners = []
         valid = []
         for s in result.standings:
             is_dnf = s.is_player and result.withdrew_injured
             if not is_dnf:
                 valid.append(s.mark_value)
-            self._runners.append({"s": s, "dnf": is_dnf, "phase": _rng(seed, s.athlete_name).uniform(0, 6.28)})
+            self._runners.append(
+                {
+                    "s": s,
+                    "dnf": is_dnf,
+                    "phase": _rng(seed, s.athlete_name).uniform(0, 6.28),
+                    "react": reaction_time(seed, s.athlete_name),
+                }
+            )
         self._winner_time = max(0.5, min(valid) if valid else 1.0)
-        self._duration = TRACK_DURATIONS.get(event_name, 10.0)
+        target = TRACK_TARGET_SECONDS.get(event_name)
+        self._scale = 1.0 if target is None else max(1.0, self._winner_time / target)
         self._t = 0.0
         self._done = False
         self.update()
 
+    # ---- tempo
+    @property
+    def race_time(self) -> float:
+        """Secondi di gara trascorsi dallo sparo (0 durante la sequenza di partenza)."""
+        return max(0.0, self._t - GUN_AT) * self._scale
+
     @property
     def race_clock(self) -> float:
-        return min(self._winner_time, self._t * self._winner_time / self._duration)
+        return min(self._winner_time, self.race_time)
+
+    @property
+    def start_phase(self) -> str:
+        if self._t < GUN_AT * 0.5:
+            return "AI VOSTRI POSTI"
+        if self._t < GUN_AT:
+            return "PRONTI"
+        if self._t < GUN_AT + 0.7:
+            return "VIA!"
+        return ""
+
+    def _last_finish(self) -> float:
+        return max((r["s"].mark_value for r in self._runners if not r["dnf"]), default=0.0)
 
     def advance(self, dt: float) -> None:
         if self._done:
             return
         self._t += dt
-        last_finish = max((self._finish_anim_time(r) for r in self._runners if not r["dnf"]), default=0.0)
-        if self._t >= last_finish + 0.8:
-            self._t = last_finish + 0.8
+        end_anim = GUN_AT + self._last_finish() / self._scale + 1.2
+        if self._t >= end_anim:
+            self._t = end_anim
             self._done = True
             self.finished.emit()
         self.update()
@@ -128,15 +209,16 @@ class TrackRaceWidget(QWidget):
             self._t = 1e6
             self.advance(0.0)
 
-    def _finish_anim_time(self, runner: dict) -> float:
-        return self._duration * runner["s"].mark_value / self._winner_time
-
-    def _progress(self, runner: dict) -> float:
+    def fraction(self, runner: dict) -> float:
+        """Frazione di pista percorsa dall'atleta in questo istante."""
+        t = self.race_time
         if runner["dnf"]:
-            u = self._t / (self._duration * 1.4)
-            return min(DNF_PROGRESS, track_progress(u, runner["phase"]) * 0.9)
-        u = self._t / self._finish_anim_time(runner)
-        return track_progress(u, runner["phase"])
+            f = position_fraction(self._event, t, self._winner_time * 1.25, runner["react"], runner["phase"])
+            return min(DNF_PROGRESS, f * 0.9)
+        return position_fraction(self._event, t, runner["s"].mark_value, runner["react"], runner["phase"])
+
+    def _has_finished(self, runner: dict) -> bool:
+        return (not runner["dnf"]) and self.race_time >= runner["s"].mark_value
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
@@ -171,8 +253,8 @@ class TrackRaceWidget(QWidget):
         for i, r in enumerate(self._runners):
             s: EventStanding = r["s"]
             y = top + i * lane_h + lane_h / 2
-            prog = self._progress(r)
-            finished = (not r["dnf"]) and self._t >= self._finish_anim_time(r)
+            prog = self.fraction(r)
+            finished = self._has_finished(r)
             colour = QColor("#fbbf24" if s.is_player else "#94a3b8")
 
             # etichetta a sinistra: corsia, nome, squadra
@@ -194,12 +276,23 @@ class TrackRaceWidget(QWidget):
             p.drawText(int(cx - 8), int(y - 8), 16, 16, Qt.AlignmentFlag.AlignCenter, str(i + 1))
 
             # esito a destra
-            if r["dnf"] and self._t > self._duration * 0.6:
+            if r["dnf"] and self.race_time > self._winner_time * 0.8:
                 p.setPen(QColor("#f87171"))
                 p.drawText(int(x1 + 18), int(y + 4), "RITIRATO")
             elif finished:
                 p.setPen(QColor("#fbbf24" if s.is_player else "#e2e8f0"))
                 p.drawText(int(x1 + 18), int(y + 4), f"{s.placement}°  {s.mark_display}")
+
+        phase = self.start_phase
+        if phase:
+            big = QFont(font)
+            big.setPointSize(26)
+            big.setBold(True)
+            p.setFont(big)
+            p.setPen(QColor(0, 0, 0, 150))
+            p.drawText(self.rect().adjusted(2, 2, 2, 2), Qt.AlignmentFlag.AlignCenter, phase)
+            p.setPen(QColor("#fbbf24" if phase == "VIA!" else "#f8fafc"))
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, phase)
         p.end()
 
 
