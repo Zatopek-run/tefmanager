@@ -26,6 +26,7 @@ from PyQt6.QtGui import (
     QImage,
     QLinearGradient,
     QPainter,
+    QPainterPath,
     QPen,
     QPixmap,
     QPolygonF,
@@ -82,6 +83,15 @@ def _lerp(a: float, b: float, t: float) -> float:
 
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
+
+
+def _smoothstep(t: float) -> float:
+    u = _clamp(t, 0.0, 1.0)
+    return u * u * (3.0 - 2.0 * u)
+
+
+def _lerp3(a: Vec, b: Vec, t: float) -> Vec:
+    return (_lerp(a[0], b[0], t), _lerp(a[1], b[1], t), _lerp(a[2], b[2], t))
 
 
 def oval_pose(dist_from_finish: float, lat_z: float, ref_lat: Optional[float] = None) -> Tuple[float, float, float, float]:
@@ -158,29 +168,39 @@ def clip_segment_near(a: Vec, b: Vec) -> Optional[Tuple[Vec, Vec]]:
 
 # --------------------------------------------------------------------------- texture procedurali in cache
 def make_track_tile(base_hex: str, rain: bool = False) -> QPixmap:
-    """Mattonella granulare realistica della pista (tartan/Mondo) con micro-usura."""
-    w, h = 256, 128
+    """Mattonella granulare ad alta risoluzione (512x256) in tartan/Mondo con lucentezza e usura di corsia."""
+    w, h = 512, 256
     img = QImage(w, h, QImage.Format.Format_RGB32)
     base = QColor(base_hex)
     img.fill(base)
     q = QPainter(img)
     rng = random.Random(101 if not rain else 202)
     for y in range(0, h, 3):
-        delta = rng.randint(-7, 7)
+        delta = rng.randint(-6, 6)
         col = base.lighter(100 + delta) if delta > 0 else base.darker(100 - delta)
         q.fillRect(0, y, w, 2, col)
-    light = base.lighter(122)
-    dark = base.darker(122)
-    light.setAlpha(95)
-    dark.setAlpha(105)
-    for _ in range(1600):
-        q.fillRect(rng.randrange(w), rng.randrange(h), 2, 1, light if rng.random() < 0.45 else dark)
+    # leggera corsia di calpestio centrale + riflesso speculare longitudinale
+    wear = QLinearGradient(0, 0, 0, h)
+    wear.setColorAt(0.0, QColor(255, 255, 255, 14))
+    wear.setColorAt(0.48, QColor(0, 0, 0, 18))
+    wear.setColorAt(1.0, QColor(255, 255, 255, 10))
+    q.fillRect(0, 0, w, h, wear)
+    light = base.lighter(126)
+    dark = base.darker(124)
+    light.setAlpha(90)
+    dark.setAlpha(100)
+    for _ in range(5200):
+        q.fillRect(rng.randrange(w), rng.randrange(h), 2, 2, light if rng.random() < 0.48 else dark)
+    sheen = QLinearGradient(0, 0, w, h)
     if rain:
-        sheen = QLinearGradient(0, 0, w, h)
-        sheen.setColorAt(0.0, QColor(200, 225, 255, 20))
-        sheen.setColorAt(0.5, QColor(220, 238, 255, 42))
-        sheen.setColorAt(1.0, QColor(180, 210, 240, 18))
-        q.fillRect(0, 0, w, h, sheen)
+        sheen.setColorAt(0.0, QColor(200, 225, 255, 22))
+        sheen.setColorAt(0.5, QColor(225, 240, 255, 48))
+        sheen.setColorAt(1.0, QColor(180, 210, 240, 20))
+    else:
+        sheen.setColorAt(0.0, QColor(255, 244, 214, 14))
+        sheen.setColorAt(0.5, QColor(255, 248, 230, 24))
+        sheen.setColorAt(1.0, QColor(255, 238, 200, 8))
+    q.fillRect(0, 0, w, h, sheen)
     q.end()
     return QPixmap.fromImage(img)
 
@@ -219,8 +239,8 @@ def make_soft_shadow_pm() -> QPixmap:
     return pm
 
 
-def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85, dark: bool = False) -> QPixmap:
-    """Gradinata con gradoni in cemento, corrimano, spettatori vari e flash fotografici."""
+def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85, dark: bool = False, dof_blur: bool = False) -> QPixmap:
+    """Gradinata con gradoni, spettatori densi, flash fotografici e opzionale sfocatura DoF."""
     pm = QPixmap(width, height)
     base = QColor("#1e293b" if dark else "#334155")
     pm.fill(base)
@@ -276,10 +296,13 @@ def make_crowd_strip(width: int = 512, height: int = 160, density: float = 0.85,
         q.setPen(Qt.PenStyle.NoPen)
         q.drawEllipse(QPointF(fx, fy), 7, 7)
     haze = QLinearGradient(0, 0, 0, height)
-    haze.setColorAt(0.0, QColor(148, 163, 184, 42 if not dark else 16))
-    haze.setColorAt(1.0, QColor(15, 23, 42, 36))
+    haze.setColorAt(0.0, QColor(148, 163, 184, 58 if (not dark or dof_blur) else 20))
+    haze.setColorAt(1.0, QColor(15, 23, 42, 40))
     q.fillRect(0, 0, width, height, haze)
     q.end()
+    if dof_blur:
+        small = pm.scaled(max(16, int(width * 0.36)), max(8, int(height * 0.36)), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        pm = small.scaled(width, height, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     return pm
 
 
@@ -536,15 +559,27 @@ def draw_athlete_head_3d(
         p.setBrush(skin.darker(118))
         p.drawEllipse(QPointF(ear_x, hy + r * 0.06), r * 0.16, r * 0.25)
 
-    # cranio con gradiente sferico e contorno sottile per staccare dallo sfondo
-    hgrad = QRadialGradient(hx + r * (0.28 if fx >= 0 else -0.28), hy - r * 0.25, r * 1.40)
-    hgrad.setColorAt(0.0, skin.lighter(118))
-    hgrad.setColorAt(0.55, skin)
-    hgrad.setColorAt(1.0, skin.darker(138))
+    # cranio + mascella scolpita con luce direzionale tardo pomeriggio e contorno morbido
+    hgrad = QRadialGradient(hx + r * (0.30 if fx >= 0 else -0.30), hy - r * 0.28, r * 1.38)
+    hgrad.setColorAt(0.0, skin.lighter(124))
+    hgrad.setColorAt(0.50, skin)
+    hgrad.setColorAt(1.0, skin.darker(142))
     p.setBrush(QBrush(hgrad))
-    p.setPen(QPen(QColor(15, 23, 42, 95), 0.9) if r >= 3.2 else Qt.PenStyle.NoPen)
-    p.drawEllipse(QPointF(hx, hy), r * 0.94, r * 1.12)
+    p.setPen(QPen(QColor(15, 23, 42, 85), 0.85) if r >= 3.2 else Qt.PenStyle.NoPen)
+    if r >= 4.2:
+        jaw_shift = face_shift * r * 0.55
+        head_path = QPainterPath()
+        head_path.moveTo(hx - r * 0.90, hy + r * 0.08)
+        head_path.cubicTo(hx - r * 0.96, hy - r * 1.15, hx + r * 0.96, hy - r * 1.15, hx + r * 0.90, hy + r * 0.08)
+        head_path.cubicTo(hx + r * 0.80, hy + r * 0.72, hx + jaw_shift + r * 0.34, hy + r * 1.06, hx + jaw_shift, hy + r * 1.08)
+        head_path.cubicTo(hx + jaw_shift - r * 0.34, hy + r * 1.06, hx - r * 0.80, hy + r * 0.72, hx - r * 0.90, hy + r * 0.08)
+        p.drawPath(head_path)
+    else:
+        p.drawEllipse(QPointF(hx, hy - r * 0.04), r * 0.92, r * 1.04)
     p.setPen(Qt.PenStyle.NoPen)
+    if r >= 6.0 and front_vis > 0.2:
+        p.setBrush(QColor(255, 248, 232, 42))
+        p.drawEllipse(QPointF(hx + (face_shift + 0.22) * r, hy - r * 0.16), r * 0.22, r * 0.14)
 
     # tratti del volto (visibili appena la testa supera ~4 px di raggio e non è completamente girata)
     if r >= 4.0 and front_vis > 0.15:
@@ -653,27 +688,40 @@ def draw_singlet_torso_3d(
     crouch_mode: bool,
     font_base: QFont,
 ) -> None:
-    """Disegna bacino, pantaloncini con banda laterale, busto con canotta smanicata e pettorale."""
+    """Disegna bacino atletico, torace a V con muscolatura scapolare/pettorale, pieghe tessuto e pettorale."""
     shorts = QColor("#0f172a")
-    draw_shaded_limb(p, cam, to_world(hip_lf, hip_h - 0.04, 0.0), to_world(hip_lf + 0.10 * s_lean, hip_h + 0.11 * c_lean, 0.0), 0.125, 0.122, shorts)
-    # torace muscolare base (spalle scoperte) + canotta sopra
-    wl = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, -0.125)
-    wr = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.125)
-    sl_out = to_world(sh_lf_val + 0.14 * twist, sh_y_val, -0.185)
-    sr_out = to_world(sh_lf_val - 0.14 * twist, sh_y_val, 0.185)
-    draw_poly(p, cam, [wl, wr, sr_out, sl_out], skin.darker(108))
+    draw_shaded_limb(p, cam, to_world(hip_lf, hip_h - 0.04, 0.0), to_world(hip_lf + 0.11 * s_lean, hip_h + 0.12 * c_lean, 0.0), 0.122, 0.114, shorts)
+    # torace a V muscolare base (clavicole + deltoidi scoperti)
+    wl = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, -0.118)
+    wr = to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.118)
+    sl_out = to_world(sh_lf_val + 0.14 * twist, sh_y_val, -0.192)
+    sr_out = to_world(sh_lf_val - 0.14 * twist, sh_y_val, 0.192)
+    draw_poly(p, cam, [wl, wr, sr_out, sl_out], skin.darker(110))
+    # cappe dei deltoidi alle spalle
+    for side_s, tw_s in ((-1.0, 0.14), (1.0, -0.14)):
+        draw_shaded_limb(
+            p, cam,
+            to_world(sh_lf_val + tw_s * twist, sh_y_val, side_s * 0.135),
+            to_world(sh_lf_val + tw_s * twist, sh_y_val - 0.03, side_s * 0.195),
+            0.068, 0.060, skin if side_s > 0 else skin.darker(118),
+        )
 
-    # canotta smanicata con bretelle sulle spalle e fascia laterale
-    sl_in = to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.125)
-    sr_in = to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.125)
+    # canotta smanicata sagomata sul torace con bretelle e riflesso speculare tessuto
+    sl_in = to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.130)
+    sr_in = to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.130)
     chest_mid_y = _lerp(hip_h + 0.10 * c_lean, sh_y_val, 0.72)
     chest_mid_lf = _lerp(hip_lf + 0.10 * s_lean, sh_lf_val, 0.72)
-    draw_poly(p, cam, [wl, wr, to_world(chest_mid_lf, chest_mid_y, 0.145), to_world(chest_mid_lf, chest_mid_y, -0.145)], kit.lighter(108))
+    cl_pt = to_world(chest_mid_lf + 0.02 * s_lean, chest_mid_y, -0.155)
+    cr_pt = to_world(chest_mid_lf + 0.02 * s_lean, chest_mid_y, 0.155)
+    draw_poly(p, cam, [wl, wr, cr_pt, cl_pt], kit.lighter(112))
     # bretelle sinistra e destra
-    draw_poly(p, cam, [to_world(chest_mid_lf, chest_mid_y, -0.145), to_world(chest_mid_lf, chest_mid_y, -0.065), to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.075), sl_in], kit.lighter(108))
-    draw_poly(p, cam, [to_world(chest_mid_lf, chest_mid_y, 0.065), to_world(chest_mid_lf, chest_mid_y, 0.145), sr_in, to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.075)], kit.lighter(108))
-    # ombra laterale sul busto
-    draw_poly(p, cam, [wl, to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.0), to_world(chest_mid_lf, chest_mid_y, 0.0), to_world(chest_mid_lf, chest_mid_y, -0.145)], kit.darker(120))
+    draw_poly(p, cam, [cl_pt, to_world(chest_mid_lf, chest_mid_y, -0.062), to_world(sh_lf_val + 0.14 * twist, sh_y_val + 0.01, -0.072), sl_in], kit.lighter(116))
+    draw_poly(p, cam, [to_world(chest_mid_lf, chest_mid_y, 0.062), cr_pt, sr_in, to_world(sh_lf_val - 0.14 * twist, sh_y_val + 0.01, 0.072)], kit.lighter(116))
+    # ombreggiatura pettorale/costato + pieghe diagonali di tensione sul tessuto
+    draw_poly(p, cam, [wl, to_world(hip_lf + 0.10 * s_lean, hip_h + 0.10 * c_lean, 0.01), to_world(chest_mid_lf, chest_mid_y, 0.01), cl_pt], kit.darker(124))
+    draw_line3(p, cam, to_world(hip_lf + 0.15 * s_lean, hip_h + 0.15 * c_lean, -0.05), to_world(chest_mid_lf, chest_mid_y - 0.03, 0.09), 0.010, kit.darker(135))
+    draw_line3(p, cam, to_world(hip_lf + 0.24 * s_lean, hip_h + 0.24 * c_lean, 0.02), to_world(chest_mid_lf, chest_mid_y - 0.01, 0.13), 0.008, kit.lighter(135))
+    draw_line3(p, cam, to_world(chest_mid_lf, chest_mid_y, 0.05), cr_pt, 0.012, QColor(255, 250, 235, 75))
 
     # pettorale di gara bianco con numero
     ch_lo = hip_lf + 0.22 * s_lean
@@ -790,12 +838,12 @@ class Track3DWidget(TrackRaceWidget):
             return 0.72
         return 0.52
 
-    def _crowd_pm(self, dark: bool) -> QPixmap:
+    def _crowd_pm(self, dark: bool, dof_blur: bool = False) -> QPixmap:
         bucket = int(round(self._crowd_density() * 10))
-        key = (dark, bucket)
+        key = (dark, bucket, dof_blur)
         pm = self._crowd_strip_cache.get(key)
         if pm is None:
-            pm = make_crowd_strip(512, 160, density=bucket / 10.0, dark=dark)
+            pm = make_crowd_strip(512, 160, density=bucket / 10.0, dark=dark, dof_blur=dof_blur)
             self._crowd_strip_cache[key] = pm
         return pm
 
@@ -880,19 +928,37 @@ class Track3DWidget(TrackRaceWidget):
             mine = [m for m, r in zip(meters, self._runners) if r["s"].is_player]
             focus = (0.68 * leader + 0.32 * mine[0]) if (mine and leader - mine[0] < 12.0) else leader
             start_x = STRAIGHT - 100.0
-            if self._t < GUN_AT + 0.45 and leader < 6.0:
-                self._cam_label = "BLOCK-CAM"
-                return Camera((start_x + 3.45, 0.80, tw + 2.75), (start_x - 0.55, 0.46, tw * 0.46), 31.0, w, h)
+            blk_pos = (start_x + 3.45, 0.80, tw + 2.75)
+            blk_tgt = (start_x - 0.55, 0.46, tw * 0.46)
+            fx = STRAIGHT - (100.0 - _clamp(focus, 2.0, d - 4.0))
+            u_d = _smoothstep((leader - 2.0) / 24.0)
+            bcast_pos = (fx + _lerp(5.0, CAM_BACK, u_d), _lerp(1.55, CAM_HEIGHT, u_d), tw + _lerp(5.8, CAM_SIDE, u_d))
+            bcast_tgt = (fx - _lerp(2.2, 3.0, u_d), _lerp(0.75, 0.90, u_d), tw * 0.46)
+            bcast_fov = _lerp(28.0, FOV_DEG, u_d)
+            fin_pos = (STRAIGHT + 5.6, 3.15, tw + 12.8)
+            fin_tgt = (STRAIGHT - 1.4, 0.92, tw * 0.44)
+
+            if self._t < GUN_AT + 0.35 and leader < 5.0:
+                self._cam_label = "BLOCCHI"
+                return Camera(blk_pos, blk_tgt, 31.0, w, h)
             if self.race_time > self._winner_time + 1.0 * self._scale:
-                self._cam_label = "WINNER-CAM"
+                self._cam_label = "VINCITORE"
                 wx, wz, _, _ = poses[leader_idx]
-                return Camera((wx + 4.4, 1.48, wz + 4.4), (wx - 0.8, 1.15, wz), 27.0, w, h)
-            if leader >= d - 13.0:
-                self._cam_label = "FINISH-CAM"
-                return Camera((STRAIGHT + 4.4, 4.4, tw + 16.0), (STRAIGHT - 1.2, 0.85, tw * 0.48), 28.0, w, h)
-            self._cam_label = "BROADCAST"
-            fx = STRAIGHT - (100.0 - _clamp(focus, 4.0, d - 4.0))
-            return Camera((fx + CAM_BACK, CAM_HEIGHT, tw + CAM_SIDE), (fx - 3.0, 0.90, tw * 0.46), FOV_DEG, w, h)
+                w_blend = _smoothstep((self.race_time - (self._winner_time + 1.0 * self._scale)) / (0.30 * self._scale))
+                w_pos = _lerp3(fin_pos, (wx + 4.0, 1.44, wz + 3.4), w_blend)
+                w_tgt = _lerp3(fin_tgt, (wx - 0.35, 1.15, wz), w_blend)
+                return Camera(w_pos, w_tgt, _lerp(26.5, 25.5, w_blend), w, h)
+            if leader >= d - 24.0:
+                # raccordo fluido tra ripresa laterale e primo piano angolato sul fotofinish
+                f_blend = _smoothstep((leader - (d - 24.0)) / 10.0)
+                self._cam_label = "FOTOFINISH" if f_blend > 0.45 else "TELECAMERA DIRETTA"
+                return Camera(_lerp3(bcast_pos, fin_pos, f_blend), _lerp3(bcast_tgt, fin_tgt, f_blend), _lerp(bcast_fov, 26.5, f_blend), w, h)
+            if leader < 26.0:
+                c_blend = _smoothstep((self._t - (GUN_AT + 0.35)) / 0.55)
+                self._cam_label = "SPINTA" if c_blend > 0.35 else "BLOCCHI"
+                return Camera(_lerp3(blk_pos, bcast_pos, c_blend), _lerp3(blk_tgt, bcast_tgt, c_blend), _lerp(31.0, bcast_fov, c_blend), w, h)
+            self._cam_label = "TELECAMERA DIRETTA"
+            return Camera(bcast_pos, bcast_tgt, bcast_fov, w, h)
 
         # ---- Regia per gare su pista ovale (400m, 1500m, 4x100m, 4x400m)
         lx, lz, lyaw, _ = poses[leader_idx]
@@ -1037,26 +1103,28 @@ class Track3DWidget(TrackRaceWidget):
             sky.setColorAt(0.6, QColor("#5d6d82"))
             sky.setColorAt(1.0, QColor("#94a3b8"))
         elif hot:
-            sky.setColorAt(0.0, QColor("#1e40af"))
-            sky.setColorAt(0.62, QColor("#60a5fa"))
-            sky.setColorAt(1.0, QColor("#fde68a"))
+            sky.setColorAt(0.0, QColor("#1e3a8a"))
+            sky.setColorAt(0.58, QColor("#60a5fa"))
+            sky.setColorAt(1.0, QColor("#fdba74"))
         else:
-            sky.setColorAt(0.0, QColor("#1d4ed8"))
-            sky.setColorAt(0.62, QColor("#60a5fa"))
-            sky.setColorAt(1.0, QColor("#dbeafe"))
+            # tardo pomeriggio dorato stile giochi sportivi 2010
+            sky.setColorAt(0.0, QColor("#1e3a8a"))
+            sky.setColorAt(0.56, QColor("#60a5fa"))
+            sky.setColorAt(1.0, QColor("#fed7aa"))
         p.fillRect(0, 0, w, h, QBrush(sky))
         p.setPen(Qt.PenStyle.NoPen)
         p.fillRect(0, int(h * 0.36), w, int(h * 0.64), QColor("#14221a" if evening else "#24522e"))
 
         if not evening and not rain:
-            sun = QRadialGradient(w * 0.14, h * 0.12, w * 0.24)
-            sun.setColorAt(0.0, QColor(255, 250, 220, 145))
+            sun = QRadialGradient(w * 0.14, h * 0.13, w * 0.28)
+            sun.setColorAt(0.0, QColor(255, 248, 210, 175))
+            sun.setColorAt(0.42, QColor(253, 224, 150, 75))
             sun.setColorAt(1.0, QColor(255, 250, 220, 0))
             p.setBrush(QBrush(sun))
-            p.drawEllipse(QPointF(w * 0.14, h * 0.12), w * 0.24, w * 0.24)
+            p.drawEllipse(QPointF(w * 0.14, h * 0.13), w * 0.28, w * 0.28)
             for cx, cy, rw, rh in ((0.36, 0.11, 0.12, 0.032), (0.68, 0.08, 0.15, 0.036), (0.85, 0.14, 0.10, 0.025)):
                 cloud = QRadialGradient(w * cx, h * cy, w * rw)
-                cloud.setColorAt(0.0, QColor(255, 255, 255, 70))
+                cloud.setColorAt(0.0, QColor(255, 250, 240, 75))
                 cloud.setColorAt(1.0, QColor(255, 255, 255, 0))
                 p.setBrush(QBrush(cloud))
                 p.drawEllipse(QPointF(w * cx, h * cy), w * rw, h * rh)
@@ -1064,8 +1132,9 @@ class Track3DWidget(TrackRaceWidget):
     def _draw_stand_section(
         self, p: QPainter, cam: Camera, a: Vec, b: Vec, out_a: Vec, out_b: Vec,
         crowd_pm: QPixmap, big: bool, evening: bool, rain: bool,
+        crowd_dof_pm: Optional[QPixmap] = None,
     ) -> None:
-        """Disegna un blocco di tribuna (muretto + corrimano + 1°/2° anello + tettoia)."""
+        """Disegna un blocco di tribuna (muretto + corrimano + 1°/2° anello DoF + tettoia)."""
         ca = cam.to_cam(a)
         cb = cam.to_cam(b)
         if ca[2] < -12.0 and cb[2] < -12.0:
@@ -1089,7 +1158,7 @@ class Track3DWidget(TrackRaceWidget):
             t_a = (out_a[0], 18.5, out_a[2])
             t_b = (out_b[0], 18.5, out_b[2])
             self._poly(p, cam, [n_a, n_b, t_b, t_a], "#293548" if evening else "#3b495e")
-            self._textured_quad(p, cam, [t_a, t_b, n_b, n_a], crowd_pm)
+            self._textured_quad(p, cam, [t_a, t_b, n_b, n_a], crowd_dof_pm or crowd_pm)
             # fascia superiore, nervature e tettoia
             r_back_a = (out_a[0], 21.0, out_a[2])
             r_back_b = (out_b[0], 21.0, out_b[2])
@@ -1106,7 +1175,8 @@ class Track3DWidget(TrackRaceWidget):
         rain = self._weather == WeatherCondition.PIOGGIA
         evening = self._is_evening_final()
         big = self._is_evening_final()
-        crowd_pm = self._crowd_pm(dark=(rain or evening))
+        crowd_pm = self._crowd_pm(dark=(rain or evening), dof_blur=False)
+        crowd_dof = self._crowd_pm(dark=(rain or evening), dof_blur=True)
         c1, c2, c3 = self._track_colors()
 
         # ---- 1. Tribune 360° intorno all'ovale
@@ -1118,7 +1188,7 @@ class Track3DWidget(TrackRaceWidget):
             self._draw_stand_section(
                 p, cam, (x0, 0.0, z_in_b), (x1, 0.0, z_in_b),
                 (x0, 0.0, z_in_b - stand_depth), (x1, 0.0, z_in_b - stand_depth),
-                crowd_pm, big, evening, rain,
+                crowd_pm, big, evening, rain, crowd_dof,
             )
         # Rettilineo principale (z > tw + 4) — visibile quando si corre nel rettilineo opposto
         z_in_h = tw + 4.5
@@ -1127,9 +1197,9 @@ class Track3DWidget(TrackRaceWidget):
             self._draw_stand_section(
                 p, cam, (x0, 0.0, z_in_h), (x1, 0.0, z_in_h),
                 (x0, 0.0, z_in_h + stand_depth), (x1, 0.0, z_in_h + stand_depth),
-                crowd_pm, big, evening, rain,
+                crowd_pm, big, evening, rain, crowd_dof,
             )
-        # Curve di testata (Curva 1 a x=STRAIGHT, Curva 2 a x=0)
+        # Curve di testata (Curva 1 a x=STRAIGHT, Curva 2 a x=0) — sfumate leggermente con DoF
         r_s_in = R_IN + tw + 4.2
         r_s_out = r_s_in + stand_depth
         for cx, a_start in ((STRAIGHT, -math.pi * 0.5), (0.0, math.pi * 0.5)):
@@ -1141,7 +1211,7 @@ class Track3DWidget(TrackRaceWidget):
                 p1 = (cx + r_s_in * math.cos(a1), 0.0, -R_IN + r_s_in * math.sin(a1))
                 o0 = (cx + r_s_out * math.cos(a0), 0.0, -R_IN + r_s_out * math.sin(a0))
                 o1 = (cx + r_s_out * math.cos(a1), 0.0, -R_IN + r_s_out * math.sin(a1))
-                self._draw_stand_section(p, cam, p0, p1, o0, o1, crowd_pm, big, evening, rain)
+                self._draw_stand_section(p, cam, p0, p1, o0, o1, crowd_dof, big, evening, rain, crowd_dof)
 
         # Maxischermo sopra la Curva 2 (lato partenza 100m, leggermente sfalsato rispetto al centro)
         sb_a = math.pi * 1.18
@@ -1344,21 +1414,50 @@ class Track3DWidget(TrackRaceWidget):
         n = len(self._runners)
         tw = self._track_width()
 
-        # blocchi di partenza dettagliati (binario centrale + pedali inclinati) e coni nei 100 m
-        if not self._is_oval_race() and cam.to_cam((STRAIGHT - 100.0, 0.0, tw * 0.5))[2] > -10.0:
+        # blocchi di partenza dettagliati (binario centrale + pedali inclinati), sparo e coni nei 100 m
+        if not self._is_oval_race():
             sx0 = STRAIGHT - 100.0
-            for i in range(n):
-                z = self._lane_z(i)
-                # piastra posteriore e binario centrale in alluminio
-                self._poly(p, cam, [(sx0 - 0.90, 0.018, z - 0.12), (sx0 - 0.78, 0.018, z - 0.12), (sx0 - 0.78, 0.03, z + 0.12), (sx0 - 0.90, 0.03, z + 0.12)], "#334155")
-                self._line3(p, cam, (sx0 - 0.88, 0.035, z), (sx0 - 0.14, 0.035, z), 0.035, QColor("#cbd5e1"))
-                for px_off, pz_s in ((-0.35, 0.11), (-0.64, -0.11)):
-                    bx = sx0 + px_off
-                    pz0, pz1 = z + pz_s - 0.08, z + pz_s + 0.08
-                    self._poly(p, cam, [(bx - 0.13, 0.02, pz0), (bx + 0.02, 0.15, pz0), (bx + 0.02, 0.15, pz1), (bx - 0.13, 0.02, pz1)], "#1e293b")
-                    self._poly(p, cam, [(bx - 0.04, 0.09, pz0 + 0.01), (bx + 0.01, 0.14, pz0 + 0.01), (bx + 0.01, 0.14, pz1 - 0.01), (bx - 0.04, 0.09, pz1 - 0.01)], "#f59e0b")
-                self._textured_quad(p, cam, [(sx0 - 1.25, 0.34, z + 0.38), (sx0 - 1.25, 0.34, z + 0.12), (sx0 - 1.25, 0.01, z + 0.12), (sx0 - 1.25, 0.01, z + 0.38)], self._cone_pm(i + 1))
-            self._draw_official(p, cam, sx0 - 2.6, -1.8)
+            # tacche metriche 20/40/60/80m, anemometro ai 50m e carrello camera su binario TV lungo il cordolo
+            for dist_m in (20.0, 40.0, 60.0, 80.0):
+                tx = sx0 + dist_m
+                self._poly(p, cam, [(tx - 0.05, 0.013, -0.35), (tx + 0.05, 0.013, -0.35), (tx + 0.05, 0.013, 0.0), (tx - 0.05, 0.013, 0.0)], "#f8fafc")
+                self._poly(p, cam, [(tx - 0.05, 0.013, tw), (tx + 0.05, 0.013, tw), (tx + 0.05, 0.013, tw + 0.35), (tx - 0.05, 0.013, tw + 0.35)], "#f8fafc")
+            # anemometro ai 50m
+            wx_an = sx0 + 50.0
+            self._line3(p, cam, (wx_an, 0.0, -0.85), (wx_an, 1.25, -0.85), 0.035, QColor("#cbd5e1"))
+            self._poly(p, cam, [(wx_an - 0.16, 1.22, -0.92), (wx_an + 0.16, 1.22, -0.92), (wx_an + 0.16, 1.32, -0.78), (wx_an - 0.16, 1.32, -0.78)], "#f59e0b")
+            # binario e dolly telecamera mobile sul lato interno
+            self._line3(p, cam, (sx0 + 2.0, 0.05, -0.95), (STRAIGHT - 4.0, 0.05, -0.95), 0.03, QColor("#64748b"))
+            dolly_x = sx0 + _clamp(max((p_[0] - sx0 for p_ in poses), default=0.0), 3.0, 92.0)
+            self._poly(p, cam, [(dolly_x - 0.35, 0.06, -1.10), (dolly_x + 0.35, 0.06, -1.10), (dolly_x + 0.35, 0.38, -0.80), (dolly_x - 0.35, 0.38, -0.80)], "#1e293b")
+            self._poly(p, cam, [(dolly_x - 0.18, 0.38, -1.02), (dolly_x + 0.22, 0.38, -1.02), (dolly_x + 0.22, 0.62, -0.82), (dolly_x - 0.18, 0.62, -0.82)], "#334155")
+            if cam.to_cam((sx0, 0.0, tw * 0.5))[2] > -10.0:
+                for i in range(n):
+                    z = self._lane_z(i)
+                    self._poly(p, cam, [(sx0 - 0.90, 0.018, z - 0.12), (sx0 - 0.78, 0.018, z - 0.12), (sx0 - 0.78, 0.03, z + 0.12), (sx0 - 0.90, 0.03, z + 0.12)], "#334155")
+                    self._line3(p, cam, (sx0 - 0.88, 0.035, z), (sx0 - 0.14, 0.035, z), 0.035, QColor("#cbd5e1"))
+                    for px_off, pz_s in ((-0.35, 0.11), (-0.64, -0.11)):
+                        bx = sx0 + px_off
+                        pz0, pz1 = z + pz_s - 0.08, z + pz_s + 0.08
+                        self._poly(p, cam, [(bx - 0.13, 0.02, pz0), (bx + 0.02, 0.15, pz0), (bx + 0.02, 0.15, pz1), (bx - 0.13, 0.02, pz1)], "#1e293b")
+                        self._poly(p, cam, [(bx - 0.04, 0.09, pz0 + 0.01), (bx + 0.01, 0.14, pz0 + 0.01), (bx + 0.01, 0.14, pz1 - 0.01), (bx - 0.04, 0.09, pz1 - 0.01)], "#f59e0b")
+                    self._textured_quad(p, cam, [(sx0 - 1.25, 0.34, z + 0.38), (sx0 - 1.25, 0.34, z + 0.12), (sx0 - 1.25, 0.01, z + 0.12), (sx0 - 1.25, 0.01, z + 0.38)], self._cone_pm(i + 1))
+                self._draw_official(p, cam, sx0 - 2.6, -1.8)
+                # pistola starter alzata al Pronti + vampata/fumo allo sparo
+                if self._t >= GUN_AT * 0.45 and self.race_time <= 0.45:
+                    self._line3(p, cam, (sx0 - 2.6, 1.42, -1.72), (sx0 - 2.45, 1.88, -1.62), 0.038, QColor("#e2b48b"))
+                    if 0.0 <= self.race_time <= 0.42:
+                        gc = cam.to_cam((sx0 - 2.42, 1.98, -1.60))
+                        if gc[2] >= NEAR:
+                            gx_, gy_ = cam.proj(gc)
+                            sr_g = max(4.0, (0.28 + self.race_time * 1.4) * cam.f / gc[2])
+                            sm = QRadialGradient(gx_, gy_, sr_g)
+                            sm.setColorAt(0.0, QColor(255, 250, 220, 230 if self.race_time < 0.12 else 110))
+                            sm.setColorAt(0.45, QColor(248, 250, 252, 130))
+                            sm.setColorAt(1.0, QColor(248, 250, 252, 0))
+                            p.setBrush(QBrush(sm))
+                            p.setPen(Qt.PenStyle.NoPen)
+                            p.drawEllipse(QPointF(gx_, gy_), sr_g, sr_g)
 
         # portale d'arrivo fisso a x = STRAIGHT con torretta fotofinish e cronometri bordo pista
         if cam.to_cam((STRAIGHT, 2.0, tw * 0.5))[2] > -15.0:
@@ -1380,10 +1479,11 @@ class Track3DWidget(TrackRaceWidget):
             self._draw_official(p, cam, STRAIGHT + 2.2, -2.8)
 
             if not any(self._has_finished(r) for r in self._runners):
-                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT, 1.08, tw), 0.025, QColor("#ef4444"))
-            elif self.race_time < self._winner_time + 1.5 * self._scale:
-                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT + 0.8, 0.72, 0.9), 0.022, QColor("#ef4444"))
-                self._line3(p, cam, (STRAIGHT, 1.08, tw), (STRAIGHT + 0.8, 0.72, tw - 0.9), 0.022, QColor("#ef4444"))
+                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT, 1.08, tw), 0.020, QColor(239, 68, 68, 175))
+            elif self.race_time < self._winner_time + 0.45 * self._scale:
+                drop = _clamp((self.race_time - self._winner_time) / (0.45 * self._scale), 0.0, 1.0)
+                self._line3(p, cam, (STRAIGHT, 1.08, 0.0), (STRAIGHT + 0.55, _lerp(0.95, 0.12, drop), 0.65), 0.018, QColor("#f8fafc"))
+                self._line3(p, cam, (STRAIGHT, 1.08, tw), (STRAIGHT + 0.55, _lerp(0.95, 0.12, drop), tw - 0.65), 0.018, QColor("#f8fafc"))
 
     # ---- atleti 3D orientati lungo qualsiasi tangente dell'ovale
     def _draw_athlete(
@@ -1419,14 +1519,16 @@ class Track3DWidget(TrackRaceWidget):
             return (x + lf * cf + lr_b * rf, ly, z + lf * sf + lr_b * rz_f)
 
         if self.race_time <= 0.0 and use_blocks:
-            set_blend = _clamp((t_anim - GUN_AT * 0.45) / 0.38, 0.0, 1.0)
-            hip_h = _lerp(0.46, 0.78, set_blend)
-            hip_lf = _lerp(-0.58, -0.50, set_blend)
-            sh_lf = _lerp(-0.16, -0.12, set_blend)
-            sh_y = _lerp(0.54, 0.65, set_blend)
+            set_blend = _smoothstep((t_anim - GUN_AT * 0.48) / 0.36)
+            breathe = 0.008 * math.sin(t_anim * 3.2) * (1.0 - set_blend)
+            hip_h = _lerp(0.42, 0.85, set_blend) + breathe
+            hip_lf = _lerp(-0.62, -0.52, set_blend)
+            sh_lf = _lerp(-0.22, -0.06, set_blend)
+            sh_y = _lerp(0.60, 0.68, set_blend) + breathe
             lean = math.atan2(sh_lf - hip_lf, sh_y - hip_h)
             crouch_mode = True
             drive_blend = 0.0
+            clearance = 0.0
             standing_start = False
         elif self.race_time <= 0.0:
             # partenza in piedi nei 1500m
@@ -1434,26 +1536,36 @@ class Track3DWidget(TrackRaceWidget):
             crouch_mode = False
             standing_start = True
             drive_blend = 0.0
+            clearance = 1.0
         else:
             crouch_mode = False
             standing_start = False
-            drive_blend = _clamp(self.race_time / 1.6, 0.0, 1.0)
-            finish_dip = 0.25 * _clamp((meters_done - (d - 1.4)) / 1.4, 0.0, 1.0) if meters_done <= d + 0.2 else 0.0
-            lean = 0.06 if celebrate else (_lerp(0.68 if use_blocks else 0.22, 0.14 + 0.14 * ratio, drive_blend) + finish_dip)
-            bounce = 0.045 * abs(math.sin(phase)) * ratio
-            hip_h = 0.93 + bounce
-            hip_lf = 0.0
+            clearance = _smoothstep(self.race_time / 0.45) if use_blocks else 1.0
+            if not self._is_oval_race():
+                # nei 100m: transizione fluida dai blocchi -> fase di spinta fino a ~26m -> lanciato -> affondo
+                drive_blend = _smoothstep(meters_done / 26.0)
+                finish_dip = 0.34 * _smoothstep((meters_done - (d - 1.6)) / 1.6) if meters_done <= d + 0.3 else 0.0
+            else:
+                drive_blend = _smoothstep(self.race_time / 1.6)
+                finish_dip = 0.25 * _smoothstep((meters_done - (d - 1.4)) / 1.4) if meters_done <= d + 0.2 else 0.0
+            crouch_lean = 1.24 if use_blocks else 0.22
+            run_lean = 0.06 if celebrate else (_lerp(0.76 if use_blocks else 0.22, 0.12 + 0.12 * ratio, drive_blend) + finish_dip)
+            lean = _lerp(crouch_lean, run_lean, clearance)
+            bounce = 0.045 * abs(math.sin(phase)) * ratio * clearance
+            hip_h = _lerp(0.84 if use_blocks else 0.93, 0.93 + bounce - (0.04 * (1.0 - drive_blend) if use_blocks else 0.0), clearance)
+            hip_lf = _lerp(-0.46 if use_blocks else 0.0, 0.0, clearance)
 
-        # ombra morbida proiettata sul tartan
-        sun_dx, sun_dz = -0.22, -0.18
+        # ombra morbida proiettata dalla luce direzionale tardo-pomeridiana
+        sun_dx, sun_dz = -0.34, -0.24
+        sh_len = 0.56 + (0.16 * ratio if not crouch_mode else 0.10)
         cx_s, _, cz_s = to_world(hip_lf, 0.0, 0.0)
         self._textured_ground_quad(
             p, cam,
             [
-                (cx_s + sun_dx - 0.50, 0.015, cz_s + sun_dz - 0.28),
-                (cx_s + sun_dx + 0.50, 0.015, cz_s + sun_dz - 0.28),
-                (cx_s + sun_dx + 0.50, 0.015, cz_s + sun_dz + 0.28),
-                (cx_s + sun_dx - 0.50, 0.015, cz_s + sun_dz + 0.28),
+                (cx_s + sun_dx - sh_len, 0.015, cz_s + sun_dz - 0.30),
+                (cx_s + sun_dx + sh_len, 0.015, cz_s + sun_dz - 0.30),
+                (cx_s + sun_dx + sh_len, 0.015, cz_s + sun_dz + 0.30),
+                (cx_s + sun_dx - sh_len, 0.015, cz_s + sun_dz + 0.30),
             ],
             self._shadow_pm(), "#0f172a",
         )
@@ -1463,8 +1575,8 @@ class Track3DWidget(TrackRaceWidget):
         torso_len = 0.56
         if crouch_mode:
             sh_y_val, sh_lf_val = sh_y, sh_lf
-            neck_lf, neck_y = sh_lf_val + 0.055, sh_y_val + 0.015
-            head_lf, head_y = neck_lf + 0.05, neck_y - 0.015
+            neck_lf, neck_y = sh_lf_val + 0.065, sh_y_val + 0.015
+            head_lf, head_y = neck_lf + 0.085, neck_y - 0.025
         else:
             sh_lf_val = hip_lf + torso_len * s_lean
             sh_y_val = hip_h + torso_len * c_lean
@@ -1522,22 +1634,30 @@ class Track3DWidget(TrackRaceWidget):
                 el_l = (sh_lf_s + 0.06, sh_y_val + 0.20, side * 0.36)
                 ha_l = (sh_lf_s + 0.10, sh_y_val + 0.44, side * 0.44)
             else:
-                thigh_a = amp * math.sin(ph) + 0.15 * (1.0 - drive_blend)
-                knee_flex = 0.28 + 1.55 * ratio * max(0.0, math.sin(ph + 1.25))
+                thigh_a = (amp * math.sin(ph) + 0.18 * (1.0 - drive_blend)) * clearance + 0.35 * (1.0 - clearance) * side
+                knee_flex = (0.28 + 1.58 * ratio * max(0.0, math.sin(ph + 1.25))) * clearance + 0.55 * (1.0 - clearance)
                 kn_l, ak_l, to_l = leg_local(thigh_a, knee_flex, side)
-                arm_a = -amp * 1.15 * math.sin(ph)
+                # oscillazione braccia più esplosiva in fase di spinta, più composta al lanciato
+                arm_drive = amp * (1.28 - 0.14 * drive_blend)
+                arm_a = -arm_drive * math.sin(ph) * clearance - 0.25 * (1.0 - clearance) * side
                 el_l, ha_l = arm_local(sh_lf_s, arm_a, 1.35 + 0.35 * max(0.0, math.sin(ph)), side)
 
-            mid_l = (_lerp(hip_l[0], kn_l[0], 0.55), _lerp(hip_l[1], kn_l[1], 0.55), hip_l[2])
-            calf_l = (_lerp(kn_l[0], ak_l[0], 0.38), _lerp(kn_l[1], ak_l[1], 0.38), kn_l[2])
+            # sotto-segmenti muscolari mid-poly: quadricipite, gastrocnemio, bicipite, avambraccio
+            quad_m = (_lerp(hip_l[0], kn_l[0], 0.48), _lerp(hip_l[1], kn_l[1], 0.48), hip_l[2])
+            shorts_m = (_lerp(hip_l[0], kn_l[0], 0.54), _lerp(hip_l[1], kn_l[1], 0.54), hip_l[2])
+            calf_l = (_lerp(kn_l[0], ak_l[0], 0.36), _lerp(kn_l[1], ak_l[1], 0.36), kn_l[2])
+            bicep_l = (_lerp(sh_l[0], el_l[0], 0.50), _lerp(sh_l[1], el_l[1], 0.50), sh_l[2])
+            fore_l = (_lerp(el_l[0], ha_l[0], 0.40), _lerp(el_l[1], ha_l[1], 0.40), el_l[2])
             hip_w, kn_w, ak_w, to_w = to_world(*hip_l), to_world(*kn_l), to_world(*ak_l), to_world(*to_l)
-            mid_w, calf_w = to_world(*mid_l), to_world(*calf_l)
+            quad_w, shorts_w, calf_w = to_world(*quad_m), to_world(*shorts_m), to_world(*calf_l)
             sh_w, el_w, ha_w = to_world(*sh_l), to_world(*el_l), to_world(*ha_l)
+            bicep_w, fore_w = to_world(*bicep_l), to_world(*fore_l)
 
-            self._shaded_limb(p, cam, hip_w, kn_w, 0.084, 0.056, shade_skin)
-            self._shaded_limb(p, cam, hip_w, mid_w, 0.092, 0.078, shade_shorts)
-            self._shaded_limb(p, cam, kn_w, calf_w, 0.060, 0.068, shade_skin)
-            self._shaded_limb(p, cam, calf_w, ak_w, 0.065, 0.036, shade_skin)
+            self._shaded_limb(p, cam, hip_w, quad_w, 0.088, 0.080, shade_skin)
+            self._shaded_limb(p, cam, quad_w, kn_w, 0.078, 0.052, shade_skin)
+            self._shaded_limb(p, cam, hip_w, shorts_w, 0.094, 0.080, shade_shorts)
+            self._shaded_limb(p, cam, kn_w, calf_w, 0.056, 0.070, shade_skin)
+            self._shaded_limb(p, cam, calf_w, ak_w, 0.068, 0.034, shade_skin)
             draw_spike_shoe_3d(p, cam, ak_w, to_w, spike_col, is_near=is_near)
             if self._weather == WeatherCondition.PIOGGIA and self.race_time > 0.0 and ak_l[1] < 0.22:
                 sc = cam.to_cam((ak_w[0], 0.04, ak_w[2]))
@@ -1546,8 +1666,10 @@ class Track3DWidget(TrackRaceWidget):
                     p.setBrush(QColor(226, 232, 240, 145))
                     for dx_s, dy_s in ((-4.0, -3.0), (0.0, -6.0), (4.0, -2.5)):
                         p.drawEllipse(QPointF(sx_p + dx_s, sy_p + dy_s), 1.6, 1.6)
-            self._shaded_limb(p, cam, sh_w, el_w, 0.058, 0.045, shade_skin)
-            self._shaded_limb(p, cam, el_w, ha_w, 0.044, 0.028, shade_skin)
+            self._shaded_limb(p, cam, sh_w, bicep_w, 0.062, 0.058, shade_skin)
+            self._shaded_limb(p, cam, bicep_w, el_w, 0.056, 0.043, shade_skin)
+            self._shaded_limb(p, cam, el_w, fore_w, 0.044, 0.046, shade_skin)
+            self._shaded_limb(p, cam, fore_w, ha_w, 0.045, 0.026, shade_skin)
             # mano scolpita
             self._shaded_limb(p, cam, ha_w, to_world(ha_l[0] + 0.05 * s_lean, ha_l[1] - 0.02, ha_l[2]), 0.030, 0.018, shade_skin.darker(108))
             if has_baton and side > 0 and not crouch_mode:
@@ -1576,7 +1698,7 @@ class Track3DWidget(TrackRaceWidget):
         )
         if h_info is not None:
             hx, hy, r, depth = h_info
-            if is_player and depth < 85 and self._cam_label != "BLOCK-CAM":
+            if is_player and depth < 85 and self._cam_label not in ("BLOCK-CAM", "BLOCCHI"):
                 font = QFont(self.font())
                 font.setPointSize(9)
                 font.setBold(True)
@@ -1622,6 +1744,7 @@ class Track3DWidget(TrackRaceWidget):
         p.setPen(Qt.PenStyle.NoPen)
 
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         leader_idx = max(range(n), key=lambda i: meters[i])
         self._draw_props(p, cam, poses)
 
@@ -1647,22 +1770,48 @@ class Track3DWidget(TrackRaceWidget):
             )
 
         self._draw_rain_overlay(p, w, h)
-        vig = QRadialGradient(w * 0.5, h * 0.5, max(w, h) * 0.72)
-        vig.setColorAt(0.75, QColor(0, 0, 0, 0))
-        vig.setColorAt(1.0, QColor(0, 0, 0, 72))
+        # Bloom morbido tardo pomeriggio / riflettori stile 2010 + leggera vignettatura
+        evening = self._is_evening_final() or self._season_phase == SeasonPhase.INDOOR
+        if self._weather != WeatherCondition.PIOGGIA:
+            bloom = QRadialGradient(w * (0.18 if not evening else 0.50), h * 0.14, max(w, h) * 0.55)
+            bloom.setColorAt(0.0, QColor(255, 242, 200, 34 if not evening else 24))
+            bloom.setColorAt(0.55, QColor(254, 215, 170, 12 if not evening else 8))
+            bloom.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.fillRect(0, 0, w, h, QBrush(bloom))
+        vig = QRadialGradient(w * 0.5, h * 0.5, max(w, h) * 0.74)
+        vig.setColorAt(0.76, QColor(0, 0, 0, 0))
+        vig.setColorAt(1.0, QColor(0, 0, 0, 58))
         p.fillRect(0, 0, w, h, QBrush(vig))
 
         p.setPen(Qt.PenStyle.NoPen)
         self._paint_hud(p, meters, poses, w, h)
         p.end()
 
-    # ---- HUD televisivo + radar ovale per le gare su più giri
+    # ---- HUD televisivo stile Diretta Sportiva 2010 (glassmorphism, accenti lucidi, font bold italic)
+    def _draw_glass_panel(self, p: QPainter, rect: QRectF, accent_hex: str = "#38bdf8", radius: float = 7.0) -> None:
+        bg = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.bottom())
+        bg.setColorAt(0.0, QColor(14, 24, 44, 224))
+        bg.setColorAt(0.55, QColor(8, 15, 29, 232))
+        bg.setColorAt(1.0, QColor(4, 9, 19, 238))
+        p.setBrush(QBrush(bg))
+        p.setPen(QPen(QColor(accent_hex), 1.4))
+        p.drawRoundedRect(rect, radius, radius)
+        # riflesso lucido superiore effetto vetro anni 2010
+        p.setPen(Qt.PenStyle.NoPen)
+        gloss = QLinearGradient(rect.left(), rect.top(), rect.left(), rect.top() + rect.height() * 0.45)
+        gloss.setColorAt(0.0, QColor(255, 255, 255, 34))
+        gloss.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.setBrush(QBrush(gloss))
+        p.drawRoundedRect(QRectF(rect.left() + 1.5, rect.top() + 1.5, rect.width() - 3.0, rect.height() * 0.45), max(1.0, radius - 1.5), max(1.0, radius - 1.5))
+
     def _paint_hud(self, p: QPainter, meters: Sequence[float], poses: Sequence[Tuple[float, float, float, float]], w: int, h: int) -> None:
         d = self._distance
         n = len(self._runners)
         res = self._result
         font = QFont(self.font())
         font.setPointSize(9)
+        font.setBold(True)
+        font.setItalic(True)
         p.setFont(font)
 
         order = sorted(
@@ -1675,76 +1824,110 @@ class Track3DWidget(TrackRaceWidget):
         show_full_board = (self.race_time <= 0.0) or self._done_all()
         if show_full_board:
             row_h = 20
-            panel = QRectF(12, 12, 238, 28 + n * row_h)
-            p.setBrush(QColor(9, 15, 29, 210))
-            p.setPen(QPen(QColor(51, 65, 85, 180), 1))
-            p.drawRoundedRect(panel, 6, 6)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.fillRect(QRectF(panel.left() + 1, panel.top() + 1, panel.width() - 2, 21), QColor(30, 41, 59, 210))
+            panel = QRectF(12, 12, 246, 30 + n * row_h)
+            self._draw_glass_panel(p, panel, "#38bdf8" if self._done_all() else "#f97316", 7.0)
+            hdr_grad = QLinearGradient(panel.left(), panel.top(), panel.right(), panel.top())
+            hdr_grad.setColorAt(0.0, QColor(14, 116, 144, 180) if self._done_all() else QColor(194, 65, 12, 185))
+            hdr_grad.setColorAt(1.0, QColor(15, 23, 42, 200))
+            p.fillRect(QRectF(panel.left() + 1, panel.top() + 1, panel.width() - 2, 22), QBrush(hdr_grad))
             hdr_f = QFont(font)
             hdr_f.setPointSize(8)
-            hdr_f.setBold(True)
             p.setFont(hdr_f)
-            p.setPen(QColor("#38bdf8"))
-            hdr_txt = f"ORDINE D'ARRIVO · {self._event.upper()}" if self._done_all() else f"PARTENZA · {self._event.upper()}"
+            p.setPen(QColor("#f8fafc"))
+            hdr_txt = f"ORDINE D'ARRIVO · {self._event.upper()}" if self._done_all() else f"LISTA DI PARTENZA · {self._event.upper()}"
             p.drawText(QRectF(panel.left() + 10, panel.top() + 2, panel.width() - 20, 20), Qt.AlignmentFlag.AlignVCenter, hdr_txt)
 
             for rank, i in enumerate(order, start=1):
                 r = self._runners[i]
                 s = r["s"]
                 fin = self._has_finished(r)
-                y = panel.top() + 24 + (rank - 1) * row_h
+                y = panel.top() + 25 + (rank - 1) * row_h
                 if s.is_player:
-                    p.setBrush(QColor(245, 158, 11, 38))
+                    p.setBrush(QColor(249, 115, 22, 46))
                     p.drawRect(QRectF(panel.left() + 2, y, panel.width() - 4, row_h))
                 kit_col = QColor("#fbbf24") if s.is_player else self._kit(s.team_name)
                 p.setBrush(kit_col)
                 p.drawRect(QRectF(panel.left() + 6, y + 4, 4, row_h - 8))
                 place = f"{s.placement}°" if fin else f"C{i + 1}"
-                bold = QFont(font)
-                bold.setBold(s.is_player)
-                p.setFont(bold)
+                row_f = QFont(font)
+                row_f.setItalic(True)
+                row_f.setBold(True if s.is_player else False)
+                p.setFont(row_f)
                 p.setPen(QColor("#fbbf24" if s.is_player else "#e2e8f0"))
                 name = s.team_name if self._event.startswith("4x") else s.athlete_name
                 p.drawText(QRectF(panel.left() + 15, y, 28, row_h), Qt.AlignmentFlag.AlignVCenter, place)
-                p.drawText(QRectF(panel.left() + 44, y, 126, row_h), Qt.AlignmentFlag.AlignVCenter, _short(name, 16))
+                p.drawText(QRectF(panel.left() + 44, y, 130, row_h), Qt.AlignmentFlag.AlignVCenter, _short(name, 16))
                 if fin:
-                    p.drawText(QRectF(panel.right() - 66, y, 58, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, s.mark_display)
+                    p.setPen(QColor("#38bdf8" if rank == 1 else ("#fbbf24" if s.is_player else "#cbd5e1")))
+                    p.drawText(QRectF(panel.right() - 68, y, 60, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, s.mark_display)
                 elif r["dnf"] and self.race_time > self._winner_time * 0.8:
                     p.setPen(QColor("#f87171"))
-                    p.drawText(QRectF(panel.right() - 66, y, 58, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "RIT")
+                    p.drawText(QRectF(panel.right() - 68, y, 60, row_h), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "RIT")
             p.setFont(font)
 
-        # Barra inferiore broadcast TV
-        bar_y = h - 42.0
-        bar_w = min(w - 24.0, 760.0)
-        bar_x = (w - bar_w) / 2.0
-        bar = QRectF(bar_x, bar_y, bar_w, 30)
-        p.setBrush(QColor(9, 15, 29, 224))
-        p.setPen(QPen(QColor(71, 85, 105, 190), 1))
-        p.drawRoundedRect(bar, 5, 5)
-        p.setPen(Qt.PenStyle.NoPen)
+        elif self._event == "100m" and 0.25 <= self.race_time <= 3.6:
+            react_ord = sorted(range(n), key=lambda i: self._runners[i]["react"])
+            shown = react_ord[:3]
+            pl_idx = next((i for i, r in enumerate(self._runners) if r["s"].is_player), None)
+            if pl_idx is not None and pl_idx not in shown:
+                shown.append(pl_idx)
+            rp_h = 28 + len(shown) * 18
+            rp = QRectF(12, 12, 224, rp_h)
+            self._draw_glass_panel(p, rp, "#38bdf8", 7.0)
+            p.fillRect(QRectF(rp.left() + 1, rp.top() + 1, rp.width() - 2, 21), QColor(14, 116, 144, 160))
+            hdr_f = QFont(font)
+            hdr_f.setPointSize(8)
+            p.setFont(hdr_f)
+            p.setPen(QColor("#f8fafc"))
+            p.drawText(QRectF(rp.left() + 8, rp.top() + 1, rp.width() - 16, 20), Qt.AlignmentFlag.AlignVCenter, "REAZIONE AI BLOCCHI")
+            for k_r, i in enumerate(shown):
+                r = self._runners[i]
+                s = r["s"]
+                ry = rp.top() + 24 + k_r * 18
+                p.setPen(QColor("#fbbf24" if s.is_player else "#e2e8f0"))
+                p.drawText(QRectF(rp.left() + 8, ry, 140, 18), Qt.AlignmentFlag.AlignVCenter, _short(s.athlete_name, 16))
+                p.setPen(QColor("#38bdf8" if not s.is_player else "#fbbf24"))
+                p.drawText(QRectF(rp.right() - 66, ry, 58, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{r['react']:.3f}s")
+            p.setFont(font)
 
-        ev_rect = QRectF(bar.left() + 4, bar.top() + 4, 86, 22)
-        p.setBrush(QColor("#b45309"))
-        p.drawRoundedRect(ev_rect, 3, 3)
+        # Barra inferiore Diretta Televisiva Sportiva (sfondo glass + bordi azzurro/arancio + cronometro lucido)
+        bar_y = h - 46.0
+        bar_w = min(w - 24.0, 820.0)
+        bar_x = (w - bar_w) / 2.0
+        bar = QRectF(bar_x, bar_y, bar_w, 34)
+        self._draw_glass_panel(p, bar, "#38bdf8", 7.0)
+
+        ev_rect = QRectF(bar.left() + 5, bar.top() + 5, 108, 24)
+        ev_grad = QLinearGradient(ev_rect.left(), ev_rect.top(), ev_rect.left(), ev_rect.bottom())
+        ev_grad.setColorAt(0.0, QColor("#fb923c"))
+        ev_grad.setColorAt(1.0, QColor("#c2410c"))
+        p.setBrush(QBrush(ev_grad))
+        p.setPen(QPen(QColor("#fdba74"), 1.0))
+        p.drawRoundedRect(ev_rect, 4, 4)
+        p.setPen(Qt.PenStyle.NoPen)
         b_f = QFont(font)
         b_f.setPointSize(8)
         b_f.setBold(True)
+        b_f.setItalic(True)
         p.setFont(b_f)
-        p.setPen(QColor("#fef3c7"))
-        p.drawText(ev_rect, Qt.AlignmentFlag.AlignCenter, self._event.upper())
+        p.setPen(QColor("#ffffff"))
+        p.drawText(ev_rect, Qt.AlignmentFlag.AlignCenter, f"LIVE · {self._event.upper()}")
 
-        cx_pos = ev_rect.right() + 12
+        cx_pos = ev_rect.right() + 14
+        win_mark = self._runners[order[0]]["s"].mark_value if order else 0.0
         for pos_idx, i in enumerate(order[:3], start=1):
             r = self._runners[i]
             s = r["s"]
-            p.setPen(QColor("#fbbf24" if s.is_player else "#cbd5e1"))
+            p.setPen(QColor("#fbbf24" if s.is_player else ("#f8fafc" if pos_idx == 1 else "#cbd5e1")))
             nm = s.team_name if self._event.startswith("4x") else s.athlete_name.split()[-1]
-            p.drawText(QRectF(cx_pos, bar.top(), 114, 30), Qt.AlignmentFlag.AlignVCenter, f"{pos_idx}° {_short(nm, 11)}")
-            cx_pos += 114
+            lbl = f"{pos_idx}° {_short(nm, 10)}"
+            if self._event == "100m" and self._done_all() and pos_idx == 2 and not r["dnf"]:
+                gap = max(0.0, s.mark_value - win_mark)
+                if gap <= 0.35:
+                    lbl = f"{lbl} +{gap:.2f}"
+            p.drawText(QRectF(cx_pos, bar.top(), 118, 34), Qt.AlignmentFlag.AlignVCenter, lbl)
+            cx_pos += 118
 
-        # contatore giri nei 1500m / 4x400m oppure vento nei 100m
         leader_m = max(meters) if meters else 0.0
         if d >= 1500:
             laps_total = 4
@@ -1752,43 +1935,47 @@ class Track3DWidget(TrackRaceWidget):
             lap_now = min(laps_total, max(1, laps_total - int(rem // 400)))
             lap_txt = "ULTIMO GIRO" if (rem <= 400.0 and not self._done_all()) else f"GIRO {lap_now}/{laps_total}"
             p.setPen(QColor("#facc15" if "ULTIMO" in lap_txt else "#38bdf8"))
-            p.drawText(QRectF(bar.right() - 238, bar.top(), 118, 30), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lap_txt)
+            p.drawText(QRectF(bar.right() - 260, bar.top(), 120, 34), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lap_txt)
         elif res is not None and res.wind_ms is not None:
             arrow = "→" if res.wind_ms >= 0 else "←"
-            p.setPen(QColor("#fca5a5" if res.wind_illegal else "#94a3b8"))
-            p.drawText(QRectF(bar.right() - 235, bar.top(), 115, 30), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{arrow} {res.wind_ms:+.1f} m/s")
+            p.setPen(QColor("#fca5a5" if res.wind_illegal else "#38bdf8"))
+            p.drawText(QRectF(bar.right() - 258, bar.top(), 118, 34), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"VENTO {arrow} {res.wind_ms:+.1f}")
 
-        clk_rect = QRectF(bar.right() - 112, bar.top() + 3, 108, 24)
-        p.setBrush(QColor("#991b1b"))
-        p.drawRoundedRect(clk_rect, 4, 4)
+        # Cronometro ultra-fluido lucido in basso a destra nella barra broadcast
+        clk_rect = QRectF(bar.right() - 128, bar.top() + 4, 122, 26)
+        clk_grad = QLinearGradient(clk_rect.left(), clk_rect.top(), clk_rect.left(), clk_rect.bottom())
+        clk_grad.setColorAt(0.0, QColor("#0284c7"))
+        clk_grad.setColorAt(0.5, QColor("#0369a1"))
+        clk_grad.setColorAt(1.0, QColor("#0c4a6e"))
+        p.setBrush(QBrush(clk_grad))
+        p.setPen(QPen(QColor("#7dd3fc"), 1.2))
+        p.drawRoundedRect(clk_rect, 5, 5)
+        p.setPen(Qt.PenStyle.NoPen)
         clk_f = QFont(font)
-        clk_f.setPointSize(11)
+        clk_f.setPointSize(13)
         clk_f.setBold(True)
+        clk_f.setItalic(True)
         p.setFont(clk_f)
-        p.setPen(QColor("#f8fafc"))
+        p.setPen(QColor("#ffffff"))
         p.drawText(clk_rect, Qt.AlignmentFlag.AlignCenter, format_race_time(self.race_clock))
         p.setFont(font)
 
-        # badge camera in alto a destra
-        cam_pill = QRectF(w - 134, 12, 122, 22)
-        p.setBrush(QColor(9, 15, 29, 185))
-        p.setPen(QPen(QColor(51, 65, 85, 160), 1))
-        p.drawRoundedRect(cam_pill, 4, 4)
-        p.setPen(Qt.PenStyle.NoPen)
+        # badge telecamera broadcast in alto a destra
+        cam_w = max(124.0, QFontMetrics(b_f).horizontalAdvance(self._cam_label) + 34.0)
+        cam_pill = QRectF(w - cam_w - 12.0, 12, cam_w, 24)
+        self._draw_glass_panel(p, cam_pill, "#f97316", 5.0)
         p.setBrush(QColor("#ef4444"))
         p.drawEllipse(QPointF(cam_pill.left() + 12, cam_pill.center().y()), 3.5, 3.5)
         p.setFont(b_f)
-        p.setPen(QColor("#e2e8f0"))
-        p.drawText(QRectF(cam_pill.left() + 20, cam_pill.top(), cam_pill.width() - 24, cam_pill.height()), Qt.AlignmentFlag.AlignVCenter, self._cam_label)
+        p.setPen(QColor("#f8fafc"))
+        p.drawText(QRectF(cam_pill.left() + 20, cam_pill.top(), cam_pill.width() - 26, cam_pill.height()), Qt.AlignmentFlag.AlignVCenter, self._cam_label)
         p.setFont(font)
 
         # radar ovale compatto in basso a destra per le gare sull'ovale (400m, 1500m, staffette)
         if self._is_oval_race():
             rw, rh = 112.0, 56.0
             rx0, ry0 = w - rw - 14.0, bar_y - rh - 10.0
-            p.setBrush(QColor(9, 15, 29, 195))
-            p.setPen(QPen(QColor(71, 85, 105, 180), 1))
-            p.drawRoundedRect(QRectF(rx0, ry0, rw, rh), 8, 8)
+            self._draw_glass_panel(p, QRectF(rx0, ry0, rw, rh), "#38bdf8", 8.0)
             p.setPen(QPen(QColor("#475569"), 5))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(QRectF(rx0 + 12, ry0 + 10, rw - 24, rh - 20), 16, 16)
@@ -1802,14 +1989,14 @@ class Track3DWidget(TrackRaceWidget):
                 p.setBrush(QColor("#fbbf24" if r["s"].is_player else "#cbd5e1"))
                 p.drawEllipse(QPointF(mx, my), 3.4 if r["s"].is_player else 2.5, 3.4 if r["s"].is_player else 2.5)
 
-        # banner partenza / fotofinish / record
+        # banner partenza / fotofinish / record in stile grafico TV lucido
         phase_txt = self.start_phase
         marks = sorted(r["s"].mark_value for r in self._runners if not r["dnf"])
         photo = len(marks) > 1 and marks[1] - marks[0] <= 0.05
         first_done = any(self._has_finished(r) for r in self._runners)
         banners: List[Tuple[str, str]] = []
         if phase_txt:
-            banners.append((phase_txt, "#fbbf24" if phase_txt == "VIA!" else "#f8fafc"))
+            banners.append((phase_txt, "#f97316" if phase_txt == "VIA!" else "#38bdf8"))
         if first_done and photo and self.race_time < self._winner_time + 3.0 * self._scale:
             banners.append(("FOTO FINISH", "#38bdf8"))
         if res is not None and self._done_all():
@@ -1823,12 +2010,11 @@ class Track3DWidget(TrackRaceWidget):
             big = QFont(font)
             big.setPointSize(19)
             big.setBold(True)
+            big.setItalic(True)
             p.setFont(big)
             text, col = banners[-1]
-            tw_txt = QFontMetrics(big).horizontalAdvance(text) + 38
-            box = QRectF((w - tw_txt) / 2, bar_y - 44, tw_txt, 36)
-            p.setBrush(QColor(9, 15, 29, 218))
-            p.setPen(QPen(QColor(col), 2))
-            p.drawRoundedRect(box, 8, 8)
-            p.setPen(QColor(col))
+            tw_txt = QFontMetrics(big).horizontalAdvance(text) + 42
+            box = QRectF((w - tw_txt) / 2, bar_y - 46, tw_txt, 38)
+            self._draw_glass_panel(p, box, col, 8.0)
+            p.setPen(QColor("#f8fafc" if col == "#38bdf8" else col))
             p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
