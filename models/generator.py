@@ -17,6 +17,7 @@ from models.entities import (
     CompetitionTier,
     EthicalDilemma,
     GameState,
+    NATIONALITIES,
     PeriodizationPhase,
     Personality,
     RivalAthlete,
@@ -66,6 +67,32 @@ RIVAL_TEAMS: Dict[CompetitionTier, List[str]] = {
 def clamp_stat(value: float, low: int = 1, high: int = 100) -> int:
     """Clamp a numeric stat cleanly into [low, high]."""
     return max(low, min(high, int(round(value))))
+
+
+def generate_nationality(r: random.Random) -> str:
+    """About 70% of athletes are Italian, the rest come from the other countries."""
+    if r.random() < 0.7:
+        return "Italia"
+    return r.choice([n for n in NATIONALITIES if n != "Italia"])
+
+
+# (mean height cm, height sd, mean BMI) per discipline: throwers are heavy, distance runners lean.
+_BODY_PROFILE = {
+    Specialty.SPRINTS: (182, 6, 22.6),
+    Specialty.MIDDLE_DISTANCE: (176, 6, 20.4),
+    Specialty.JUMPS: (183, 6, 21.4),
+    Specialty.THROWS: (189, 6, 27.5),
+}
+
+
+def generate_body(specialty: Specialty, r: random.Random, age: int = 24) -> tuple[int, int]:
+    """Height (cm) and weight (kg) consistent with the discipline; youngsters are a bit smaller."""
+    mean_h, sd, bmi_mean = _BODY_PROFILE[specialty]
+    growth = 0 if age >= 18 else (18 - age) * 2.5
+    height = int(round(max(150, min(205, r.gauss(mean_h - growth, sd)))))
+    bmi = max(17.5, r.gauss(bmi_mean, 1.0))
+    weight = int(round(bmi * (height / 100) ** 2))
+    return height, weight
 
 
 def generate_athlete(
@@ -128,6 +155,7 @@ def generate_athlete(
     nutrition = r.randint(65, 90)
     form = clamp_stat(70 - fatigue * 0.35 + r.randint(-4, 7))
 
+    height_cm, weight_kg = generate_body(chosen_specialty, r, age)
     athlete = Athlete(
         id=None,
         name=name,
@@ -153,6 +181,9 @@ def generate_athlete(
         weekly_wage=120,
         injured_weeks=0,
         is_youth_prospect=youth_prospect,
+        nationality=generate_nationality(r),
+        height_cm=height_cm,
+        weight_kg=weight_kg,
     )
     athlete.weekly_wage = senior_wage(athlete)
     return athlete

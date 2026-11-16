@@ -111,11 +111,61 @@ def auto_assign_coach(state: GameState, athlete: Athlete) -> Optional[Coach]:
     return best
 
 
+# ---------------------------------------------------------------- body build
+# Ideal build per event: (height cm, height mode, BMI, BMI mode).
+# Modes: "near" = best at the ideal, penalised on both sides; "min" = more is never worse.
+BODY_IDEALS: Dict[str, Tuple[int, str, float, str]] = {
+    "100m": (183, "near", 22.8, "near"),
+    "400m": (181, "near", 21.6, "near"),
+    "1500m": (176, "near", 20.4, "near"),
+    "Salto in Lungo": (184, "min", 21.6, "near"),
+    "Getto del Peso": (189, "min", 27.5, "min"),
+}
+BODY_MOD_MAX = 1.2  # best possible bonus (race-score points)
+BODY_MOD_MIN = -4.0  # worst possible penalty
+
+
+def body_modifier(athlete: Athlete, event_name: str) -> float:
+    """Race-score bonus/penalty for how well height and weight suit the event.
+
+    A typical athlete of the discipline gets about 0; a perfect build +1.2, a
+    mismatched one (a 1.65 m shot-putter, a heavy 1500m runner) down to -4.
+    Athletes without a body profile (old saves not yet filled in) are neutral.
+    """
+    ideal = BODY_IDEALS.get(event_name)
+    if ideal is None or not athlete.height_cm or not athlete.weight_kg:
+        return 0.0
+    ideal_h, h_mode, ideal_bmi, b_mode = ideal
+    bmi = athlete.weight_kg / (athlete.height_cm / 100) ** 2
+    dh = (athlete.height_cm - ideal_h) / 6.0  # ~1 standard deviation of the generator
+    db = (bmi - ideal_bmi) / 1.0
+    if h_mode == "min":
+        dh = min(0.0, dh)
+    if b_mode == "min":
+        db = min(0.0, db)
+    penalty = 0.7 * (abs(dh) + abs(db))
+    return max(BODY_MOD_MIN, min(BODY_MOD_MAX, 1.2 - penalty))
+
+
+def body_fit_score(athlete: Athlete) -> int:
+    """0-100 rating of how well the build suits the athlete's own discipline (best event)."""
+    mods = [
+        body_modifier(athlete, name)
+        for name, ev in EVENTS.items()
+        if ev.specialty == athlete.specialty
+    ]
+    if not mods:
+        return 50
+    best = max(mods)
+    return round((best - BODY_MOD_MIN) / (BODY_MOD_MAX - BODY_MOD_MIN) * 100)
+
+
 # ---------------------------------------------------------------- relays
 def relay_leg_score(athlete: Athlete, rdef: RelayDefinition) -> float:
-    """How good an athlete is as a relay leg (attributes, form and fatigue)."""
+    """How good an athlete is as a relay leg (attributes, form, fatigue and, a bit, build)."""
     base = sum(getattr(athlete, attr) * w for attr, w in rdef.leg_weights.items())
-    return base + (athlete.form - 60) * 0.15 - max(0, athlete.fatigue - 62) * 0.2
+    build = body_modifier(athlete, rdef.requires_event) * 0.5
+    return base + (athlete.form - 60) * 0.15 - max(0, athlete.fatigue - 62) * 0.2 + build
 
 
 def auto_build_relay(state: GameState, event: str, with_reserve: bool = True) -> Relay:
@@ -460,7 +510,8 @@ def expected_event_score(athlete: Athlete, event_def: EventDefinition, track_con
     form_modifier = (athlete.form - 60) * 0.24
     fatigue_penalty = max(0, athlete.fatigue - 62) * 0.26
     track_mod = (track_condition - 75) * 0.06
-    return base_skill + specialty_bonus + form_modifier - fatigue_penalty + track_mod
+    build_mod = body_modifier(athlete, event_def.name)
+    return base_skill + specialty_bonus + form_modifier - fatigue_penalty + track_mod + build_mod
 
 
 def _roll_meet_wind(weather: WeatherCondition, season_phase: SeasonPhase, rng: random.Random) -> float:

@@ -41,6 +41,49 @@ def _drop_columns_after(conn, version: int) -> None:
                 conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
 
 
+class TestBodyBuild(unittest.TestCase):
+    """Height and weight change race scores according to the event."""
+
+    def _athlete(self, specialty, height, weight):
+        from models.generator import generate_athlete
+
+        a = generate_athlete(specialty=specialty, rng=random.Random(5))
+        a.height_cm, a.weight_kg = height, weight
+        return a
+
+    def test_build_suits_the_event(self) -> None:
+        from models.entities import EVENTS, Specialty
+        from models.simulation import BODY_MOD_MAX, BODY_MOD_MIN, body_fit_score, body_modifier
+
+        heavy_thrower = self._athlete(Specialty.THROWS, 192, 105)
+        small_thrower = self._athlete(Specialty.THROWS, 168, 66)
+        self.assertGreater(body_modifier(heavy_thrower, "Getto del Peso"), 0.8)
+        self.assertLess(body_modifier(small_thrower, "Getto del Peso"), -2.0)
+        self.assertGreater(body_fit_score(heavy_thrower), body_fit_score(small_thrower))
+
+        lean = self._athlete(Specialty.MIDDLE_DISTANCE, 176, 63)
+        bulky = self._athlete(Specialty.MIDDLE_DISTANCE, 176, 90)
+        self.assertGreater(body_modifier(lean, "1500m"), body_modifier(bulky, "1500m"))
+
+        for a in (heavy_thrower, small_thrower, lean, bulky):
+            for ev in EVENTS:
+                self.assertTrue(BODY_MOD_MIN <= body_modifier(a, ev) <= BODY_MOD_MAX)
+
+    def test_build_moves_expected_score_and_old_saves_are_neutral(self) -> None:
+        from models.entities import EVENTS, Specialty
+        from models.simulation import expected_event_score
+
+        ev = EVENTS["Getto del Peso"]
+        good = self._athlete(Specialty.THROWS, 192, 105)
+        bad = self._athlete(Specialty.THROWS, 168, 66)
+        neutral = self._athlete(Specialty.THROWS, 0, 0)
+        for a in (bad, neutral):
+            for attr in ("strength", "technique", "speed", "stamina", "form", "fatigue"):
+                setattr(a, attr, getattr(good, attr))
+        self.assertGreater(expected_event_score(good, ev), expected_event_score(neutral, ev))
+        self.assertGreater(expected_event_score(neutral, ev), expected_event_score(bad, ev))
+
+
 class TestVerticalSliceAndMechanics(unittest.TestCase):
     """Tests vertical slice, periodization, wind records, staff, dilemmas, and SQLite v2."""
 
@@ -395,6 +438,12 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             self.assertEqual(len(loaded.athletes), 10)
             self.assertEqual(loaded.stand_seats, 500)
             self.assertEqual(loaded.youth_squad, [])
+            # athletes of old saves get a stable body profile and the default nationality
+            self.assertTrue(all(150 <= a.height_cm <= 205 and a.weight_kg > 0 for a in loaded.athletes))
+            self.assertTrue(all(a.nationality == "Italia" for a in loaded.athletes))
+            again = DatabaseManager(db_path=path).load_game()
+            assert again is not None
+            self.assertEqual([a.height_cm for a in again.athletes], [a.height_cm for a in loaded.athletes])
             # Opening it through the controller turns the old coach role into a real coach
             ctrl2 = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(1))
             self.assertEqual([c.name for c in ctrl2.state.coaches], ["Andrea Valeri"])
@@ -566,8 +615,11 @@ class TestCoachesAndRelays(unittest.TestCase):
             fatigue = {a.id: a.fatigue for a in s.athletes}
             summary = sim.simulate_competition(s, rng=random.Random(3))
             res = next(er for er in summary.event_results if er.event_name == "4x100m")
-            self.assertIn(reserve.name.split(" ", 1)[1], res.player_athlete_name)
-            self.assertNotIn(injured.name.split(" ", 1)[1], res.player_athlete_name)
+            def label(a) -> str:  # how the relay team label shows a runner
+                return f"{a.name[0]}. {a.name.split(' ', 1)[-1]}"
+
+            self.assertIn(label(reserve), res.player_athlete_name)
+            self.assertNotIn(label(injured), res.player_athlete_name)
             self.assertEqual({a.id: a.fatigue for a in s.athletes}, fatigue)
             self.assertIn("4x100m", s.club_records)
 
@@ -874,6 +926,20 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertEqual(len(win.relay_tab._slot_combos["4x100m"]), 5)
             self.assertTrue(win.relay_tab._slot_combos["4x100m"][0].isEnabled())
             self.assertFalse(win.relay_tab._slot_combos["4x400m"][0].isEnabled())  # no 400m in prototype
+
+            from models.entities import NATIONALITIES
+            from views.athlete_dialog import AthleteDetailDialog, stat_colors
+
+            self.assertEqual(stat_colors(85)[0], "#16a34a")
+            self.assertEqual(stat_colors(30)[0], "#ef4444")
+            self.assertEqual(stat_colors(80, invert=True)[0], "#ef4444")  # molta fatica = rosso
+            first = ctrl.state.athletes[0]
+            self.assertTrue(150 <= first.height_cm <= 205 and 45 <= first.weight_kg <= 140)
+            self.assertIn(first.nationality, NATIONALITIES)
+            detail = AthleteDetailDialog(ctrl, ctrl.state.athletes[0].id)
+            self.assertEqual(detail.tabs.count(), 3)
+            detail.refresh()
+            detail.close()
 
             new_dlg = NewGameDialog()
             self.assertEqual(new_dlg.game_mode, "vertical_slice")
