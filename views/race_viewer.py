@@ -131,6 +131,25 @@ def _short(name: str, limit: int = 22) -> str:
     return name if len(name) <= limit else name[: limit - 1] + "…"
 
 
+def make_crowd(width: int, height: int, seed: object) -> QPixmap:
+    """Tribune con la folla, disegnate una volta sola e in modo deterministico."""
+    pm = QPixmap(max(1, width), height)
+    pm.fill(QColor("#0b1220"))
+    q = QPainter(pm)
+    rng = _rng("crowd", seed, width)
+    for tier in range(max(1, (height - 6) // 17)):
+        y0 = 8 + tier * 17
+        q.fillRect(0, y0 + 11, width, 6, QColor("#1b2638"))
+        x = rng.randint(0, 5)
+        while x < width:
+            col = QColor.fromHsv(rng.randint(0, 359), rng.randint(60, 200), rng.randint(110, 230))
+            q.fillRect(x, y0, 5, 5, QColor("#e2b48f" if rng.random() < 0.6 else "#8a5a3c"))  # testa
+            q.fillRect(x - 1, y0 + 5, 7, 6, col)  # busto
+            x += rng.randint(7, 10)
+    q.end()
+    return pm
+
+
 # --------------------------------------------------------------------------- corse
 class TrackRaceWidget(QWidget):
     """Corsie con gli atleti che avanzano verso il traguardo."""
@@ -268,27 +287,13 @@ class TrackRaceWidget(QWidget):
 
     def _crowd(self, width: int) -> QPixmap:
         """Folla pre-disegnata (deterministica): si ricostruisce solo al cambio di larghezza."""
-        if self._crowd_cache is not None and self._crowd_cache.width() == width:
-            return self._crowd_cache
-        pm = QPixmap(width, self.CROWD_H)
-        pm.fill(QColor("#0b1220"))
-        q = QPainter(pm)
-        rng = _rng("crowd", self._event, width)
-        for tier in range(4):
-            y0 = 8 + tier * 17
-            q.fillRect(0, y0 + 11, width, 6, QColor("#1b2638"))
-            x = rng.randint(0, 5)
-            while x < width:
-                col = QColor.fromHsv(rng.randint(0, 359), rng.randint(60, 200), rng.randint(110, 230))
-                q.fillRect(x, y0, 5, 5, QColor("#e2b48f" if rng.random() < 0.6 else "#8a5a3c"))  # testa
-                q.fillRect(x - 1, y0 + 5, 7, 6, col)  # busto
-                x += rng.randint(7, 10)
-        q.end()
-        self._crowd_cache = pm
-        return pm
+        if self._crowd_cache is None or self._crowd_cache.width() != width:
+            self._crowd_cache = make_crowd(width, self.CROWD_H, self._event)
+        return self._crowd_cache
 
+    @staticmethod
     def _draw_runner(
-        self, p: QPainter, x: float, ground: float, h: float, phase: float, ratio: float,
+        p: QPainter, x: float, ground: float, h: float, phase: float, ratio: float,
         kit: QColor, skin: QColor, crouch: bool, is_player: bool,
     ) -> None:
         u = h / 10.0
@@ -637,6 +642,253 @@ class FieldBoardWidget(QTableWidget):
         self.finished.emit()
 
 
+class FieldSceneWidget(QWidget):
+    """Scena laterale di un concorso: salto in lungo (rincorsa, stacco, sabbia) o getto del peso."""
+
+    CROWD_H = 62
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setMinimumHeight(230)
+        self.kind = "lj"
+        self.lo, self.hi = 0.0, 8.0  # misure della gara: definiscono il righello
+        self.cur: Optional[dict] = None
+        self.t = 0.0
+        self.dur = 1.0
+
+    def configure(self, event_name: str, marks: Sequence[float]) -> None:
+        self.kind = "lj" if event_name == "Salto in Lungo" else "sp"
+        good = [m for m in marks if m > 0]
+        self.lo = min(good) if good else 1.0
+        self.hi = max(good) if good else 8.0
+        self.cur = None
+        self.update()
+
+    def begin(self, name: str, team: str, is_player: bool, dist: float, foul: bool, animate: bool, n: int, total: int) -> None:
+        self.cur = {
+            "name": name, "team": team, "player": is_player, "dist": dist,
+            "foul": foul, "animate": animate, "n": n, "total": total,
+        }
+        self.t, self.dur = 0.0, 1.0
+        self.update()
+
+    def set_time(self, t: float, dur: float) -> None:
+        self.t, self.dur = t, dur
+        self.update()
+
+    def clear(self) -> None:
+        self.cur = None
+        self.update()
+
+    # ---- geometria
+    def _world(self) -> tuple:
+        if self.kind == "lj":
+            return -9.0, self.hi + 1.6
+        return -3.0, self.hi + 3.0
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        w, h = self.width(), self.height()
+        p.fillRect(self.rect(), QColor("#0b1220"))
+        p.drawPixmap(0, 0, make_crowd(w, self.CROWD_H, self.kind))
+        ground = h - 44
+        wx0, wx1 = self._world()
+        left, right = 14, w - 14
+        px = (right - left) / (wx1 - wx0)
+
+        def sx(m: float) -> float:
+            return left + (m - wx0) * px
+
+        font = QFont(self.font())
+        font.setPointSize(9)
+        p.setFont(font)
+        # sfondo: muretto con cartelloni, poi terreno
+        p.fillRect(0, self.CROWD_H, w, int(ground - self.CROWD_H), QColor("#111c33"))
+        p.fillRect(0, int(ground - 26), w, 22, QColor("#1e3a5f"))
+        for k in range(0, w, 70):
+            p.fillRect(k + 6, int(ground - 22), 54, 14, QColor("#0f172a"))
+        if self.kind == "lj":
+            p.fillRect(left, int(ground), int(sx(0) - left), int(h - ground), QColor("#a8431c"))  # rincorsa
+            p.fillRect(int(sx(0)), int(ground), int(sx(1.0) - sx(0)), int(h - ground), QColor("#a8431c"))
+            p.fillRect(int(sx(1.0)), int(ground - 4), int(right - sx(1.0)), int(h - ground + 4), QColor("#e7d3a1"))  # sabbia
+            p.fillRect(int(sx(0) - 1), int(ground - 2), 5, 4, QColor("#f8fafc"))  # asse di battuta
+        else:
+            p.fillRect(left, int(ground), right - left, int(h - ground), QColor("#1f5130"))
+            p.setBrush(QColor("#cbd5e1"))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(sx(-1.0), ground + 8), 1.6 * px, 7)  # cerchio di lancio
+        p.fillRect(left, int(ground), right - left, 2, QColor("#f1f5f9"))
+        # righello
+        step = 1 if self.kind == "lj" else 2
+        start = int(math.ceil(max(1.0, self.lo * 0.7) / step) * step)
+        p.setPen(QColor(15, 23, 42, 200) if self.kind == "lj" else QColor(255, 255, 255, 160))
+        for mt in range(start, int(wx1), step):
+            xx = sx(mt)
+            p.drawLine(int(xx), int(ground), int(xx), int(ground + 8))
+            p.drawText(int(xx - 16), int(ground + 24), 32, 14, Qt.AlignmentFlag.AlignCenter, f"{mt}m")
+
+        cur = self.cur
+        if cur is None:
+            p.end()
+            return
+        t, dur = self.t, self.dur
+        d = cur["dist"]
+        sprite_h = min(70.0, (ground - self.CROWD_H) * 0.55)
+        kit = QColor("#fbbf24") if cur["player"] else QColor.fromHsv(zlib.crc32(cur["team"].encode()) % 360, 170, 215)
+        skin = TrackRaceWidget._skin(cur["name"])
+
+        def flag(x: float, label: str, col: str) -> None:
+            p.setPen(QPen(QColor("#e2e8f0"), 2))
+            p.drawLine(int(x), int(ground), int(x), int(ground - 34))
+            p.fillRect(int(x), int(ground - 34), 62, 16, QColor(col))
+            p.setPen(QColor("#0f172a"))
+            p.drawText(int(x + 3), int(ground - 34), 58, 16, Qt.AlignmentFlag.AlignCenter, label)
+
+        label = "NULLO" if cur["foul"] else f"{d:.2f}"
+        colour = "#f87171" if cur["foul"] else "#34d399"
+        flag_x = sx(0.0 if cur["foul"] else d)
+
+        if not cur["animate"]:
+            flag(flag_x, label, colour)
+        elif self.kind == "lj":
+            run_end, jump_end = 1.15, 1.85
+            if t < run_end:
+                x_m = -9.0 + 9.0 * (t / run_end)
+                ratio = min(1.0, 0.3 + t)
+                TrackRaceWidget._draw_runner(p, sx(x_m), ground, sprite_h, 2 * math.pi * 2.0 * t, ratio, kit, skin, False, cur["player"])
+            elif t < jump_end:
+                s_ = (t - run_end) / (jump_end - run_end)
+                x_m = d * s_
+                air = 4.0 * (0.35 * (d / 7.0) + 1.0) * s_ * (1.0 - s_)
+                TrackRaceWidget._draw_runner(p, sx(x_m), ground - air * px * 0.55, sprite_h, 1.2, 1.0, kit, skin, False, cur["player"])
+            else:
+                # atterraggio: sabbia che schizza e bandierina con la misura
+                TrackRaceWidget._draw_runner(p, sx(d), ground, sprite_h, 0.0, 0.0, kit, skin, True, cur["player"])
+                age = t - jump_end
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor("#e7d3a1"))
+                for k in range(8):
+                    a_ = k * 0.8
+                    r_ = min(1.0, age * 2.5)
+                    p.drawRect(QRectF(sx(d) + math.cos(a_) * 22 * r_, ground - 6 - abs(math.sin(a_)) * 26 * r_, 4, 4))
+                if age > 0.25:
+                    flag(flag_x, label, colour)
+        else:  # getto del peso
+            wind_end, fly_end = 1.0, 2.0
+            ring_x = sx(-1.0)
+            if t < wind_end:
+                spin = 2 * math.pi * 1.6 * t
+                TrackRaceWidget._draw_runner(p, ring_x, ground, sprite_h, spin, 0.25 + 0.4 * t, kit, skin, t < 0.35, cur["player"])
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor("#94a3b8"))
+                p.drawEllipse(QPointF(ring_x + 6, ground - sprite_h * 0.78), 4.5, 4.5)
+            else:
+                TrackRaceWidget._draw_runner(p, ring_x, ground, sprite_h, 1.0, 0.1, kit, skin, False, cur["player"])
+                s_ = min(1.0, (t - wind_end) / (fly_end - wind_end))
+                bx = 0.3 + (d - 0.3) * s_
+                apex = 3.2 + 0.14 * d
+                by = 2.0 * (1 - s_) + 4.0 * apex * s_ * (1.0 - s_)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor("#e2e8f0"))
+                p.drawEllipse(QPointF(sx(bx), ground - by * px * 0.6 - 4), 5, 5)
+                if t >= fly_end:
+                    flag(flag_x, label, colour)
+
+        # etichetta attuale
+        p.setFont(font)
+        p.setPen(QColor("#fbbf24" if cur["player"] else "#e2e8f0"))
+        p.fillRect(left, self.CROWD_H + 6, 330, 20, QColor(11, 18, 32, 210))
+        p.drawText(left + 6, self.CROWD_H + 6, 322, 20, Qt.AlignmentFlag.AlignVCenter,
+                   f"Prova {cur['n']}/{cur['total']} — {cur['name']} ({cur['team']})")
+        p.end()
+
+
+class FieldEventWidget(QWidget):
+    """Concorso completo: scena animata sopra, tabellone dei tentativi sotto.
+
+    Solo le prove dell'atleta del club sono animate per intero; le altre scorrono veloci."""
+
+    finished = pyqtSignal()
+    PLAYER_SECONDS = {"lj": 2.9, "sp": 2.6}
+    OTHER_SECONDS = 0.22
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        self.scene = FieldSceneWidget()
+        self.board = FieldBoardWidget()
+        lay.addWidget(self.scene, stretch=3)
+        lay.addWidget(self.board, stretch=2)
+        self.board.finished.connect(self._board_done)
+        self._step = 0
+        self._acc = 0.0
+        self._started = False
+        self._done = False
+        self._event = "Salto in Lungo"
+
+    def set_race(self, event_name: str, result: EventResult, seed: object) -> None:
+        self._event = event_name
+        self.board.set_race(event_name, result, seed)
+        self.scene.configure(event_name, [s.mark_value for s in result.standings])
+        self._step = 0
+        self._acc = 0.0
+        self._started = False
+        self._done = False
+
+    def _is_player(self, row: int) -> bool:
+        return self.board._standings[row].is_player
+
+    def _begin_step(self) -> None:
+        rnd, row = self.board._steps[self._step]
+        s = self.board._standings[row]
+        value = self.board._attempts[row][rnd]
+        valid = [v for v in self.board._attempts[row] if v is not None]
+        dist = value if value is not None else (max(valid) * 0.97 if valid else s.mark_value * 0.95)
+        self.scene.begin(
+            s.athlete_name, s.team_name, s.is_player, dist, value is None,
+            animate=s.is_player, n=rnd + 1, total=FIELD_ROUNDS,
+        )
+
+    def advance(self, dt: float) -> None:
+        if self._done:
+            return
+        self._acc += dt
+        kind = self.scene.kind
+        steps = self.board._steps
+        while self._step < len(steps):
+            if not self._started:
+                self._begin_step()
+                self._started = True
+            _rnd, row = steps[self._step]
+            dur = self.PLAYER_SECONDS[kind] if self._is_player(row) else self.OTHER_SECONDS
+            if self._acc < dur:
+                self.scene.set_time(self._acc, dur)
+                return
+            self._acc -= dur
+            self.board._reveal(self._step)
+            self._step += 1
+            self._started = False
+        self.scene.clear()
+        if self._acc >= 0.6:
+            self.board._finish()
+
+    def skip_to_end(self) -> None:
+        if self._done:
+            return
+        while self._step < len(self.board._steps):
+            self.board._reveal(self._step)
+            self._step += 1
+        self.scene.clear()
+        self.board._finish()
+
+    def _board_done(self) -> None:
+        if not self._done:
+            self._done = True
+            self.finished.emit()
+
+
 # --------------------------------------------------------------------------- dialog
 class RaceViewerDialog(QDialog):
     """Mostra una dopo l'altra le gare del meeting. Si può accelerare, saltare o chiudere."""
@@ -666,7 +918,7 @@ class RaceViewerDialog(QDialog):
 
         self.stack = QStackedWidget()
         self.track = TrackRaceWidget()
-        self.field = FieldBoardWidget()
+        self.field = FieldEventWidget()
         self.stack.addWidget(self.track)
         self.stack.addWidget(self.field)
         root.addWidget(self.stack, stretch=1)

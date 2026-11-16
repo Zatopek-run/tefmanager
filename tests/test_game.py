@@ -121,6 +121,47 @@ class TestRaceViewer(unittest.TestCase):
             self.assertEqual(dlg2.track.race_clock, min(r.mark_value for r in summary.event_results[0].standings))
             dlg2.close()
 
+    def test_field_event_animates_only_player_attempts(self) -> None:
+        import copy
+
+        from views.race_viewer import FIELD_ROUNDS, FieldEventWidget
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv4.db"), rng=random.Random(15))
+            ctrl.state.week = 8
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            jump = next(r for r in summary.event_results if r.event_name == "Salto in Lungo")
+            shot = copy.deepcopy(jump)
+            shot.event_name = "Getto del Peso"
+            for st in shot.standings:
+                st.mark_value = round(st.mark_value * 2.2, 2)
+                st.mark_display = f"{st.mark_value:.2f}m"
+            for res in (jump, shot):
+                widget = FieldEventWidget()
+                done = []
+                widget.finished.connect(lambda: done.append(True))
+                widget.set_race(res.event_name, res, "seed")
+                elapsed, animated = 0.0, set()
+                while not done and elapsed < 120:
+                    widget.advance(0.05)
+                    elapsed += 0.05
+                    cur = widget.scene.cur
+                    if cur and cur["animate"]:
+                        animated.add((cur["n"], cur["name"]))
+                self.assertTrue(done, res.event_name)
+                self.assertEqual(len(animated), FIELD_ROUNDS)  # solo le prove del club sono animate
+                self.assertLess(elapsed, 45)  # niente gare da un minuto di attesa
+                best = {widget.board.item(r, FIELD_ROUNDS + 1).text() for r in range(widget.board.rowCount())}
+                self.assertTrue({s.mark_display for s in res.standings} <= best)
+                widget.close()
+            # saltare a metà non lascia il tabellone incompleto
+            skipped = FieldEventWidget()
+            skipped.set_race(jump.event_name, jump, "seed")
+            skipped.advance(1.0)
+            skipped.skip_to_end()
+            self.assertEqual(skipped.board.item(0, FIELD_ROUNDS + 2).text()[-1], "°")
+
     def test_dialog_plays_every_event(self) -> None:
         from views.race_viewer import RaceViewerDialog
 
