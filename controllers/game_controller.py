@@ -10,6 +10,15 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from models.database import DatabaseManager
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
+    COACH_MAX_TIER,
+    COACH_STAT_LABELS,
+    COACH_STATS,
+    MAX_SPECIALIZED_COACHES,
+    MAX_YOUTH_COACHES,
+    RELAY_CHANGE_COOLDOWN_WEEKS,
+    RELAYS,
+    Relay,
+    coach_hire_cost,
     GYM_MAX_LEVEL,
     SCOUTING_FEES,
     SCOUTING_SEARCH_POINTS,
@@ -34,7 +43,9 @@ from models.entities import (
 from models.generator import (
     build_default_lineup,
     clamp_stat,
+    create_initial_coaches,
     create_initial_staff,
+    generate_coach,
     create_season_objectives,
     generate_academy_prospects,
     generate_initial_roster,
@@ -42,7 +53,15 @@ from models.generator import (
     generate_vertical_slice_roster,
     get_recruitment_fee,
 )
-from models.simulation import WeekAdvanceReport, advance_week, promote_youth_athlete
+from models.simulation import (
+    WeekAdvanceReport,
+    advance_week,
+    auto_assign_coach,
+    auto_build_all_relays,
+    auto_build_relay,
+    promote_youth_athlete,
+    upgrade_legacy_state,
+)
 
 
 def scouting_search_cost(points_used: int, filters: int) -> tuple[int, int]:
@@ -77,6 +96,7 @@ class GameController(QObject):
     def _load_or_create_initial_state(self) -> GameState:
         saved = self.db.load_game()
         if saved is not None:
+            upgrade_legacy_state(saved, rng=self.rng)
             return saved
         return self._create_fresh_state(game_mode="vertical_slice")
 
@@ -104,6 +124,7 @@ class GameController(QObject):
 
         lineup = build_default_lineup(roster, event_names=events)
         staff = create_initial_staff()
+        coaches = create_initial_coaches(roster, rng=self.rng)
         objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE)
 
         state = GameState(
@@ -135,7 +156,9 @@ class GameController(QObject):
             objectives=objectives,
             milestones=[],
             news_log=[intro],
+            coaches=coaches,
         )
+        auto_build_all_relays(state)
         self.db.save_game(state)
         return state
 
@@ -160,6 +183,7 @@ class GameController(QObject):
         if loaded is None:
             self.status_message.emit("Nessun salvataggio trovato.")
             return False
+        upgrade_legacy_state(loaded, rng=self.rng)
         self.state = loaded
         self.scouting_results = []
         self.state_changed.emit(self.state)
@@ -297,6 +321,7 @@ class GameController(QObject):
         next_id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
         prospect.id = next_id
         self.state.athletes.append(prospect)
+        auto_assign_coach(self.state, prospect)
         self.state.budget -= fee
         # Sponsors dislike squad turnover; young signings hurt fidelity less
         self.state.fidelity = max(0, self.state.fidelity - (6 if prospect.age < 21 else 12))
@@ -337,6 +362,7 @@ class GameController(QObject):
             self.state.fidelity = max(0, self.state.fidelity - 8)
 
         self.state.athletes = [a for a in self.state.athletes if a.id != athlete_id]
+        self._remove_from_relays(athlete_id)
         for event_name, assigned_id in list(self.state.event_lineup.items()):
             if assigned_id == athlete_id:
                 self.state.event_lineup[event_name] = None
@@ -413,6 +439,7 @@ class GameController(QObject):
         prospect.id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
         prospect.in_youth_squad = True
         self.state.athletes.append(prospect)
+        auto_assign_coach(self.state, prospect)
         self.scouting_results.remove(prospect)
         self.state.news_log.insert(
             0,
@@ -478,6 +505,161 @@ class GameController(QObject):
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Tribune ampliate: {self.state.stand_seats:,} posti.")
+        return True
+
+    # ------------------------------------------------------------------ coaches
+    def hire_coach(
+        self,
+        specialty: Optional[Specialty],
+        primary: str,
+        secondary: Optional[str],
+        tier: int,
+    ) -> bool:
+        """Hire a coach (specialty None = youth coach). Higher tiers cost more and know more."""
+        state = self.state
+        if primary not in COACH_STATS or (secondary is not None and secondary not in COACH_STATS):
+            return False
+        tier = max(1, min(COACH_MAX_TIER, tier))
+        if state.coach_hired_week == state.week:
+            self.status_message.emit("Puoi assumere un solo allenatore a settimana.")
+            return False
+        youth = specialty is None
+        count = sum(1 for c in state.coaches if c.is_youth_coach == youth)
+        limit = MAX_YOUTH_COACHES if youth else MAX_SPECIALIZED_COACHES
+        if count >= limit:
+            kind = "del vivaio" if youth else "specializzati"
+            self.status_message.emit(f"Hai già il massimo di allenatori {kind} ({limit}).")
+            return False
+        cost = coach_hire_cost(tier)
+        if not self._pay(cost, "Ingaggio allenatore", "Allenatori"):
+            return False
+        coach = generate_coach(
+            specialty, primary, secondary, tier, rng=self.rng,
+            existing_names={c.name for c in state.coaches},
+        )
+        coach.id = max((c.id or 0 for c in state.coaches), default=0) + 1
+        state.coaches.append(coach)
+        state.coach_hired_week = state.week
+        # Athletes without a suitable coach are taken on straight away
+        for a in state.athletes:
+            if state.coach_of(a) is None and coach.can_train(a):
+                a.coach_id = coach.id
+        skills = f"{COACH_STAT_LABELS[primary]} {coach.skills[primary]}"
+        if secondary is not None and secondary != primary:
+            skills += f", {COACH_STAT_LABELS[secondary]} {coach.skills[secondary]}"
+        state.news_log.insert(
+            0,
+            f"Sett. {state.week}: Ingaggiato l'allenatore {coach.name} ({coach.kind_label}: {skills}).",
+        )
+        self.db.save_game(state)
+        self.state_changed.emit(state)
+        self.status_message.emit(f"Assunto {coach.name} (${coach.weekly_wage}/sett).")
+        return True
+
+    def fire_coach(self, coach_id: int) -> bool:
+        coach = next((c for c in self.state.coaches if c.id == coach_id), None)
+        if coach is None:
+            return False
+        self.state.coaches.remove(coach)
+        for a in self.state.athletes:
+            if a.coach_id == coach_id:
+                a.coach_id = None
+                auto_assign_coach(self.state, a)
+        self.state.news_log.insert(
+            0, f"Sett. {self.state.week}: L'allenatore {coach.name} lascia la società."
+        )
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"Licenziato {coach.name}.")
+        return True
+
+    def assign_coach(self, athlete_id: int, coach_id: Optional[int]) -> bool:
+        athlete = next((a for a in self.state.athletes if a.id == athlete_id), None)
+        if athlete is None:
+            return False
+        if coach_id is not None:
+            coach = next((c for c in self.state.coaches if c.id == coach_id), None)
+            if coach is None or not coach.can_train(athlete):
+                self.status_message.emit("Questo allenatore non può seguire l'atleta.")
+                return False
+            athlete.coach_id = coach_id
+            self.status_message.emit(f"{athlete.name} ora si allena con {coach.name}.")
+        else:
+            athlete.coach_id = None
+            self.status_message.emit(f"{athlete.name} non ha più un allenatore.")
+        self.state_changed.emit(self.state)
+        return True
+
+    # ------------------------------------------------------------------ relays
+    def _remove_from_relays(self, athlete_id: int) -> None:
+        for relay in self.state.relays.values():
+            relay.member_ids = [None if mid == athlete_id else mid for mid in relay.member_ids]
+            if relay.reserve_id == athlete_id:
+                relay.reserve_id = None
+
+    def auto_build_relay(self, event: str) -> bool:
+        existing = self.state.relays.get(event)
+        weeks_since = self.state.week - (existing.last_change_week if existing else -100)
+        if existing and existing.all_ids() and weeks_since < RELAY_CHANGE_COOLDOWN_WEEKS:
+            self.status_message.emit(
+                f"La {event} è stata cambiata da poco: riprova tra "
+                f"{RELAY_CHANGE_COOLDOWN_WEEKS - weeks_since} settimana/e."
+            )
+            return False
+        relay = auto_build_relay(self.state, event)
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"Staffetta {event} composta (affiatamento {relay.harmony}).")
+        return True
+
+    def set_relay_slot(self, event: str, slot: int, athlete_id: Optional[int]) -> bool:
+        """Set leg `slot` (0-3) or the reserve (4).
+
+        Reordering runners already in the relay is free. Bringing in a new runner in place of
+        a healthy one costs 25% harmony and is allowed once every 4 weeks.
+        """
+        if event not in RELAYS or not (0 <= slot <= 4):
+            return False
+        state = self.state
+        relay = state.relays.setdefault(event, Relay(event=event))
+        slots: List[Optional[int]] = list(relay.member_ids) + [relay.reserve_id]
+        current = slots[slot]
+        if athlete_id == current:
+            return True
+
+        if athlete_id is not None:
+            athlete = next((a for a in state.main_squad if a.id == athlete_id), None)
+            if athlete is None:
+                return False
+            other = state.relay_of(athlete_id)
+            if other is not None and other != event:
+                self.status_message.emit(f"{athlete.name} corre già nella staffetta {other}.")
+                return False
+
+        if athlete_id is not None and athlete_id in slots:
+            # Reorder within the team: swap places, no penalty
+            j = slots.index(athlete_id)
+            slots[slot], slots[j] = slots[j], slots[slot]
+        else:
+            by_id = {a.id: a for a in state.main_squad}
+            outgoing = by_id.get(current) if current is not None else None
+            is_replacement = outgoing is not None and not outgoing.is_injured
+            if is_replacement:
+                weeks_since = state.week - relay.last_change_week
+                if weeks_since < RELAY_CHANGE_COOLDOWN_WEEKS:
+                    self.status_message.emit(
+                        f"Puoi cambiare un componente della {event} tra "
+                        f"{RELAY_CHANGE_COOLDOWN_WEEKS - weeks_since} settimana/e."
+                    )
+                    return False
+                relay.harmony = int(relay.harmony * 0.75)
+                relay.last_change_week = state.week
+            slots[slot] = athlete_id
+        relay.member_ids = slots[:4]
+        relay.reserve_id = slots[4]
+        self.db.save_game(state)
+        self.state_changed.emit(state)
+        self.status_message.emit(f"Staffetta {event} aggiornata (affiatamento {relay.harmony}).")
         return True
 
     def resolve_dilemma(self, accepted: bool) -> None:

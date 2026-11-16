@@ -20,8 +20,8 @@ tefmanager/
 ├── views/
 │   ├── __init__.py
 │   ├── styles.py                  # Dark sports-management QSS theme
-│   ├── dialogs.py                 # Risultati gara (vento, classifica società), Mercato, Dilemmi Etici, Nuova Stagione
-│   ├── tabs.py                    # Dashboard, Rosa, Vivaio & Osservatori, Calendario & Gare, Staff & Impianto, Finanze
+│   ├── dialogs.py                 # Risultati gara, Mercato, Assumi Allenatore, Dilemmi Etici, Nuova Stagione
+│   ├── tabs.py                    # Dashboard, Rosa, Vivaio, Calendario & Gare, Staffette, Staff & Impianto, Finanze
 │   └── main_window.py             # QMainWindow & HUD
 └── tests/
     └── test_game.py               # Unit and offscreen PyQt6 smoke tests
@@ -45,7 +45,10 @@ Meccaniche da gestionale di atletica online, adattate alla scala del gioco:
 - **Debito & fallimento**: con il saldo negativo paghi il 5% di interessi a settimana; sotto -$20.000 la società fallisce.
 - **Declino con l'età**: dopo la finestra di picco della specialità gli atleti perdono gradualmente velocità, resistenza e forza.
 
-I salvataggi v2 vengono migrati in automatico a v3 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita.
+- **Allenatori con abilità proprie**: ogni allenatore ha un valore (1-100) in Velocità, Resistenza, Forza e Tecnica. Quando un atleta allena una qualità, cresce tanto più quanto l'allenatore è bravo in quella qualità; senza un allenatore adatto cresce molto più lentamente. Gli specializzati (max 6) seguono solo la propria disciplina; quelli del vivaio (max 2) solo i ragazzi 14-17. Si assumono scegliendo abilità principale, secondaria e livello di ingaggio ($1.500-$7.500; più abilità = stipendio più alto). Uno a settimana. Oltre 6 atleti a testa l'effetto cala, e le abilità calano lentamente col tempo.
+- **Staffette 4x100m e 4x400m**: 4 frazionisti in ordine più una riserva; ogni atleta corre in una sola staffetta. La 4x400 si corre in Carriera (serve la gara dei 400m), la 4x100 non si corre indoor e in Cross non si corrono staffette. Il tempo dipende dai frazionisti (l'ultima frazione pesa di più) e dall'affiatamento (E … A++). L'affiatamento cresce ogni settimana coi titolari sani e di più quando si gareggia; se è basso aumenta il rischio di squalifica per cambio fuori zona. Riordinare è gratis; sostituire un titolare sano costa il 25% dell'affiatamento ed è possibile una volta ogni 4 settimane. Un titolare infortunato viene sostituito dalla riserva. Le staffette contano nella classifica a squadre e hanno record sociali propri, ma non consumano forma e non danno fan.
+
+I salvataggi v2 e v3 vengono migrati in automatico a v4 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri.
 
 ## How to Run
 

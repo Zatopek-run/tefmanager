@@ -180,6 +180,79 @@ def stand_expansion_cost(current_seats: int) -> int:
     return STAND_EXPANSION_SEATS * per_seat + 500
 
 
+# ---------------------------------------------------------------- coaches
+COACH_STATS: List[str] = ["speed", "stamina", "strength", "technique"]
+COACH_STAT_LABELS: Dict[str, str] = {
+    "speed": "Velocità",
+    "stamina": "Resistenza",
+    "strength": "Forza",
+    "technique": "Tecnica",
+}
+MAX_SPECIALIZED_COACHES = 6
+MAX_YOUTH_COACHES = 2
+COACH_COMFORT_LOAD = 6  # beyond this many athletes, each one gets less attention
+COACH_BASE_SKILL = 25  # level of the skills the coach was not hired for
+COACH_MAX_TIER = 5
+COACH_NO_COACH_MULT = 0.6  # athletes without a (suitable) coach still train, but slowly
+
+
+def coach_hire_skills(tier: int) -> Tuple[int, int]:
+    """(primary, secondary) skill values for a recruitment tier 1-5."""
+    primary = 60 + 7 * tier
+    return primary, primary - 10
+
+
+def coach_hire_cost(tier: int) -> int:
+    return 1500 * tier
+
+
+def coach_weekly_wage(skills: Dict[str, int]) -> int:
+    return 40 + round(sum(max(0, v - 40) for v in skills.values()) * 2.2)
+
+
+# ---------------------------------------------------------------- relays
+@dataclass(frozen=True)
+class RelayDefinition:
+    name: str
+    leg_weights: Dict[str, float]  # athlete attributes that matter for each leg
+    base_seconds: float  # time for a very weak team
+    span_seconds: float  # how much a strong team gains
+    min_seconds: float
+    indoor: bool  # also run during the indoor season
+    requires_event: str  # only run when this individual event is in the programme
+
+
+RELAYS: Dict[str, RelayDefinition] = {
+    "4x100m": RelayDefinition(
+        name="4x100m",
+        leg_weights={"speed": 0.70, "technique": 0.20, "strength": 0.10},
+        base_seconds=50.4,
+        span_seconds=11.2,
+        min_seconds=36.8,
+        indoor=False,
+        requires_event="100m",
+    ),
+    "4x400m": RelayDefinition(
+        name="4x400m",
+        leg_weights={"speed": 0.50, "stamina": 0.40, "technique": 0.10},
+        base_seconds=229.0,
+        span_seconds=50.0,
+        min_seconds=174.0,
+        indoor=True,
+        requires_event="400m",
+    ),
+}
+RELAY_LEG_WEIGHTS: List[float] = [0.24, 0.24, 0.24, 0.28]  # the anchor leg counts a bit more
+RELAY_CHANGE_COOLDOWN_WEEKS = 4
+RELAY_DQ_MARK = "Squalificata"
+
+
+def harmony_grade(harmony: int) -> str:
+    """Letter grade for relay harmony (E .. A++)."""
+    grades = ["E", "D", "C-", "C", "C+", "B-", "B", "B+", "A", "A+", "A++"]
+    return grades[max(0, min(10, harmony // 10))]
+
+
 class StaffRole(str, Enum):
     """Specialized club staff roles."""
 
@@ -290,6 +363,7 @@ class Athlete:
     doping_boost_weeks: int = 0
     in_youth_squad: bool = False
     fans: int = 0
+    coach_id: Optional[int] = None
 
     @property
     def power(self) -> int:
@@ -350,6 +424,60 @@ class Athlete:
         if self.form >= 78:
             return "Al Picco"
         return "In Forma"
+
+
+@dataclass
+class Coach:
+    """A coach with their own skills. Specialized coaches train one specialty;
+    youth coaches (specialty None) only train the youth academy, any discipline."""
+
+    id: Optional[int]
+    name: str
+    specialty: Optional[Specialty]
+    skills: Dict[str, int]  # speed / stamina / strength / technique, 1-100
+
+    @property
+    def is_youth_coach(self) -> bool:
+        return self.specialty is None
+
+    @property
+    def weekly_wage(self) -> int:
+        return coach_weekly_wage(self.skills)
+
+    @property
+    def kind_label(self) -> str:
+        return "Vivaio" if self.specialty is None else self.specialty.value
+
+    def skill_for(self, stat_name: str) -> int:
+        if stat_name == "resilience":  # resilience is built through endurance work
+            return self.skills.get("stamina", COACH_BASE_SKILL)
+        return self.skills.get(stat_name, COACH_BASE_SKILL)
+
+    def can_train(self, athlete: "Athlete") -> bool:
+        if self.specialty is None:
+            return athlete.in_youth_squad
+        return self.specialty == athlete.specialty
+
+
+@dataclass
+class Relay:
+    """A relay team: 4 ordered legs plus a reserve. Harmony grows by training together."""
+
+    event: str
+    member_ids: List[Optional[int]] = field(default_factory=lambda: [None, None, None, None])
+    reserve_id: Optional[int] = None
+    harmony: int = 30  # 0-100
+    last_change_week: int = -100
+
+    @property
+    def is_complete(self) -> bool:
+        return all(mid is not None for mid in self.member_ids)
+
+    def all_ids(self) -> List[int]:
+        ids = [mid for mid in self.member_ids if mid is not None]
+        if self.reserve_id is not None:
+            ids.append(self.reserve_id)
+        return ids
 
 
 @dataclass
@@ -429,6 +557,7 @@ class EventResult:
     standings: List[EventStanding] = field(default_factory=list)
     attitude: str = RaceAttitude.NORMALE.value
     withdrew_injured: bool = False
+    disqualified: bool = False
 
 
 @dataclass
@@ -493,6 +622,39 @@ class GameState:
     scouting_points_used: int = 0
     bankrupt: bool = False
     league_table: Dict[str, int] = field(default_factory=dict)
+    coaches: List[Coach] = field(default_factory=list)
+    relays: Dict[str, Relay] = field(default_factory=dict)
+    coach_hired_week: int = 0  # one new coach per week
+
+    def coach_of(self, athlete: Athlete) -> Optional[Coach]:
+        """The athlete's coach, if assigned and allowed to train them."""
+        if athlete.coach_id is None:
+            return None
+        coach = next((c for c in self.coaches if c.id == athlete.coach_id), None)
+        return coach if coach is not None and coach.can_train(athlete) else None
+
+    def coach_load(self, coach: Coach) -> int:
+        return sum(1 for a in self.athletes if a.coach_id == coach.id and coach.can_train(a))
+
+    @property
+    def active_relays(self) -> List[str]:
+        """Relays run this season: they need their sprint event in the programme; no 4x100 indoors."""
+        out: List[str] = []
+        if self.season_phase == SeasonPhase.CROSS:
+            return out
+        for name, rdef in RELAYS.items():
+            if rdef.requires_event not in self.active_events:
+                continue
+            if self.season_phase == SeasonPhase.INDOOR and not rdef.indoor:
+                continue
+            out.append(name)
+        return out
+
+    def relay_of(self, athlete_id: Optional[int]) -> Optional[str]:
+        for name, relay in self.relays.items():
+            if athlete_id is not None and athlete_id in relay.all_ids():
+                return name
+        return None
 
     @property
     def main_squad(self) -> List[Athlete]:

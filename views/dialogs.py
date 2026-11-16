@@ -9,6 +9,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -21,7 +22,20 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from models.entities import Athlete, CompetitionSummary, EthicalDilemma
+from models.entities import (
+    COACH_BASE_SKILL,
+    COACH_COMFORT_LOAD,
+    COACH_MAX_TIER,
+    COACH_STAT_LABELS,
+    COACH_STATS,
+    Athlete,
+    CompetitionSummary,
+    EthicalDilemma,
+    Specialty,
+    coach_hire_cost,
+    coach_hire_skills,
+    coach_weekly_wage,
+)
 from models.generator import get_recruitment_fee
 
 
@@ -92,7 +106,7 @@ class CompetitionResultsDialog(QDialog):
 
         self.events_table = QTableWidget(len(self.summary.event_results), 8)
         self.events_table.setHorizontalHeaderLabels(
-            ["Gara", "Atleta", "Atteggiamento", "Misura / Tempo", "Vento", "Posizione", "Premio", "Note"]
+            ["Gara", "Atleta / Frazionisti", "Atteggiamento", "Misura / Tempo", "Vento", "Posizione", "Premio", "Note"]
         )
         self.events_table.setAlternatingRowColors(True)
         self.events_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -111,6 +125,8 @@ class CompetitionResultsDialog(QDialog):
             notes = []
             if res.withdrew_injured:
                 notes.append("Ritirato per infortunio")
+            if res.disqualified:
+                notes.append("Squalificata (cambio fuori zona)")
             if res.is_club_record:
                 notes.append("RECORD SOCIALE!")
             elif res.is_pb:
@@ -126,14 +142,15 @@ class CompetitionResultsDialog(QDialog):
                 QTableWidgetItem(res.player_mark),
                 QTableWidgetItem(wind_str),
                 QTableWidgetItem(
-                    "RIT." if res.withdrew_injured else f"#{res.placement} / {res.total_competitors}"
+                    "RIT." if res.withdrew_injured
+                    else ("SQ." if res.disqualified else f"#{res.placement} / {res.total_competitors}")
                 ),
                 QTableWidgetItem(f"${res.prize_money:,}"),
                 QTableWidgetItem(note_str),
             ]
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if res.withdrew_injured:
+                if res.withdrew_injured or res.disqualified:
                     item.setForeground(QColor("#f87171"))
                 elif col == 4 and res.wind_illegal:
                     item.setForeground(QColor("#fbbf24"))
@@ -426,3 +443,107 @@ class NewGameDialog(QDialog):
     @property
     def game_mode(self) -> str:
         return str(self.mode_combo.currentData())
+
+
+class HireCoachDialog(QDialog):
+    """Choose a coach's type, the skills they are hired for and the recruitment level."""
+
+    def __init__(self, budget: int, allowed_specialties: List[Specialty], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Assumi Allenatore")
+        self.resize(520, 300)
+        self.budget = budget
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        title = QLabel("Nuovo Allenatore")
+        title.setObjectName("SectionHeader")
+        layout.addWidget(title)
+        hint = QLabel(
+            "Un allenatore specializzato segue solo gli atleti della sua disciplina; quello del "
+            "vivaio segue solo i ragazzi del vivaio, di qualsiasi disciplina. Le abilità non scelte "
+            f"restano basse ({COACH_BASE_SKILL}). Oltre {COACH_COMFORT_LOAD} atleti seguiti, ognuno "
+            "riceve meno attenzione."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        form = QFormLayout()
+        self.kind_combo = QComboBox()
+        for spec in allowed_specialties:
+            self.kind_combo.addItem(f"Specializzato — {spec.value}", spec)
+        self.kind_combo.addItem("Vivaio (solo ragazzi 14-17)", None)
+        form.addRow("Tipo:", self.kind_combo)
+
+        self.primary_combo = QComboBox()
+        self.secondary_combo = QComboBox()
+        self.secondary_combo.addItem("Nessuna (stipendio più basso)", None)
+        for stat in COACH_STATS:
+            self.primary_combo.addItem(COACH_STAT_LABELS[stat], stat)
+            self.secondary_combo.addItem(COACH_STAT_LABELS[stat], stat)
+        self.secondary_combo.setCurrentIndex(4)  # Tecnica
+        form.addRow("Abilità principale:", self.primary_combo)
+        form.addRow("Abilità secondaria:", self.secondary_combo)
+
+        self.tier_combo = QComboBox()
+        for tier in range(1, COACH_MAX_TIER + 1):
+            prim, sec = coach_hire_skills(tier)
+            self.tier_combo.addItem(
+                f"Livello {tier} — principale {prim}, secondaria {sec} — ${coach_hire_cost(tier):,}",
+                tier,
+            )
+        form.addRow("Ingaggio:", self.tier_combo)
+        layout.addLayout(form)
+
+        self.preview = QLabel("")
+        self.preview.setObjectName("SubTitle")
+        layout.addWidget(self.preview)
+
+        for combo in (self.kind_combo, self.primary_combo, self.secondary_combo, self.tier_combo):
+            combo.currentIndexChanged.connect(lambda _i: self._update_preview())
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Annulla")
+        cancel_btn.clicked.connect(self.reject)
+        self.hire_btn = QPushButton("Assumi")
+        self.hire_btn.setObjectName("PrimaryButton")
+        self.hire_btn.clicked.connect(self.accept)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.hire_btn)
+        layout.addLayout(btn_row)
+        self._update_preview()
+
+    @property
+    def specialty(self) -> Optional[Specialty]:
+        data = self.kind_combo.currentData()
+        return data if isinstance(data, Specialty) else None
+
+    @property
+    def primary(self) -> str:
+        return str(self.primary_combo.currentData())
+
+    @property
+    def secondary(self) -> Optional[str]:
+        data = self.secondary_combo.currentData()
+        return None if data is None or data == self.primary else str(data)
+
+    @property
+    def tier(self) -> int:
+        return int(self.tier_combo.currentData())
+
+    def _update_preview(self) -> None:
+        prim, sec = coach_hire_skills(self.tier)
+        skills = {stat: COACH_BASE_SKILL for stat in COACH_STATS}
+        skills[self.primary] = prim
+        if self.secondary is not None:
+            skills[self.secondary] = sec
+        cost = coach_hire_cost(self.tier)
+        self.preview.setText(
+            f"Costo ingaggio ${cost:,} · stipendio ${coach_weekly_wage(skills):,}/sett "
+            f"(budget ${self.budget:,})"
+        )
+        self.hire_btn.setEnabled(cost <= self.budget)

@@ -9,6 +9,16 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
     ATTITUDE_EFFECTS,
+    COACH_BASE_SKILL,
+    COACH_COMFORT_LOAD,
+    COACH_NO_COACH_MULT,
+    RELAY_DQ_MARK,
+    RELAY_LEG_WEIGHTS,
+    RELAYS,
+    Coach,
+    Relay,
+    RelayDefinition,
+    harmony_grade,
     BANKRUPTCY_THRESHOLD,
     DEBT_WEEKLY_INTEREST,
     DNF_MARK,
@@ -43,6 +53,8 @@ from models.generator import (
     clamp_stat,
     get_meet_name,
     get_rival_teams,
+    SPECIALTY_COACH_FOCUS,
+    generate_coach,
     maybe_generate_dilemma,
     senior_wage,
 )
@@ -68,6 +80,108 @@ class WeekAdvanceReport:
 
 def _hired_roles(state: GameState) -> Set[StaffRole]:
     return {s.role for s in state.staff if s.hired}
+
+
+def coach_load_multiplier(load: int) -> float:
+    """A coach follows up to COACH_COMFORT_LOAD athletes well; beyond that attention is diluted."""
+    if load <= COACH_COMFORT_LOAD:
+        return 1.0
+    return max(0.5, 1.0 - 0.08 * (load - COACH_COMFORT_LOAD))
+
+
+def auto_assign_coach(state: GameState, athlete: Athlete) -> Optional[Coach]:
+    """Give the athlete the least-busy suitable coach, unless they already have one."""
+    current = state.coach_of(athlete)
+    if current is not None:
+        return current
+    candidates = [c for c in state.coaches if c.can_train(athlete)]
+    if not candidates:
+        athlete.coach_id = None
+        return None
+    best = min(candidates, key=lambda c: (state.coach_load(c), -max(c.skills.values())))
+    athlete.coach_id = best.id
+    return best
+
+
+# ---------------------------------------------------------------- relays
+def relay_leg_score(athlete: Athlete, rdef: RelayDefinition) -> float:
+    """How good an athlete is as a relay leg (attributes, form and fatigue)."""
+    base = sum(getattr(athlete, attr) * w for attr, w in rdef.leg_weights.items())
+    return base + (athlete.form - 60) * 0.15 - max(0, athlete.fatigue - 62) * 0.2
+
+
+def auto_build_relay(state: GameState, event: str, with_reserve: bool = True) -> Relay:
+    """Pick the 4 best available legs (best runner on the anchor leg) plus a reserve."""
+    rdef = RELAYS[event]
+    relay = state.relays.get(event) or Relay(event=event)
+    taken = {aid for name, r in state.relays.items() if name != event for aid in r.all_ids()}
+    pool = [
+        a for a in state.main_squad
+        if a.id is not None and not a.is_injured and a.id not in taken
+    ]
+    pool.sort(key=lambda a: relay_leg_score(a, rdef), reverse=True)
+    best = pool[:5] if with_reserve else pool[:4]
+    legs: List[Optional[int]] = [a.id for a in best[:4]]
+    if len(legs) == 4:
+        legs = [legs[1], legs[2], legs[3], legs[0]]  # strongest runner anchors
+    legs += [None] * (4 - len(legs))
+    old = set(relay.all_ids())
+    new_ids = [a.id for a in best]
+    relay.member_ids = legs
+    relay.reserve_id = best[4].id if len(best) > 4 else None
+    if old and set(new_ids) != old:
+        relay.harmony = int(relay.harmony * 0.75)
+        relay.last_change_week = state.week
+    state.relays[event] = relay
+    return relay
+
+
+def auto_build_all_relays(state: GameState) -> None:
+    """Compose every active relay: all legs first, reserves only from who is left over."""
+    for name in state.active_relays:
+        auto_build_relay(state, name, with_reserve=False)
+    for name in state.active_relays:
+        relay = state.relays[name]
+        taken = {aid for r in state.relays.values() for aid in r.all_ids()}
+        rdef = RELAYS[name]
+        spare = [
+            a for a in state.main_squad
+            if a.id is not None and not a.is_injured and a.id not in taken
+        ]
+        if spare:
+            relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
+
+
+def _relay_dq_chance(harmony: int, substituted: bool) -> float:
+    return max(0.0, (60 - harmony) * 0.006) + (0.03 if substituted else 0.0)
+
+
+def _relay_mark(rdef: RelayDefinition, score: float) -> Tuple[float, str]:
+    norm = max(0.15, min(1.18, score / 100.0))
+    seconds = max(rdef.min_seconds, rdef.base_seconds - norm * rdef.span_seconds)
+    if seconds >= 60:
+        mins = int(seconds // 60)
+        return seconds, f"{mins}:{seconds % 60:05.2f}"
+    return seconds, f"{seconds:.2f}s"
+
+
+def _update_relay_harmony(state: GameState, raced: Set[str]) -> None:
+    """Relay teams gel by training together; incomplete or injured teams lose harmony."""
+    by_id = {a.id: a for a in state.athletes}
+
+    def fit(aid: Optional[int]) -> bool:
+        a = by_id.get(aid) if aid is not None else None
+        return a is not None and not a.is_injured and not a.in_youth_squad
+
+    for name, relay in state.relays.items():
+        missing = sum(1 for mid in relay.member_ids if not fit(mid))
+        if missing == 0:
+            relay.harmony += 4 + (6 if name in raced else 0)
+        elif missing == 1 and fit(relay.reserve_id):
+            relay.harmony += 2 + (6 if name in raced else 0)  # the reserve fills in at practice
+        else:
+            relay.harmony -= 2
+        relay.harmony = max(0, min(100, relay.harmony))
 
 
 def _recalculate_form(
@@ -110,9 +224,14 @@ def apply_weekly_training(
     leader_present: bool = False,
     rng: Optional[random.Random] = None,
     gym_level: int = 0,
+    coach: Optional[Coach] = None,
+    coach_load: int = 1,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
+
+    Skill gains depend on the assigned coach's skill in the trained attribute and on how
+    many athletes that coach is following; without a suitable coach growth is much slower.
 
     Returns:
         (stat_gains, injury_note, recovery_note, doping_scandal_note)
@@ -163,14 +282,12 @@ def apply_weekly_training(
     else:
         age_factor = 0.65
 
-    # Coach specialty bonus
-    coach_bonus = 1.0
-    if athlete.specialty == Specialty.SPRINTS and StaffRole.COACH_SPRINTS in roles:
-        coach_bonus = 1.25
-    elif athlete.specialty == Specialty.JUMPS and StaffRole.COACH_JUMPS in roles:
-        coach_bonus = 1.25
-    elif athlete.specialty == Specialty.MIDDLE_DISTANCE and StaffRole.COACH_DISTANCE in roles:
-        coach_bonus = 1.25
+    load_mult = coach_load_multiplier(coach_load)
+
+    def coach_bonus(stat_name: str) -> float:
+        if coach is None or not coach.can_train(athlete):
+            return COACH_NO_COACH_MULT
+        return (0.6 + coach.skill_for(stat_name) / 100.0 * 0.8) * load_mult
 
     personality_growth = 1.15 if athlete.personality == Personality.PERFEZIONISTA else 1.0
     facility_growth = 1.0 + gym_level * GYM_TRAINING_BONUS_PER_LEVEL
@@ -191,7 +308,7 @@ def apply_weekly_training(
         headroom = max(0.20, (cap - current) / 45.0)
         chance = min(
             0.95,
-            base_chance * age_factor * coach_bonus * personality_growth * period_growth * facility_growth * headroom
+            base_chance * age_factor * coach_bonus(stat_name) * personality_growth * period_growth * facility_growth * headroom
         )
         if r.random() < chance:
             delta = 2 if (max_gain >= 2 and r.random() < 0.25 and current < cap - 3) else 1
@@ -365,7 +482,9 @@ def _evaluate_objectives(state: GameState, summary: Optional[CompetitionSummary]
                 obj.completed = True
         elif obj.key == "historic_mark" and summary is not None:
             for er in summary.event_results:
-                ev = EVENTS[er.event_name]
+                ev = EVENTS.get(er.event_name)
+                if ev is None:  # relays have no historic benchmark
+                    continue
                 player_st = next((s for s in er.standings if s.is_player), None)
                 if player_st and not er.wind_illegal:
                     if (ev.lower_is_better and player_st.mark_value < ev.historic_mark) or (
@@ -604,6 +723,105 @@ def simulate_competition(
             )
         )
 
+    # ---- Relays: harmony, legs and baton changes; no effect on individual form or fans
+    opp_base = tier_cfg["opponent_skill"]
+    for relay_name in state.active_relays:
+        rdef = RELAYS[relay_name]
+        relay = state.relays.get(relay_name)
+        legs: List[Athlete] = []
+        substituted = False
+        if relay is not None:
+            reserve = athlete_by_id.get(relay.reserve_id) if relay.reserve_id is not None else None
+            for mid in relay.member_ids:
+                runner = athlete_by_id.get(mid) if mid is not None else None
+                if (runner is None or runner.is_injured) and reserve is not None and not reserve.is_injured:
+                    runner, reserve, substituted = reserve, None, True
+                if runner is not None and not runner.is_injured:
+                    legs.append(runner)
+        if relay is None or len(legs) < 4:
+            _rival_only_points(rivals, team_points, r)
+            continue
+
+        harmony = relay.harmony - (15 if substituted else 0)
+        disqualified = r.random() < _relay_dq_chance(harmony, substituted)
+        if disqualified:
+            p_val, p_disp = 9999.0, RELAY_DQ_MARK
+        else:
+            leg_scores = [relay_leg_score(a, rdef) for a in legs]
+            p_score = sum(sc * w for sc, w in zip(leg_scores, RELAY_LEG_WEIGHTS))
+            p_score += (harmony - 50) * 0.08 + r.gauss(0.0, 2.5)
+            if is_home:
+                p_score += 1.0
+            p_val, p_disp = _relay_mark(rdef, p_score)
+        team_label = " / ".join(f"{a.name[0]}. {a.name.split(' ', 1)[-1]}" for a in legs)
+        standings = [
+            EventStanding(
+                athlete_name=team_label,
+                team_name=state.team_name,
+                is_player=True,
+                mark_value=p_val,
+                mark_display=p_disp,
+            )
+        ]
+        for i in range(7):
+            o_val, o_disp = _relay_mark(rdef, r.gauss(opp_base, 5.0))
+            standings.append(
+                EventStanding(
+                    athlete_name=f"Staffetta {rivals[i % len(rivals)]}",
+                    team_name=rivals[i % len(rivals)],
+                    is_player=False,
+                    mark_value=o_val,
+                    mark_display=o_disp,
+                )
+            )
+        standings.sort(key=lambda st: st.mark_value)
+        if disqualified:
+            standings.sort(key=lambda st: st.is_player)
+        player_place = 1
+        for idx, st in enumerate(standings, start=1):
+            st.placement = idx
+            if st.is_player:
+                player_place = idx
+            if not (st.is_player and disqualified):
+                team_points[st.team_name] = team_points.get(st.team_name, 0) + TEAM_POINTS.get(idx, 0)
+
+        is_club_rec = False
+        if disqualified:
+            prize, prestige_gain = 0, 0
+            state.news_log.insert(
+                0,
+                f"Sett. {state.week}: Staffetta {relay_name} squalificata per cambio fuori zona "
+                f"(affiatamento {harmony_grade(max(0, harmony))}).",
+            )
+        else:
+            existing_rec = state.club_records.get(relay_name)
+            if existing_rec is None or p_val < existing_rec[0]:
+                state.club_records[relay_name] = (p_val, p_disp, team_label)
+                is_club_rec = True
+                state.milestones.insert(
+                    0, f"Sett. {state.week}: Nuovo Record Sociale nella {relay_name} ({team_label}): {p_disp}."
+                )
+            prize = int(tier_cfg["prize_base"] * {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}.get(player_place, 0.0))
+            prestige_gain = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}.get(player_place, 1) + (5 if is_club_rec else 0)
+        total_prize += prize
+        total_prestige += prestige_gain
+        event_results.append(
+            EventResult(
+                event_name=relay_name,
+                player_athlete_name=team_label,
+                placement=player_place,
+                total_competitors=len(standings),
+                player_mark=p_disp,
+                prize_money=prize,
+                prestige_gained=prestige_gain,
+                is_club_record=is_club_rec,
+                standings=standings,
+                attitude=f"Affiatamento {harmony_grade(max(0, harmony))}",
+                withdrew_injured=False,
+                disqualified=disqualified,
+            )
+        )
+
     team_standings = sorted(team_points.items(), key=lambda kv: kv[1], reverse=True)
     team_place = next(
         (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
@@ -703,6 +921,45 @@ def simulate_competition(
     return summary
 
 
+LEGACY_COACH_ROLES: Dict[StaffRole, Specialty] = {
+    StaffRole.COACH_SPRINTS: Specialty.SPRINTS,
+    StaffRole.COACH_JUMPS: Specialty.JUMPS,
+    StaffRole.COACH_DISTANCE: Specialty.MIDDLE_DISTANCE,
+}
+
+
+def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) -> None:
+    """Bring older saves up to date: coach 'roles' become real coaches, relays get composed."""
+    r = rng or random.Random()
+    legacy = [s for s in state.staff if s.role in LEGACY_COACH_ROLES]
+    if legacy and not state.coaches:
+        for member in legacy:
+            if not member.hired:
+                continue
+            spec = LEGACY_COACH_ROLES[member.role]
+            primary, secondary = SPECIALTY_COACH_FOCUS[spec]
+            coach = generate_coach(spec, primary, secondary, tier=member.skill, rng=r)
+            coach.name = member.name.replace("Coach ", "")
+            coach.id = len(state.coaches) + 1
+            state.coaches.append(coach)
+    if legacy:
+        state.staff = [s for s in state.staff if s.role not in LEGACY_COACH_ROLES]
+        for athlete in state.athletes:
+            auto_assign_coach(state, athlete)
+    if any(name not in state.relays for name in state.active_relays):
+        auto_build_all_relays(state)
+
+
+def comp_summary_relays(summary: Optional[CompetitionSummary]) -> List[str]:
+    """Relays that finished (not disqualified) in a meet."""
+    if summary is None:
+        return []
+    return [
+        er.event_name for er in summary.event_results
+        if er.event_name in RELAYS and not er.disqualified
+    ]
+
+
 def weekly_finances(state: GameState) -> Dict[str, int]:
     """Projected recurring weekly income & expenses (excluding meets and one-off costs)."""
     tier_cfg = TIER_CONFIG[state.tier]
@@ -712,9 +969,10 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     individual = sum(a.fans // 4 for a in state.main_squad if a.age >= 18)
     athlete_wages = sum(a.weekly_wage for a in state.main_squad)
     staff_cost = sum(s.weekly_cost for s in state.staff if s.hired)
+    coach_cost = sum(c.weekly_wage for c in state.coaches)
     gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
     income = sponsor + individual + state.member_fees_weekly
-    expenses = athlete_wages + staff_cost + gym_upkeep
+    expenses = athlete_wages + staff_cost + coach_cost + gym_upkeep
     return {
         "sponsor": sponsor,
         "individual_sponsors": individual,
@@ -722,6 +980,7 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
         "income": income,
         "athlete_wages": athlete_wages,
         "staff_cost": staff_cost,
+        "coach_cost": coach_cost,
         "gym_upkeep": gym_upkeep,
         "expenses": expenses,
         "net": income - expenses,
@@ -733,6 +992,7 @@ def promote_youth_athlete(state: GameState, athlete: Athlete) -> None:
     athlete.in_youth_squad = False
     athlete.weekly_wage = senior_wage(athlete)
     athlete.form = min(athlete.form, 75)
+    auto_assign_coach(state, athlete)  # youth coaches can't follow main-squad athletes
 
 
 def advance_week(
@@ -759,13 +1019,17 @@ def advance_week(
     stat_gains: List[str] = []
     doping_scandals: List[str] = []
 
+    loads = {c.id: state.coach_load(c) for c in state.coaches}
     for athlete in state.athletes:
+        coach = state.coach_of(athlete)
         gains, injury_note, recovery_note, scandal_note = apply_weekly_training(
             athlete,
             hired_roles=roles,
             leader_present=leader_present,
             rng=r,
             gym_level=state.gym_level,
+            coach=coach,
+            coach_load=loads.get(coach.id, 1) if coach is not None else 1,
         )
         stat_gains.extend(gains)
         if injury_note:
@@ -803,6 +1067,8 @@ def advance_week(
     if fin["staff_cost"] > 0:
         hired_count = sum(1 for s in state.staff if s.hired)
         ledger(f"Compensi Staff ({hired_count} specialisti)", "Staff", -fin["staff_cost"])
+    if fin["coach_cost"] > 0:
+        ledger(f"Stipendi Allenatori ({len(state.coaches)})", "Allenatori", -fin["coach_cost"])
     if fin["gym_upkeep"] > 0:
         ledger(f"Gestione Palestra (livello {state.gym_level})", "Impianto", -fin["gym_upkeep"])
 
@@ -822,6 +1088,16 @@ def advance_week(
             )
             state.news_log.insert(0, msg)
             state.milestones.insert(0, msg)
+
+    # Coaches' skills slowly fade: sooner or later they need replacing
+    for coach in state.coaches:
+        if r.random() < 0.10:
+            decayable = [k for k, v in coach.skills.items() if v > COACH_BASE_SKILL]
+            if decayable:
+                stat = r.choice(decayable)
+                coach.skills[stat] -= 1
+
+    _update_relay_harmony(state, set(comp_summary_relays(comp_summary)))
 
     # Gradual tartan track wear
     state.track_condition = clamp_stat(state.track_condition - r.randint(1, 3), 25, 100)

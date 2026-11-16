@@ -39,7 +39,8 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
             self.assertEqual(ctrl.state.season_phase, SeasonPhase.OUTDOOR)
             self.assertEqual(len(ctrl.state.athletes), 10)
             self.assertEqual(ctrl.state.active_events, ["100m", "Salto in Lungo", "1500m"])
-            self.assertEqual(len(ctrl.state.staff), 6)
+            self.assertEqual(len(ctrl.state.staff), 3)  # physio, doctor, mental coach
+            self.assertEqual(len(ctrl.state.coaches), 3)  # one per specialty in the roster
             self.assertEqual(len(ctrl.state.objectives), 3)
 
     def test_periodization_tapering_and_recovery(self) -> None:
@@ -268,8 +269,9 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.event_lineup["1500m"] = None  # empty slot: rivals still score
             summary = sim.simulate_competition(ctrl.state, rng=random.Random(2))
             self.assertEqual(len(summary.team_standings), 8)
-            # 3 events x (8+7+...+1 = 36) points, minus the empty slot's 8th place point
-            self.assertEqual(sum(p for _t, p in summary.team_standings), 3 * 36 - 1)
+            # 3 events + 4x100m relay, each worth 8+7+...+1 = 36 points,
+            # minus the 8th-place point nobody takes in the empty 1500m slot
+            self.assertEqual(sum(p for _t, p in summary.team_standings), 4 * 36 - 1)
             self.assertEqual(dict(summary.team_standings), ctrl.state.league_table)
             self.assertGreater(summary.team_placement, 0)
 
@@ -360,13 +362,20 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.team_name = "Vecchio Salvataggio"
             ctrl.db.save_game(ctrl.state)
             # Downgrade the file to the v2 layout (drop v3 columns, reset version)
-            from models.database import V3_COLUMNS
+            from models.database import V3_COLUMNS, V4_COLUMNS
 
             conn = sqlite3.connect(path)
             try:
-                for table, cols in V3_COLUMNS.items():
-                    for col, _def in cols:
-                        conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+                for columns in (V3_COLUMNS, V4_COLUMNS):
+                    for table, cols in columns.items():
+                        for col, _def in cols:
+                            conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+                conn.execute("DROP TABLE coaches")
+                # v2 saves had coaches as staff "roles"
+                conn.execute(
+                    "INSERT INTO staff (id, name, role, skill, weekly_cost, hired, description) "
+                    "VALUES (1, 'Coach Andrea Valeri', 'Coach Velocità', 3, 260, 1, '')"
+                )
                 conn.execute("PRAGMA user_version = 2")
                 conn.commit()
             finally:
@@ -377,6 +386,198 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             self.assertEqual(len(loaded.athletes), 10)
             self.assertEqual(loaded.stand_seats, 500)
             self.assertEqual(loaded.youth_squad, [])
+            # Opening it through the controller turns the old coach role into a real coach
+            ctrl2 = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(1))
+            self.assertEqual([c.name for c in ctrl2.state.coaches], ["Andrea Valeri"])
+            self.assertEqual(ctrl2.state.coaches[0].skills["speed"], 81)  # 3-star -> level 3
+            self.assertFalse(any(st.role.value.startswith("Coach") for st in ctrl2.state.staff))
+            sprinters = [a for a in ctrl2.state.athletes if a.specialty == Specialty.SPRINTS]
+            self.assertTrue(all(ctrl2.state.coach_of(a) is not None for a in sprinters))
+            self.assertIn("4x100m", ctrl2.state.relays)
+
+
+class TestCoachesAndRelays(unittest.TestCase):
+    """Coaches with their own skills & workload; 4x100m / 4x400m relays with harmony."""
+
+    def _ctrl(self, tmpdir: str, seed: int = 1, mode: str = "vertical_slice") -> GameController:
+        db = DatabaseManager(db_path=Path(tmpdir) / f"c{seed}.db")
+        ctrl = GameController(db_manager=db, rng=random.Random(seed))
+        if mode != "vertical_slice":
+            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+        return ctrl
+
+    @staticmethod
+    def _technique_after(coach, load: int = 1, weeks: int = 40) -> int:
+        a = generate_vertical_slice_roster(rng=random.Random(3))[0]
+        a.potential, a.technique, a.age = 98, 40, 22
+        a.training_focus = TrainingFocus.TECHNIQUE
+        for seed in range(weeks):
+            a.fatigue = 0
+            apply_weekly_training(a, rng=random.Random(seed), coach=coach, coach_load=load)
+        return a.technique
+
+    def test_coach_skill_and_workload_drive_growth(self) -> None:
+        from models.generator import generate_coach
+
+        great = generate_coach(Specialty.SPRINTS, "technique", None, tier=5, rng=random.Random(1))
+        weak = generate_coach(Specialty.SPRINTS, "speed", None, tier=5, rng=random.Random(1))
+        wrong = generate_coach(Specialty.THROWS, "technique", None, tier=5, rng=random.Random(1))
+        with_great = self._technique_after(great)
+        self.assertGreater(with_great, self._technique_after(weak))  # skill in the trained quality
+        self.assertGreater(self._technique_after(weak), self._technique_after(None))
+        self.assertEqual(self._technique_after(wrong), self._technique_after(None))  # other specialty
+        self.assertGreater(with_great, self._technique_after(great, load=12))  # overloaded coach
+
+    def test_hire_rules_and_auto_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=2)
+            s = ctrl.state
+            sprinter = next(a for a in s.athletes if a.specialty == Specialty.SPRINTS)
+            ctrl.fire_coach(s.coach_of(sprinter).id)
+            self.assertIsNone(s.coach_of(sprinter))
+            budget = s.budget
+            self.assertTrue(ctrl.hire_coach(Specialty.SPRINTS, "speed", "technique", tier=2))
+            self.assertEqual(s.budget, budget - 3000)
+            new = s.coaches[-1]
+            self.assertEqual((new.skills["speed"], new.skills["technique"], new.skills["stamina"]), (74, 64, 25))
+            self.assertEqual(s.coach_of(sprinter), new)  # uncoached sprinters picked up
+            # one hire per week
+            self.assertFalse(ctrl.hire_coach(Specialty.JUMPS, "technique", None, tier=1))
+            # youth coaches can't follow main-squad athletes; specialists only their discipline
+            jumper = next(a for a in s.athletes if a.specialty == Specialty.JUMPS)
+            self.assertFalse(ctrl.assign_coach(jumper.id, new.id))
+            ctrl.advance_week()
+            self.assertTrue(ctrl.hire_coach(None, "speed", "stamina", tier=1))
+            self.assertFalse(ctrl.assign_coach(jumper.id, s.coaches[-1].id))
+            self.assertIn("Allenatori", {t.category for t in s.transactions})
+
+    def test_promoted_youth_changes_coach(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=3)
+            ctrl.hire_coach(None, "speed", "technique", tier=1)
+            youth_coach = ctrl.state.coaches[-1]
+            kids = []
+            while not kids:
+                kids = ctrl.run_youth_scouting(specialty=Specialty.SPRINTS)
+            kid = kids[0]
+            ctrl.sign_youth(kid)
+            self.assertEqual(ctrl.state.coach_of(kid), youth_coach)
+            ctrl.promote_youth(kid.id)
+            coach = ctrl.state.coach_of(kid)
+            self.assertIsNotNone(coach)
+            self.assertEqual(coach.specialty, Specialty.SPRINTS)
+
+    def test_coach_skills_fade(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=4)
+            before = sum(sum(c.skills.values()) for c in ctrl.state.coaches)
+            for _ in range(30):
+                advance_week(ctrl.state, rng=random.Random(_))
+            self.assertLess(sum(sum(c.skills.values()) for c in ctrl.state.coaches), before)
+
+    def test_active_relays_by_mode_and_season(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=5)
+            self.assertEqual(ctrl.state.active_relays, ["4x100m"])
+            self.assertTrue(ctrl.state.relays["4x100m"].is_complete)
+            ctrl.start_new_game("X", "career")
+            s = ctrl.state
+            self.assertEqual(s.active_relays, ["4x100m", "4x400m"])
+            # 8 athletes: both relays get 4 legs, nobody runs twice
+            self.assertTrue(all(r.is_complete for r in s.relays.values()))
+            ids = [aid for r in s.relays.values() for aid in r.all_ids()]
+            self.assertEqual(len(ids), len(set(ids)))
+            s.season_phase = SeasonPhase.CROSS
+            self.assertEqual(s.active_relays, [])
+            s.season_phase = SeasonPhase.INDOOR
+            self.assertEqual(s.active_relays, ["4x400m"])
+
+    def test_relay_changes_order_cooldown_and_exclusivity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=6, mode="career")
+            s = ctrl.state
+            relay = s.relays["4x100m"]
+            relay.harmony = 80
+            legs = list(relay.member_ids)
+            # swapping order is free
+            self.assertTrue(ctrl.set_relay_slot("4x100m", 0, legs[3]))
+            self.assertEqual(relay.member_ids[0], legs[3])
+            self.assertEqual(relay.member_ids[3], legs[0])
+            self.assertEqual(relay.harmony, 80)
+            # an athlete can't run two relays
+            other_leg = s.relays["4x400m"].member_ids[0]
+            self.assertFalse(ctrl.set_relay_slot("4x100m", 1, other_leg))
+            # replacing a healthy runner: -25% harmony, then a 4-week wait
+            from models.generator import generate_athlete
+
+            outsider = generate_athlete(specialty=Specialty.SPRINTS, rng=random.Random(1))
+            outsider.id = 99
+            s.athletes.append(outsider)  # all 8 career athletes are already in a relay
+            self.assertTrue(ctrl.set_relay_slot("4x100m", 4, outsider.id))  # empty reserve slot: free
+            self.assertEqual(relay.harmony, 80)
+            self.assertTrue(ctrl.set_relay_slot("4x400m", 0, None))  # frees a 4x400m runner
+            self.assertTrue(ctrl.set_relay_slot("4x100m", 1, other_leg))
+            self.assertEqual(relay.harmony, 60)
+            self.assertFalse(ctrl.set_relay_slot("4x100m", 2, None))  # cooldown
+            self.assertFalse(ctrl.auto_build_relay("4x100m"))
+
+    def test_relay_harmony_grows_and_low_harmony_risks_dq(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=7)
+            s = ctrl.state
+            for a in s.athletes:
+                a.injured_weeks = 0
+            relay = s.relays["4x100m"]
+            start = relay.harmony
+            sim._update_relay_harmony(s, raced=set())
+            self.assertEqual(relay.harmony, start + 4)
+            sim._update_relay_harmony(s, raced={"4x100m"})
+            self.assertEqual(relay.harmony, start + 14)
+        self.assertGreater(sim._relay_dq_chance(0, False), 0.3)
+        self.assertEqual(sim._relay_dq_chance(80, False), 0.0)
+
+    def test_relay_race_uses_reserve_and_spares_individual_form(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=8)
+            s = ctrl.state
+            s.week = 4
+            s.prestige = -1000
+            for ev in s.active_events:
+                s.event_lineup[ev] = None  # only the relay runs
+            relay = s.relays["4x100m"]
+            relay.harmony = 100
+            by_id = {a.id: a for a in s.athletes}
+            injured = by_id[relay.member_ids[1]]
+            injured.injured_weeks = 2
+            reserve = by_id[relay.reserve_id]
+            fatigue = {a.id: a.fatigue for a in s.athletes}
+            summary = sim.simulate_competition(s, rng=random.Random(3))
+            res = next(er for er in summary.event_results if er.event_name == "4x100m")
+            self.assertIn(reserve.name.split(" ", 1)[1], res.player_athlete_name)
+            self.assertNotIn(injured.name.split(" ", 1)[1], res.player_athlete_name)
+            self.assertEqual({a.id: a.fatigue for a in s.athletes}, fatigue)
+            self.assertIn("4x100m", s.club_records)
+
+    def test_sqlite_v4_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=9, mode="career")
+            ctrl.hire_coach(None, "speed", "technique", tier=3)
+            ctrl.state.relays["4x400m"].harmony = 77
+            ctrl.db.save_game(ctrl.state)
+            loaded = ctrl.db.load_game()
+            assert loaded is not None
+            self.assertEqual(
+                [(c.name, c.specialty, c.skills) for c in loaded.coaches],
+                [(c.name, c.specialty, c.skills) for c in ctrl.state.coaches],
+            )
+            self.assertEqual([a.coach_id for a in loaded.athletes], [a.coach_id for a in ctrl.state.athletes])
+            self.assertEqual(loaded.relays["4x400m"].harmony, 77)
+            self.assertEqual(loaded.relays["4x100m"].member_ids, ctrl.state.relays["4x100m"].member_ids)
+            self.assertEqual(loaded.coach_hired_week, ctrl.state.week)
 
 
 class TestPyQtViewsV2(unittest.TestCase):
@@ -401,10 +602,14 @@ class TestPyQtViewsV2(unittest.TestCase):
             win = MainWindow(controller=ctrl)
 
             self.assertEqual(win.windowTitle(), "Track & Field Manager")
-            self.assertEqual(win.tabs.count(), 6)
+            self.assertEqual(win.tabs.count(), 7)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)
             self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 3)
-            self.assertEqual(win.staff_tab.table.rowCount(), 6)
+            self.assertEqual(win.staff_tab.table.rowCount(), 3)
+            self.assertEqual(win.staff_tab.coach_table.rowCount(), 3)
+            self.assertEqual(len(win.relay_tab._slot_combos["4x100m"]), 5)
+            self.assertTrue(win.relay_tab._slot_combos["4x100m"][0].isEnabled())
+            self.assertFalse(win.relay_tab._slot_combos["4x400m"][0].isEnabled())  # no 400m in prototype
 
             new_dlg = NewGameDialog()
             self.assertEqual(new_dlg.game_mode, "vertical_slice")
@@ -419,7 +624,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             rep = advance_week(ctrl.state, rng=random.Random(15))
             assert rep.competition_summary is not None
             comp_dlg = CompetitionResultsDialog(rep.competition_summary)
-            self.assertEqual(comp_dlg.events_table.rowCount(), 3)
+            self.assertEqual(comp_dlg.events_table.rowCount(), 4)  # 3 events + 4x100m relay
             self.assertEqual(comp_dlg.team_table.rowCount(), 8)
             comp_dlg.close()
 

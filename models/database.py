@@ -11,6 +11,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 from models.entities import (
     Athlete,
+    Coach,
     CompetitionSummary,
     CompetitionTier,
     EthicalDilemma,
@@ -19,6 +20,7 @@ from models.entities import (
     GameState,
     PeriodizationPhase,
     Personality,
+    Relay,
     SeasonObjective,
     SeasonPhase,
     Specialty,
@@ -29,7 +31,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -55,6 +57,18 @@ V3_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("player_team", "TEXT NOT NULL DEFAULT ''"),
     ],
 }
+
+# Columns added in v4 (coaches with their own skills, relays).
+V4_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [
+        ("relays_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("coach_hired_week", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "athletes": [
+        ("coach_id", "INTEGER"),
+    ],
+}
+MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {2: V3_COLUMNS, 3: V4_COLUMNS}
 
 
 def get_default_save_path() -> Path:
@@ -82,11 +96,13 @@ class DatabaseManager:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             current_ver = conn.execute("PRAGMA user_version").fetchone()[0]
-            if current_ver == 2:
-                # Upgrade path: keep the save, just add the new v3 columns
-                for table, columns in V3_COLUMNS.items():
-                    for col_name, col_def in columns:
-                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+            if current_ver in MIGRATIONS:
+                # Upgrade path: keep the save, add the newer columns step by step
+                while current_ver in MIGRATIONS:
+                    for table, columns in MIGRATIONS[current_ver].items():
+                        for col_name, col_def in columns:
+                            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                    current_ver += 1
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             elif current_ver != SCHEMA_VERSION:
                 conn.executescript(
@@ -96,6 +112,7 @@ class DatabaseManager:
                     DROP TABLE IF EXISTS staff;
                     DROP TABLE IF EXISTS transactions;
                     DROP TABLE IF EXISTS competition_history;
+                    DROP TABLE IF EXISTS coaches;
                     """
                 )
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -128,7 +145,9 @@ class DatabaseManager:
                     fidelity INTEGER NOT NULL DEFAULT 100,
                     scouting_points_used INTEGER NOT NULL DEFAULT 0,
                     bankrupt INTEGER NOT NULL DEFAULT 0,
-                    league_table_json TEXT NOT NULL DEFAULT '{}'
+                    league_table_json TEXT NOT NULL DEFAULT '{}',
+                    relays_json TEXT NOT NULL DEFAULT '{}',
+                    coach_hired_week INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -156,7 +175,15 @@ class DatabaseManager:
                     personal_best_display TEXT,
                     doping_boost_weeks INTEGER NOT NULL DEFAULT 0,
                     in_youth_squad INTEGER NOT NULL DEFAULT 0,
-                    fans INTEGER NOT NULL DEFAULT 0
+                    fans INTEGER NOT NULL DEFAULT 0,
+                    coach_id INTEGER
+                );
+
+                CREATE TABLE IF NOT EXISTS coaches (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    specialty TEXT,
+                    skills_json TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS staff (
@@ -242,6 +269,7 @@ class DatabaseManager:
             conn.execute("DELETE FROM staff")
             conn.execute("DELETE FROM transactions")
             conn.execute("DELETE FROM competition_history")
+            conn.execute("DELETE FROM coaches")
 
             conn.execute(
                 """
@@ -250,8 +278,9 @@ class DatabaseManager:
                     start_date, prestige, reputation, tier, track_condition, member_fees_weekly,
                     event_lineup_json, club_records_json, objectives_json, milestones_json,
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
-                    stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
+                    relays_json, coach_hired_week
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -280,6 +309,18 @@ class DatabaseManager:
                     state.scouting_points_used,
                     1 if state.bankrupt else 0,
                     json.dumps(state.league_table),
+                    json.dumps(
+                        {
+                            name: {
+                                "member_ids": r.member_ids,
+                                "reserve_id": r.reserve_id,
+                                "harmony": r.harmony,
+                                "last_change_week": r.last_change_week,
+                            }
+                            for name, r in state.relays.items()
+                        }
+                    ),
+                    state.coach_hired_week,
                 ),
             )
 
@@ -290,8 +331,8 @@ class DatabaseManager:
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
-                    in_youth_squad, fans
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    in_youth_squad, fans, coach_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -320,6 +361,7 @@ class DatabaseManager:
                         a.doping_boost_weeks,
                         1 if a.in_youth_squad else 0,
                         a.fans,
+                        a.coach_id,
                     )
                     for a in state.athletes
                 ],
@@ -341,6 +383,19 @@ class DatabaseManager:
                         s.description,
                     )
                     for s in state.staff
+                ],
+            )
+
+            conn.executemany(
+                "INSERT INTO coaches (id, name, specialty, skills_json) VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        c.id,
+                        c.name,
+                        c.specialty.value if c.specialty is not None else None,
+                        json.dumps(c.skills),
+                    )
+                    for c in state.coaches
                 ],
             )
 
@@ -391,6 +446,7 @@ class DatabaseManager:
                                     "is_club_record": er.is_club_record,
                                     "attitude": er.attitude,
                                     "withdrew_injured": er.withdrew_injured,
+                                    "disqualified": er.disqualified,
                                     "standings": [
                                         {
                                             "athlete_name": s.athlete_name,
@@ -452,6 +508,7 @@ class DatabaseManager:
                     doping_boost_weeks=r["doping_boost_weeks"],
                     in_youth_squad=bool(r["in_youth_squad"]),
                     fans=r["fans"],
+                    coach_id=r["coach_id"],
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
@@ -468,6 +525,26 @@ class DatabaseManager:
                 )
                 for r in conn.execute("SELECT * FROM staff ORDER BY id ASC").fetchall()
             ]
+
+            coaches: List[Coach] = [
+                Coach(
+                    id=r["id"],
+                    name=r["name"],
+                    specialty=Specialty(r["specialty"]) if r["specialty"] else None,
+                    skills={str(k): int(v) for k, v in json.loads(r["skills_json"]).items()},
+                )
+                for r in conn.execute("SELECT * FROM coaches ORDER BY id ASC").fetchall()
+            ]
+            relays: Dict[str, Relay] = {
+                name: Relay(
+                    event=name,
+                    member_ids=list(rj["member_ids"]),
+                    reserve_id=rj.get("reserve_id"),
+                    harmony=int(rj.get("harmony", 30)),
+                    last_change_week=int(rj.get("last_change_week", -100)),
+                )
+                for name, rj in json.loads(row["relays_json"]).items()
+            }
 
             transactions: List[Transaction] = [
                 Transaction(
@@ -514,6 +591,7 @@ class DatabaseManager:
                             standings=standings,
                             attitude=er.get("attitude", "Normale"),
                             withdrew_injured=er.get("withdrew_injured", False),
+                            disqualified=er.get("disqualified", False),
                         )
                     )
                 history.append(
@@ -598,4 +676,7 @@ class DatabaseManager:
                 league_table={
                     str(k): int(v) for k, v in json.loads(row["league_table_json"]).items()
                 },
+                coaches=coaches,
+                relays=relays,
+                coach_hired_week=row["coach_hired_week"],
             )

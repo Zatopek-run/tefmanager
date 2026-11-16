@@ -6,9 +6,12 @@ import random
 from typing import Dict, List, Optional
 
 from models.entities import (
+    COACH_BASE_SKILL,
+    COACH_STATS,
     EVENTS,
     VERTICAL_SLICE_EVENTS,
     Athlete,
+    Coach,
     CompetitionTier,
     EthicalDilemma,
     GameState,
@@ -19,6 +22,7 @@ from models.entities import (
     StaffMember,
     StaffRole,
     TrainingFocus,
+    coach_hire_skills,
 )
 
 FIRST_NAMES: List[str] = [
@@ -286,36 +290,63 @@ def senior_wage(athlete: Athlete) -> int:
     return clamp_stat(wage_base + athlete.overall * 4.2, 95, 950)
 
 
+# Main and secondary skill a coach of each specialty is usually hired for
+SPECIALTY_COACH_FOCUS: Dict[Specialty, tuple[str, str]] = {
+    Specialty.SPRINTS: ("speed", "technique"),
+    Specialty.MIDDLE_DISTANCE: ("stamina", "speed"),
+    Specialty.JUMPS: ("technique", "speed"),
+    Specialty.THROWS: ("strength", "technique"),
+}
+
+
+def generate_coach(
+    specialty: Optional[Specialty],
+    primary: str,
+    secondary: Optional[str],
+    tier: int,
+    rng: Optional[random.Random] = None,
+    existing_names: Optional[set[str]] = None,
+) -> Coach:
+    """Create a coach: the chosen skills depend on the recruitment tier, the rest stay low."""
+    r = rng or random.Random()
+    used = existing_names or set()
+    name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
+    for _ in range(15):
+        if name not in used:
+            break
+        name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
+    prim_val, sec_val = coach_hire_skills(tier)
+    skills = {stat: COACH_BASE_SKILL for stat in COACH_STATS}
+    skills[primary] = prim_val
+    if secondary is not None and secondary != primary:
+        skills[secondary] = sec_val
+    return Coach(id=None, name=name, specialty=specialty, skills=skills)
+
+
+def create_initial_coaches(
+    roster: List[Athlete], rng: Optional[random.Random] = None
+) -> List[Coach]:
+    """One entry-level coach for each specialty in the starting roster, athletes pre-assigned."""
+    r = rng or random.Random()
+    coaches: List[Coach] = []
+    used: set[str] = set()
+    for spec in Specialty:
+        if not any(a.specialty == spec for a in roster):
+            continue
+        primary, secondary = SPECIALTY_COACH_FOCUS[spec]
+        coach = generate_coach(spec, primary, secondary, tier=1, rng=r, existing_names=used)
+        coach.id = len(coaches) + 1
+        used.add(coach.name)
+        coaches.append(coach)
+        for a in roster:
+            if a.specialty == spec:
+                a.coach_id = coach.id
+    return coaches
+
+
 def create_initial_staff() -> List[StaffMember]:
-    """Create the 6 specialized club staff candidates."""
+    """Create the 3 medical & mental support staff candidates (coaches are separate)."""
     return [
-        StaffMember(
-            id=1,
-            name="Coach Andrea Valeri",
-            role=StaffRole.COACH_SPRINTS,
-            skill=3,
-            weekly_cost=260,
-            hired=True,
-            description="+25% crescita Velocità e tecnica di partenza.",
-        ),
-        StaffMember(
-            id=2,
-            name="Coach Elena Bruni",
-            role=StaffRole.COACH_JUMPS,
-            skill=3,
-            weekly_cost=240,
-            hired=False,
-            description="+25% crescita Salti e precisione rincorsa.",
-        ),
-        StaffMember(
-            id=3,
-            name="Coach Stefano Riva",
-            role=StaffRole.COACH_DISTANCE,
-            skill=3,
-            weekly_cost=240,
-            hired=False,
-            description="+25% crescita Mezzofondo e resistenza aerobica.",
-        ),
         StaffMember(
             id=4,
             name="Dott.ssa Chiara Neri",

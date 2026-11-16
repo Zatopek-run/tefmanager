@@ -1,4 +1,4 @@
-"""Tab views for Dashboard, Roster, Youth Academy, Calendar & Meets, Staff & Facilities, and Finances."""
+"""Tab views for Dashboard, Roster, Youth Academy, Calendar & Meets, Relays, Staff & Facilities, Finances."""
 
 from __future__ import annotations
 
@@ -26,6 +26,15 @@ from PyQt6.QtWidgets import (
 from controllers.game_controller import GameController
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
+    COACH_COMFORT_LOAD,
+    COACH_STAT_LABELS,
+    COACH_STATS,
+    MAX_SPECIALIZED_COACHES,
+    MAX_YOUTH_COACHES,
+    RELAY_CHANGE_COOLDOWN_WEEKS,
+    RELAYS,
+    Athlete,
+    harmony_grade,
     EVENTS,
     GYM_MAX_LEVEL,
     GYM_TRAINING_BONUS_PER_LEVEL,
@@ -47,8 +56,28 @@ from models.entities import (
 )
 from controllers.game_controller import scouting_search_cost
 from models.generator import get_rival_teams
-from models.simulation import weekly_finances
-from views.dialogs import CompetitionResultsDialog, RecruitAthleteDialog
+from models.simulation import relay_leg_score, weekly_finances
+from views.dialogs import CompetitionResultsDialog, HireCoachDialog, RecruitAthleteDialog
+
+
+def _coach_combo(controller: GameController, state: GameState, athlete: Athlete) -> QComboBox:
+    """Dropdown with the coaches allowed to train this athlete (and their current load)."""
+    combo = QComboBox()
+    combo.addItem("— Nessuno —", None)
+    for coach in state.coaches:
+        if coach.can_train(athlete):
+            combo.addItem(f"{coach.name} ({state.coach_load(coach)} atl.)", coach.id)
+    current = state.coach_of(athlete)
+    idx = combo.findData(current.id if current is not None else None)
+    combo.setCurrentIndex(max(0, idx))
+    athlete_id = athlete.id
+
+    def on_change(_index: int) -> None:
+        if athlete_id is not None:
+            controller.assign_coach(athlete_id, combo.currentData())
+
+    combo.currentIndexChanged.connect(on_change)
+    return combo
 
 
 def _make_stat_card(title: str, value: str = "-") -> tuple[QFrame, QLabel, QLabel]:
@@ -315,7 +344,7 @@ class RosterTab(QWidget):
         hint.setObjectName("SubTitle")
         root.addWidget(hint)
 
-        self.table = QTableWidget(0, 16)
+        self.table = QTableWidget(0, 17)
         self.table.setHorizontalHeaderLabels(
             [
                 "Nome",
@@ -334,6 +363,7 @@ class RosterTab(QWidget):
                 "Fan",
                 "Allenamento",
                 "Periodizzazione",
+                "Allenatore",
             ]
         )
         self.table.setAlternatingRowColors(True)
@@ -348,6 +378,7 @@ class RosterTab(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(14, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(15, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(16, QHeaderView.ResizeMode.ResizeToContents)
 
         root.addWidget(self.table, stretch=1)
 
@@ -417,6 +448,7 @@ class RosterTab(QWidget):
                 lambda _i, c=period_combo, aid=a.id: self._on_period_changed(aid, c)
             )
             self.table.setCellWidget(row, 15, period_combo)
+            self.table.setCellWidget(row, 16, _coach_combo(self.controller, state, a))
 
     def _on_focus_changed(self, athlete_id: Optional[int], combo: QComboBox) -> None:
         if athlete_id is not None and isinstance(combo.currentData(), TrainingFocus):
@@ -746,12 +778,48 @@ class StaffTab(QWidget):
 
         root.addLayout(facilities_row)
 
+        coach_panel = QFrame()
+        coach_panel.setObjectName("SectionPanel")
+        coach_layout = QVBoxLayout(coach_panel)
+        coach_layout.setContentsMargins(14, 12, 14, 12)
+        coach_head = QHBoxLayout()
+        self.coach_title = QLabel("Allenatori")
+        self.coach_title.setObjectName("SectionHeader")
+        coach_head.addWidget(self.coach_title)
+        coach_head.addStretch()
+        self.hire_coach_btn = QPushButton("Assumi Allenatore")
+        self.hire_coach_btn.setObjectName("PrimaryButton")
+        self.hire_coach_btn.clicked.connect(self._open_hire_coach)
+        coach_head.addWidget(self.hire_coach_btn)
+        coach_layout.addLayout(coach_head)
+        coach_hint = QLabel(
+            "Più alta è l'abilità dell'allenatore in una qualità, più crescono gli atleti che la "
+            f"allenano. Oltre {COACH_COMFORT_LOAD} atleti a testa l'effetto cala. Le abilità calano "
+            "lentamente col tempo: prima o poi va sostituito. Un'assunzione a settimana."
+        )
+        coach_hint.setObjectName("SubTitle")
+        coach_hint.setWordWrap(True)
+        coach_layout.addWidget(coach_hint)
+        self.coach_table = QTableWidget(0, 9)
+        self.coach_table.setHorizontalHeaderLabels(
+            ["Nome", "Tipo", *[COACH_STAT_LABELS[s] for s in COACH_STATS], "Atleti", "Stipendio", "Azione"]
+        )
+        self.coach_table.setAlternatingRowColors(True)
+        self.coach_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.coach_table.verticalHeader().setVisible(False)
+        self.coach_table.verticalHeader().setDefaultSectionSize(38)
+        ch = self.coach_table.horizontalHeader()
+        ch.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        ch.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        coach_layout.addWidget(self.coach_table)
+        root.addWidget(coach_panel, stretch=3)
+
         panel = QFrame()
         panel.setObjectName("SectionPanel")
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(14, 12, 14, 12)
 
-        title = QLabel("Staff Tecnico, Medico e Preparazione Mentale")
+        title = QLabel("Staff Medico e Preparazione Mentale")
         title.setObjectName("SectionHeader")
         panel_layout.addWidget(title)
 
@@ -803,6 +871,40 @@ class StaffTab(QWidget):
                 f"+{STAND_EXPANSION_SEATS} posti (${stand_expansion_cost(state.stand_seats):,})"
             )
             self.stand_btn.setEnabled(True)
+        n_spec = sum(1 for c in state.coaches if not c.is_youth_coach)
+        n_youth = len(state.coaches) - n_spec
+        self.coach_title.setText(
+            f"Allenatori — specializzati {n_spec}/{MAX_SPECIALIZED_COACHES}, "
+            f"vivaio {n_youth}/{MAX_YOUTH_COACHES}"
+        )
+        hired_this_week = state.coach_hired_week == state.week
+        self.hire_coach_btn.setEnabled(not hired_this_week)
+        self.hire_coach_btn.setText(
+            "Già assunto questa settimana" if hired_this_week else "Assumi Allenatore"
+        )
+        self.coach_table.setRowCount(len(state.coaches))
+        for row, coach in enumerate(state.coaches):
+            load = state.coach_load(coach)
+            vals = [
+                coach.name,
+                coach.kind_label,
+                *[str(coach.skills.get(stat, 0)) for stat in COACH_STATS],
+                f"{load}/{COACH_COMFORT_LOAD}",
+                f"${coach.weekly_wage}",
+            ]
+            for col, text in enumerate(vals):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if 2 <= col <= 5 and int(text) >= 80:
+                    item.setForeground(QColor("#34d399"))
+                if col == 6 and load > COACH_COMFORT_LOAD:
+                    item.setForeground(QColor("#fbbf24"))
+                self.coach_table.setItem(row, col, item)
+            fire_btn = QPushButton("Licenzia")
+            fire_btn.setObjectName("DangerButton")
+            fire_btn.clicked.connect(lambda _c=False, cid=coach.id: self._fire_coach(cid))
+            self.coach_table.setCellWidget(row, 8, fire_btn)
+
         self.table.setRowCount(len(state.staff))
         for row, s in enumerate(state.staff):
             vals = [
@@ -827,6 +929,28 @@ class StaffTab(QWidget):
             btn.setObjectName("DangerButton" if s.hired else "PrimaryButton")
             btn.clicked.connect(lambda _c=False, sid=s.id: self.controller.toggle_staff(sid))
             self.table.setCellWidget(row, 5, btn)
+
+    def _open_hire_coach(self) -> None:
+        state = self.controller.state
+        allowed = sorted(
+            {EVENTS[ev].specialty for ev in state.active_events}, key=lambda sp: list(Specialty).index(sp)
+        )
+        dlg = HireCoachDialog(state.budget, allowed, parent=self)
+        if dlg.exec():
+            self.controller.hire_coach(dlg.specialty, dlg.primary, dlg.secondary, dlg.tier)
+
+    def _fire_coach(self, coach_id: Optional[int]) -> None:
+        coach = next((c for c in self.controller.state.coaches if c.id == coach_id), None)
+        if coach is None:
+            return
+        load = self.controller.state.coach_load(coach)
+        if QMessageBox.question(
+            self,
+            "Conferma",
+            f"Licenziare {coach.name}? I suoi {load} atleti passeranno a un altro allenatore "
+            "adatto, se c'è.",
+        ) == QMessageBox.StandardButton.Yes:
+            self.controller.fire_coach(coach.id)
 
 
 class FinancesTab(QWidget):
@@ -891,8 +1015,8 @@ class FinancesTab(QWidget):
 
         self.payroll_val.setText(f"-${fin['expenses']:,}")
         self.payroll_sub.setText(
-            f"Atleti ${fin['athlete_wages']:,} + Staff ${fin['staff_cost']:,} "
-            f"+ Palestra ${fin['gym_upkeep']:,}"
+            f"Atleti ${fin['athlete_wages']:,} + Allenatori ${fin['coach_cost']:,} "
+            f"+ Staff ${fin['staff_cost']:,} + Palestra ${fin['gym_upkeep']:,}"
         )
 
         sign = "+" if net >= 0 else ""
@@ -954,10 +1078,10 @@ class YouthTab(QWidget):
         hint.setWordWrap(True)
         squad_layout.addWidget(hint)
 
-        self.youth_table = QTableWidget(0, 11)
+        self.youth_table = QTableWidget(0, 12)
         self.youth_table.setHorizontalHeaderLabels(
             ["Nome", "Età", "Disciplina", "Carattere", "OVR/Pot", "Vel.", "Resist.",
-             "Forza", "Tecnica", "Fatica", "Allenamento"]
+             "Forza", "Tecnica", "Fatica", "Allenamento", "Allenatore"]
         )
         self.youth_table.setAlternatingRowColors(True)
         self.youth_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -969,6 +1093,7 @@ class YouthTab(QWidget):
         yh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         yh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         yh.setSectionResizeMode(10, QHeaderView.ResizeMode.ResizeToContents)
+        yh.setSectionResizeMode(11, QHeaderView.ResizeMode.ResizeToContents)
         squad_layout.addWidget(self.youth_table)
         root.addWidget(squad_panel, stretch=1)
 
@@ -1092,6 +1217,7 @@ class YouthTab(QWidget):
                 lambda _i, c=focus_combo, aid=a.id: self._on_focus_changed(aid, c)
             )
             self.youth_table.setCellWidget(row, 10, focus_combo)
+            self.youth_table.setCellWidget(row, 11, _coach_combo(self.controller, state, a))
 
         results = self.controller.scouting_results
         self.results_table.setRowCount(len(results))
@@ -1146,3 +1272,127 @@ class YouthTab(QWidget):
             self, "Conferma", f"Svincolare {athlete.name} dal vivaio?"
         ) == QMessageBox.StandardButton.Yes:
             self.controller.release_athlete(aid)
+
+
+class RelayTab(QWidget):
+    """4x100m / 4x400m relay teams: legs order, reserve and harmony."""
+
+    SLOT_LABELS = ["1ª frazione", "2ª frazione", "3ª frazione", "4ª frazione (ultima)", "Riserva"]
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._slot_combos: Dict[str, list[QComboBox]] = {}
+        self._titles: Dict[str, QLabel] = {}
+        self._bars: Dict[str, QProgressBar] = {}
+        self._notes: Dict[str, QLabel] = {}
+        self._auto_btns: Dict[str, QPushButton] = {}
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        hint = QLabel(
+            "Ogni atleta può correre in una sola staffetta. L'affiatamento (da E ad A++) cresce di "
+            "settimana in settimana se i 4 titolari sono sani, e di più quando la staffetta gareggia. "
+            "Con poco affiatamento aumenta il rischio di squalifica per cambio fuori zona. Cambiare "
+            "l'ordine è gratis; sostituire un titolare sano costa il 25% dell'affiatamento ed è "
+            f"possibile una volta ogni {RELAY_CHANGE_COOLDOWN_WEEKS} settimane. Se un titolare è "
+            "infortunato entra la riserva. Le staffette non consumano forma e non danno fan."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        for name in RELAYS:
+            panel = QFrame()
+            panel.setObjectName("SectionPanel")
+            lay = QVBoxLayout(panel)
+            lay.setContentsMargins(14, 12, 14, 12)
+            title = QLabel(f"Staffetta {name}")
+            title.setObjectName("SectionHeader")
+            lay.addWidget(title)
+            bar = QProgressBar()
+            bar.setMaximum(100)
+            lay.addWidget(bar)
+            note = QLabel("")
+            note.setObjectName("SubTitle")
+            note.setWordWrap(True)
+            lay.addWidget(note)
+            combos: list[QComboBox] = []
+            for slot, label in enumerate(self.SLOT_LABELS):
+                line = QHBoxLayout()
+                lbl = QLabel(label)
+                lbl.setMinimumWidth(150)
+                line.addWidget(lbl)
+                combo = QComboBox()
+                combo.currentIndexChanged.connect(
+                    lambda _i, n=name, sl=slot, c=combo: self._on_slot_changed(n, sl, c)
+                )
+                line.addWidget(combo, stretch=1)
+                lay.addLayout(line)
+                combos.append(combo)
+            auto_btn = QPushButton("Componi automaticamente")
+            auto_btn.setObjectName("PrimaryButton")
+            auto_btn.clicked.connect(lambda _c=False, n=name: self.controller.auto_build_relay(n))
+            lay.addWidget(auto_btn)
+            lay.addStretch()
+            row.addWidget(panel)
+            self._slot_combos[name] = combos
+            self._titles[name] = title
+            self._bars[name] = bar
+            self._notes[name] = note
+            self._auto_btns[name] = auto_btn
+        root.addLayout(row, stretch=1)
+
+    def refresh(self, state: GameState) -> None:
+        active = set(state.active_relays)
+        for name, rdef in RELAYS.items():
+            relay = state.relays.get(name)
+            harmony = relay.harmony if relay else 0
+            self._titles[name].setText(
+                f"Staffetta {name} — affiatamento {harmony_grade(harmony)} ({harmony}/100)"
+            )
+            self._bars[name].setValue(harmony)
+            self._bars[name].setFormat(f"Affiatamento {harmony_grade(harmony)}")
+
+            if name not in active:
+                if rdef.requires_event not in state.active_events:
+                    why = f"Non in programma: serve la gara dei {rdef.requires_event} (Carriera)."
+                else:
+                    why = f"Non si corre nella stagione {state.season_phase.value}."
+                self._notes[name].setText(why)
+            elif relay is None or not relay.is_complete:
+                self._notes[name].setText("Squadra incompleta: senza 4 frazionisti non gareggia.")
+            else:
+                wait = RELAY_CHANGE_COOLDOWN_WEEKS - (state.week - relay.last_change_week)
+                self._notes[name].setText(
+                    f"Prossimo cambio di un titolare tra {wait} settimana/e." if wait > 0
+                    else "Puoi sostituire un titolare (costa il 25% di affiatamento)."
+                )
+
+            slots = (list(relay.member_ids) + [relay.reserve_id]) if relay else [None] * 5
+            for slot, combo in enumerate(self._slot_combos[name]):
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItem("— vuoto —", None)
+                for a in state.main_squad:
+                    other = state.relay_of(a.id)
+                    if other is not None and other != name:
+                        continue
+                    tag = " (infort.)" if a.is_injured else ""
+                    combo.addItem(
+                        f"{a.name} — {a.specialty.value}, valore {relay_leg_score(a, rdef):.0f}{tag}", a.id
+                    )
+                combo.setCurrentIndex(max(0, combo.findData(slots[slot])))
+                combo.setEnabled(name in active)
+                combo.blockSignals(False)
+            self._auto_btns[name].setEnabled(name in active)
+
+    def _on_slot_changed(self, name: str, slot: int, combo: QComboBox) -> None:
+        if not self.controller.set_relay_slot(name, slot, combo.currentData()):
+            self.refresh(self.controller.state)  # refused: show the real line-up again
