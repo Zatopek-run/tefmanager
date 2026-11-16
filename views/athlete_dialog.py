@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.entities import Athlete, PeriodizationPhase, Specialty, TrainingFocus
+from models.simulation import body_fit_score
 
 SPECIALTY_COLORS = {
     Specialty.SPRINTS: "#ef4444",
@@ -299,6 +300,7 @@ class AthleteDetailDialog(QDialog):
                 "Tecnica",
                 [
                     ("Tecnica", a.technique, False),
+                    ("Struttura fisica", body_fit_score(a), False),
                     ("Valutazione (OVR)", a.overall, False),
                     ("Potenziale", a.potential, False),
                 ],

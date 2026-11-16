@@ -41,6 +41,49 @@ def _drop_columns_after(conn, version: int) -> None:
                 conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
 
 
+class TestBodyBuild(unittest.TestCase):
+    """Height and weight change race scores according to the event."""
+
+    def _athlete(self, specialty, height, weight):
+        from models.generator import generate_athlete
+
+        a = generate_athlete(specialty=specialty, rng=random.Random(5))
+        a.height_cm, a.weight_kg = height, weight
+        return a
+
+    def test_build_suits_the_event(self) -> None:
+        from models.entities import EVENTS, Specialty
+        from models.simulation import BODY_MOD_MAX, BODY_MOD_MIN, body_fit_score, body_modifier
+
+        heavy_thrower = self._athlete(Specialty.THROWS, 192, 105)
+        small_thrower = self._athlete(Specialty.THROWS, 168, 66)
+        self.assertGreater(body_modifier(heavy_thrower, "Getto del Peso"), 0.8)
+        self.assertLess(body_modifier(small_thrower, "Getto del Peso"), -2.0)
+        self.assertGreater(body_fit_score(heavy_thrower), body_fit_score(small_thrower))
+
+        lean = self._athlete(Specialty.MIDDLE_DISTANCE, 176, 63)
+        bulky = self._athlete(Specialty.MIDDLE_DISTANCE, 176, 90)
+        self.assertGreater(body_modifier(lean, "1500m"), body_modifier(bulky, "1500m"))
+
+        for a in (heavy_thrower, small_thrower, lean, bulky):
+            for ev in EVENTS:
+                self.assertTrue(BODY_MOD_MIN <= body_modifier(a, ev) <= BODY_MOD_MAX)
+
+    def test_build_moves_expected_score_and_old_saves_are_neutral(self) -> None:
+        from models.entities import EVENTS, Specialty
+        from models.simulation import expected_event_score
+
+        ev = EVENTS["Getto del Peso"]
+        good = self._athlete(Specialty.THROWS, 192, 105)
+        bad = self._athlete(Specialty.THROWS, 168, 66)
+        neutral = self._athlete(Specialty.THROWS, 0, 0)
+        for a in (bad, neutral):
+            for attr in ("strength", "technique", "speed", "stamina", "form", "fatigue"):
+                setattr(a, attr, getattr(good, attr))
+        self.assertGreater(expected_event_score(good, ev), expected_event_score(neutral, ev))
+        self.assertGreater(expected_event_score(neutral, ev), expected_event_score(bad, ev))
+
+
 class TestVerticalSliceAndMechanics(unittest.TestCase):
     """Tests vertical slice, periodization, wind records, staff, dilemmas, and SQLite v2."""
 
