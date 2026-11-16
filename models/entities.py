@@ -27,6 +27,11 @@ class CompetitionTier(str, Enum):
             return TIER_ORDER[idx + 1]
         return None
 
+    @property
+    def previous_tier(self) -> Optional["CompetitionTier"]:
+        idx = self.order
+        return TIER_ORDER[idx - 1] if idx > 0 else None
+
 
 TIER_ORDER: List[CompetitionTier] = [
     CompetitionTier.PROVINCIALE,
@@ -37,28 +42,24 @@ TIER_ORDER: List[CompetitionTier] = [
 
 TIER_CONFIG: Dict[CompetitionTier, Dict[str, int]] = {
     CompetitionTier.PROVINCIALE: {
-        "prestige_required": 0,
         "weekly_sponsor": 600,
         "prize_base": 1200,
         "opponent_skill": 42,
         "travel_cost": 350,
     },
     CompetitionTier.REGIONALE: {
-        "prestige_required": 100,
         "weekly_sponsor": 1250,
         "prize_base": 2800,
         "opponent_skill": 56,
         "travel_cost": 750,
     },
     CompetitionTier.NAZIONALE: {
-        "prestige_required": 280,
         "weekly_sponsor": 2500,
         "prize_base": 6000,
         "opponent_skill": 70,
         "travel_cost": 1500,
     },
     CompetitionTier.INTERNAZIONALE: {
-        "prestige_required": 600,
         "weekly_sponsor": 4800,
         "prize_base": 12500,
         "opponent_skill": 84,
@@ -538,6 +539,30 @@ class RivalClub:
         return max(pool, key=lambda a: a.skill) if pool else None
 
 
+# ---------------------------------------------------------------- league promotion & relegation
+PROMOTION_SPOTS = 2  # top 2 of the final league table move up
+RELEGATION_SPOTS = 1  # last club moves down
+
+
+class SeasonOutcome(str, Enum):
+    PROMOTED = "Promossa"
+    STAYED = "Salvezza"
+    RELEGATED = "Retrocessa"
+    CHAMPION = "Campione"
+
+
+@dataclass
+class SeasonEndResult:
+    """Final league table of a season and what it meant for the club."""
+
+    season: int
+    tier: CompetitionTier
+    placement: int
+    outcome: SeasonOutcome
+    final_table: List[Tuple[str, int]] = field(default_factory=list)
+    new_tier: Optional[CompetitionTier] = None
+
+
 @dataclass
 class StaffMember:
     """Club staff specialist providing bonuses at a weekly salary."""
@@ -684,6 +709,31 @@ class GameState:
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
     rival_clubs: List[RivalClub] = field(default_factory=list)
+    season_history: List[SeasonEndResult] = field(default_factory=list)  # newest first
+
+    def league_standings(self) -> List[Tuple[str, int]]:
+        """Current league table with every club of the category (0 points if not scored yet).
+
+        Ties are broken alphabetically so the order is stable.
+        """
+        table = {self.team_name: 0}
+        table.update({c.name: 0 for c in self.rivals_in()})
+        table.update({k: v for k, v in self.league_table.items() if k in table})
+        return sorted(table.items(), key=lambda kv: (-kv[1], kv[0]))
+
+    @property
+    def league_position(self) -> int:
+        for idx, (team, _pts) in enumerate(self.league_standings(), start=1):
+            if team == self.team_name:
+                return idx
+        return 0
+
+    @property
+    def weeks_to_season_end(self) -> Optional[int]:
+        """Weeks left before the final league table is drawn up (career mode only)."""
+        if self.game_mode != "career":
+            return None
+        return 36 - ((self.week - 1) % 36)
 
     def rivals_in(self, tier: Optional[CompetitionTier] = None) -> List[RivalClub]:
         t = tier or self.tier

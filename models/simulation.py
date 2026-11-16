@@ -16,6 +16,10 @@ from models.entities import (
     RIVAL_RACE_SIGMA,
     RIVAL_RETIREMENT_AGE,
     RIVAL_TREND_SNAPSHOTS,
+    PROMOTION_SPOTS,
+    RELEGATION_SPOTS,
+    SeasonEndResult,
+    SeasonOutcome,
     RivalClub,
     RELAY_LEG_WEIGHTS,
     RELAYS,
@@ -79,6 +83,7 @@ class WeekAdvanceReport:
     doping_scandals: List[str]
     competition_summary: Optional[CompetitionSummary] = None
     triggered_dilemma: Optional[EthicalDilemma] = None
+    season_end: Optional[SeasonEndResult] = None
 
 
 def _hired_roles(state: GameState) -> Set[StaffRole]:
@@ -954,17 +959,7 @@ def simulate_competition(
         )
 
     meet_tier = state.tier
-    promoted_to: Optional[CompetitionTier] = None
-    next_tier = state.tier.next_tier
-    if next_tier is not None:
-        required = TIER_CONFIG[next_tier]["prestige_required"]
-        if state.prestige >= required:
-            state.tier = next_tier
-            promoted_to = next_tier
-            state.league_table = {}  # new category, new rivals
-            promo_msg = f"Sett. {state.week}: PROMOZIONE! {state.team_name} sale in categoria {next_tier.value}!"
-            state.news_log.insert(0, promo_msg)
-            state.milestones.insert(0, promo_msg)
+    promoted_to: Optional[CompetitionTier] = None  # promotion now happens at season end
 
     summary = CompetitionSummary(
         week=state.week,
@@ -1027,6 +1022,52 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
         state.rival_clubs = create_rival_clubs(rng=r)
 
 
+def close_season(state: GameState) -> SeasonEndResult:
+    """Final league table: the top 2 go up, the last club goes down a category."""
+    table = state.league_standings()
+    placement = state.league_position
+    tier = state.tier
+    up, down = tier.next_tier, tier.previous_tier
+    outcome = SeasonOutcome.STAYED
+    new_tier: Optional[CompetitionTier] = None
+    week = state.week - 1  # the week that just ended
+
+    if placement <= PROMOTION_SPOTS and up is not None:
+        outcome, new_tier = SeasonOutcome.PROMOTED, up
+        msg = (
+            f"Sett. {week}: PROMOZIONE! {state.team_name} chiude {placement}ª in "
+            f"{tier.value} e sale in categoria {up.value}!"
+        )
+    elif placement == 1 and up is None:
+        outcome = SeasonOutcome.CHAMPION
+        msg = f"Sett. {week}: CAMPIONI! {state.team_name} vince la lega {tier.value}!"
+    elif placement > len(table) - RELEGATION_SPOTS and down is not None:
+        outcome, new_tier = SeasonOutcome.RELEGATED, down
+        msg = (
+            f"Sett. {week}: RETROCESSIONE. {state.team_name} chiude ultima in "
+            f"{tier.value} e scende in categoria {down.value}."
+        )
+    else:
+        msg = f"Sett. {week}: Stagione chiusa al {placement}° posto in {tier.value}: categoria confermata."
+
+    if new_tier is not None:
+        state.tier = new_tier
+    state.news_log.insert(0, msg)
+    if outcome != SeasonOutcome.STAYED:
+        state.milestones.insert(0, msg)
+
+    result = SeasonEndResult(
+        season=state.season_number,
+        tier=tier,
+        placement=placement,
+        outcome=outcome,
+        final_table=table,
+        new_tier=new_tier,
+    )
+    state.season_history.insert(0, result)
+    return result
+
+
 def comp_summary_relays(summary: Optional[CompetitionSummary]) -> List[str]:
     """Relays that finished (not disqualified) in a meet."""
     if summary is None:
@@ -1081,6 +1122,7 @@ def advance_week(
     completed_week = state.week
     comp_summary: Optional[CompetitionSummary] = None
     travel_cost = 0
+    season_end: Optional[SeasonEndResult] = None
 
     if state.is_competition_week:
         comp_summary = simulate_competition(state, rng=r)
@@ -1192,6 +1234,7 @@ def advance_week(
         next_idx = (cycle.index(state.season_phase) + 1) % len(cycle)
         state.season_phase = cycle[next_idx]
         if state.season_phase == SeasonPhase.OUTDOOR:
+            season_end = close_season(state)
             state.season_number += 1
             state.league_table = {}
             for a in state.athletes:
@@ -1240,4 +1283,5 @@ def advance_week(
         doping_scandals=doping_scandals,
         competition_summary=comp_summary,
         triggered_dilemma=dilemma,
+        season_end=season_end,
     )

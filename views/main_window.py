@@ -15,11 +15,12 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.game_controller import GameController
-from models.entities import CompetitionSummary, EthicalDilemma, GameState
+from models.entities import CompetitionSummary, EthicalDilemma, GameState, SeasonEndResult
 from views.dialogs import (
     CompetitionResultsDialog,
     EthicalDilemmaDialog,
     NewGameDialog,
+    SeasonEndDialog,
 )
 from views.styles import DARK_STYLESHEET
 from views.tabs import (
@@ -140,6 +141,7 @@ class MainWindow(QMainWindow):
         self.controller.state_changed.connect(self._refresh_all)
         self.controller.competition_completed.connect(self._show_competition_results)
         self.controller.dilemma_triggered.connect(self._show_dilemma)
+        self.controller.season_ended.connect(self._show_season_end)
         self.controller.status_message.connect(
             lambda msg: self.statusBar().showMessage(msg, 6000)
         )
@@ -175,6 +177,10 @@ class MainWindow(QMainWindow):
 
     def _show_competition_results(self, summary: CompetitionSummary) -> None:
         dlg = CompetitionResultsDialog(summary, parent=self)
+        dlg.exec()
+
+    def _show_season_end(self, result: SeasonEndResult) -> None:
+        dlg = SeasonEndDialog(result, self.controller.state.team_name, parent=self)
         dlg.exec()
 
     def _show_dilemma(self, dilemma: EthicalDilemma) -> None:

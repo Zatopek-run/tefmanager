@@ -80,6 +80,7 @@ class GameController(QObject):
     week_advanced = pyqtSignal(object)  # emits WeekAdvanceReport
     competition_completed = pyqtSignal(object)  # emits CompetitionSummary
     dilemma_triggered = pyqtSignal(object)  # emits EthicalDilemma
+    season_ended = pyqtSignal(object)  # emits SeasonEndResult
     status_message = pyqtSignal(str)
 
     def __init__(
@@ -756,6 +757,9 @@ class GameController(QObject):
             )
         else:
             self.status_message.emit(f"Avanzato alla Settimana {report.new_week}.")
+
+        if report.season_end is not None:
+            self.season_ended.emit(report.season_end)
 
         if report.triggered_dilemma is not None:
             self.dilemma_triggered.emit(report.triggered_dilemma)

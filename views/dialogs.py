@@ -30,7 +30,11 @@ from models.entities import (
     COACH_STATS,
     Athlete,
     CompetitionSummary,
+    PROMOTION_SPOTS,
+    RELEGATION_SPOTS,
     EthicalDilemma,
+    SeasonEndResult,
+    SeasonOutcome,
     Specialty,
     coach_hire_cost,
     coach_hire_skills,
@@ -547,3 +551,80 @@ class HireCoachDialog(QDialog):
             f"(budget ${self.budget:,})"
         )
         self.hire_btn.setEnabled(cost <= self.budget)
+
+
+class SeasonEndDialog(QDialog):
+    """Final league table of the season with promotion / relegation outcome."""
+
+    OUTCOME_COLORS = {
+        SeasonOutcome.PROMOTED: "#34d399",
+        SeasonOutcome.CHAMPION: "#fbbf24",
+        SeasonOutcome.STAYED: "#38bdf8",
+        SeasonOutcome.RELEGATED: "#f87171",
+    }
+
+    def __init__(self, result: SeasonEndResult, team_name: str, parent=None) -> None:
+        super().__init__(parent)
+        self.result = result
+        self.setWindowTitle(f"Fine Stagione {result.season}")
+        self.resize(520, 480)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        title = QLabel(f"Stagione {result.season} — Lega {result.tier.value}")
+        title.setObjectName("AppTitle")
+        layout.addWidget(title)
+
+        if result.outcome == SeasonOutcome.PROMOTED and result.new_tier is not None:
+            text = f"{result.placement}° posto: PROMOSSI in categoria {result.new_tier.value}!"
+        elif result.outcome == SeasonOutcome.RELEGATED and result.new_tier is not None:
+            text = f"Ultimo posto: RETROCESSI in categoria {result.new_tier.value}."
+        elif result.outcome == SeasonOutcome.CHAMPION:
+            text = f"1° posto: CAMPIONI della lega {result.tier.value}!"
+        else:
+            text = f"{result.placement}° posto: categoria {result.tier.value} confermata."
+        outcome = QLabel(text)
+        outcome.setStyleSheet(
+            f"color: {self.OUTCOME_COLORS[result.outcome]}; font-weight: 800; font-size: 15px;"
+        )
+        layout.addWidget(outcome)
+
+        rules = QLabel(
+            f"Le prime {PROMOTION_SPOTS} salgono di categoria, l'ultima scende. "
+            "I punti di lega ripartono da zero."
+        )
+        rules.setObjectName("SubTitle")
+        layout.addWidget(rules)
+
+        n = len(result.final_table)
+        self.table = QTableWidget(n, 3)
+        self.table.setHorizontalHeaderLabels(["Pos", "Società", "Punti"])
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        for row, (team, pts) in enumerate(result.final_table):
+            if team == team_name:
+                color = "#38bdf8"
+            elif row < PROMOTION_SPOTS:
+                color = "#34d399"
+            elif row >= n - RELEGATION_SPOTS:
+                color = "#f87171"
+            else:
+                color = None
+            for col, value in enumerate((str(row + 1), team, str(pts))):
+                item = QTableWidgetItem(value)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if color:
+                    item.setForeground(QColor(color))
+                self.table.setItem(row, col, item)
+        layout.addWidget(self.table, stretch=1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        ok = QPushButton("Inizia la nuova stagione")
+        ok.setObjectName("PrimaryButton")
+        ok.clicked.connect(self.accept)
+        btn_row.addWidget(ok)
+        layout.addLayout(btn_row)

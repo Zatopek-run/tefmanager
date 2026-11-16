@@ -26,6 +26,8 @@ from PyQt6.QtWidgets import (
 from controllers.game_controller import GameController
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
+    PROMOTION_SPOTS,
+    RELEGATION_SPOTS,
     COACH_COMFORT_LOAD,
     COACH_STAT_LABELS,
     COACH_STATS,
@@ -42,7 +44,6 @@ from models.entities import (
     STAND_EXPANSION_SEATS,
     STAND_MAX_SEATS,
     TICKET_PRICE,
-    TIER_CONFIG,
     WEEKLY_SCOUTING_POINTS,
     YOUTH_SQUAD_MAX,
     CompetitionSummary,
@@ -209,20 +210,42 @@ class DashboardTab(QWidget):
         self.prestige_val.setText(f"{state.prestige} pt")
         self.prestige_sub.setText(f"Reputazione Etica: {state.reputation}%")
 
-        next_tier = state.tier.next_tier
-        if next_tier is not None:
-            req = TIER_CONFIG[next_tier]["prestige_required"]
+        pos = state.league_position
+        standings = state.league_standings()
+        pts = dict(standings).get(state.team_name, 0)
+        weeks_left = state.weeks_to_season_end
+        if weeks_left is None:
             self.tier_progress_label.setText(
-                f"Categoria: {state.tier.value} -> {next_tier.value} ({state.prestige}/{req} pt)"
+                f"Lega {state.tier.value}: {pos}° su {len(standings)} con {pts} pt "
+                "(promozioni e retrocessioni solo in Carriera)"
             )
-            self.tier_progress.setMaximum(req)
-            self.tier_progress.setValue(min(state.prestige, req))
-            self.tier_progress.setFormat(f"{state.prestige} / {req} Prestigio")
+            self.tier_progress.setMaximum(8)
+            self.tier_progress.setValue(min(8, state.week))
+            self.tier_progress.setFormat(f"Prototipo: settimana {min(8, state.week)} di 8")
         else:
-            self.tier_progress_label.setText("Categoria: Internazionale (Massimo Livello)")
-            self.tier_progress.setMaximum(100)
-            self.tier_progress.setValue(100)
-            self.tier_progress.setFormat("Élite Mondiale")
+            if pos <= PROMOTION_SPOTS and state.tier.next_tier is not None:
+                zone = f"zona promozione → {state.tier.next_tier.value}"
+            elif pos <= PROMOTION_SPOTS:
+                zone = "in corsa per il titolo" if pos > 1 else "in testa: verso il titolo"
+            elif pos > len(standings) - RELEGATION_SPOTS and state.tier.previous_tier is not None:
+                zone = f"zona retrocessione → {state.tier.previous_tier.value}"
+            else:
+                zone = "metà classifica"
+            self.tier_progress_label.setText(
+                f"Lega {state.tier.value}: {pos}° su {len(standings)} con {pts} pt — {zone}"
+            )
+            done = 36 - weeks_left
+            self.tier_progress.setMaximum(36)
+            self.tier_progress.setValue(done)
+            self.tier_progress.setFormat(
+                f"Stagione {state.season_number}: mancano {weeks_left} settimane al verdetto "
+                f"(prime {PROMOTION_SPOTS} su, ultima giù)"
+            )
+        if state.season_history:
+            last = state.season_history[0]
+            self.tier_progress.setToolTip(
+                f"Stagione {last.season}: {last.placement}° in {last.tier.value} — {last.outcome.value}"
+            )
 
         if state.club_records:
             rec_parts = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records.items()]
@@ -557,7 +580,8 @@ class CalendarTab(QWidget):
         self.league_title.setObjectName("SectionHeader")
         league_layout.addWidget(self.league_title)
         league_hint = QLabel(
-            "Punti per piazzamento in ogni gara (1° = 8 … 8° = 1). Gare senza convocato regalano punti ai rivali."
+            "Punti per piazzamento in ogni gara (1° = 8 … 8° = 1). Gare senza convocato regalano punti "
+            "ai rivali. In Carriera, a fine stagione le prime 2 salgono di categoria e l'ultima scende."
         )
         league_hint.setObjectName("SubTitle")
         league_hint.setWordWrap(True)
@@ -668,11 +692,13 @@ class CalendarTab(QWidget):
             )
             self.lineup_table.setCellWidget(row, 4, att_combo)
 
-        table = dict(state.league_table)
-        if not table:  # new season or category: everyone starts from zero
-            table = {team: 0 for team in [state.team_name, *(c.name for c in state.rivals_in())]}
-        league_rows = sorted(table.items(), key=lambda kv: kv[1], reverse=True)
-        self.league_title.setText(f"Classifica di Lega — {state.tier.value}")
+        league_rows = state.league_standings()
+        if state.game_mode == "career":
+            self.league_title.setText(
+                f"Classifica di Lega — {state.tier.value} (verdetto tra {state.weeks_to_season_end} sett.)"
+            )
+        else:
+            self.league_title.setText(f"Classifica di Lega — {state.tier.value}")
         self.league_table.setRowCount(len(league_rows))
         for row, (team, pts) in enumerate(league_rows):
             for col, text in enumerate((str(row + 1), team, str(pts))):
@@ -680,6 +706,10 @@ class CalendarTab(QWidget):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if team == state.team_name:
                     item.setForeground(QColor("#38bdf8"))
+                elif state.game_mode == "career" and row < PROMOTION_SPOTS:
+                    item.setForeground(QColor("#34d399"))
+                elif state.game_mode == "career" and row >= len(league_rows) - RELEGATION_SPOTS:
+                    item.setForeground(QColor("#f87171"))
                 self.league_table.setItem(row, col, item)
 
         self._history_list = list(state.competition_history)

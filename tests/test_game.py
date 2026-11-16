@@ -29,6 +29,18 @@ from models.generator import generate_vertical_slice_roster
 from models.simulation import advance_week, apply_weekly_training, weekly_finances
 
 
+def _drop_columns_after(conn, version: int) -> None:
+    """Turn a current save file back into the layout of an older schema version."""
+    from models.database import MIGRATIONS
+
+    for from_version, columns in MIGRATIONS.items():
+        if from_version < version:
+            continue
+        for table, cols in columns.items():
+            for col, _def in cols:
+                conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+
+
 class TestVerticalSliceAndMechanics(unittest.TestCase):
     """Tests vertical slice, periodization, wind records, staff, dilemmas, and SQLite v2."""
 
@@ -364,14 +376,9 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.team_name = "Vecchio Salvataggio"
             ctrl.db.save_game(ctrl.state)
             # Downgrade the file to the v2 layout (drop v3 columns, reset version)
-            from models.database import V3_COLUMNS, V4_COLUMNS, V5_COLUMNS
-
             conn = sqlite3.connect(path)
             try:
-                for columns in (V3_COLUMNS, V4_COLUMNS, V5_COLUMNS):
-                    for table, cols in columns.items():
-                        for col, _def in cols:
-                            conn.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+                _drop_columns_after(conn, 2)
                 conn.execute("DROP TABLE coaches")
                 # v2 saves had coaches as staff "roles"
                 conn.execute(
@@ -709,13 +716,129 @@ class TestRivalClubs(unittest.TestCase):
             path = ctrl.db.db_path
             conn = sqlite3.connect(path)
             try:
-                conn.execute("ALTER TABLE game_state DROP COLUMN rivals_json")
+                _drop_columns_after(conn, 4)
                 conn.execute("PRAGMA user_version = 4")
                 conn.commit()
             finally:
                 conn.close()
             ctrl2 = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(1))
             self.assertEqual(len(ctrl2.state.rival_clubs), 28)
+
+
+class TestPromotionAndRelegation(unittest.TestCase):
+    """End-of-season verdict from the league table: top 2 up, last one down."""
+
+    def _career(self, tmpdir: str, seed: int = 1) -> GameController:
+        ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / f"p{seed}.db"), rng=random.Random(seed))
+        ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+        return ctrl
+
+    @staticmethod
+    def _force_position(state: GameState, position: int) -> None:
+        """Rig the league table so the player finishes in the given position."""
+        names = [c.name for c in state.rivals_in()]
+        table = {}
+        points = 1000
+        for pos in range(1, len(names) + 2):
+            team = state.team_name if pos == position else names.pop(0)
+            table[team] = points
+            points -= 100  # gaps no single meet (max ~40 pts) can close
+        state.league_table = table
+
+    def _end_season(self, ctrl: GameController):
+        ctrl.state.week = 36
+        ctrl.state.season_phase = SeasonPhase.INDOOR
+        return ctrl.advance_week()
+
+    def test_prestige_no_longer_promotes_mid_season(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            ctrl.state.week = 4
+            ctrl.state.prestige = 5000
+            summary = sim.simulate_competition(ctrl.state, rng=random.Random(1))
+            self.assertIsNone(summary.promoted_to)
+            self.assertEqual(ctrl.state.tier, CompetitionTier.PROVINCIALE)
+
+    def test_top_two_are_promoted(self) -> None:
+        from models.entities import SeasonOutcome
+
+        for position in (1, 2):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ctrl = self._career(tmpdir)
+                seen = []
+                ctrl.season_ended.connect(seen.append)
+                self._force_position(ctrl.state, position)
+                report = self._end_season(ctrl)
+                assert report is not None and report.season_end is not None
+                self.assertEqual(report.season_end.outcome, SeasonOutcome.PROMOTED)
+                self.assertEqual(report.season_end.placement, position)
+                self.assertEqual(ctrl.state.tier, CompetitionTier.REGIONALE)
+                self.assertEqual(ctrl.state.season_number, 2)
+                self.assertEqual(ctrl.state.league_table, {})
+                self.assertEqual(seen, [report.season_end])
+
+    def test_third_place_stays(self) -> None:
+        from models.entities import SeasonOutcome
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            ctrl.state.tier = CompetitionTier.NAZIONALE
+            self._force_position(ctrl.state, 3)
+            report = self._end_season(ctrl)
+            self.assertEqual(report.season_end.outcome, SeasonOutcome.STAYED)
+            self.assertEqual(ctrl.state.tier, CompetitionTier.NAZIONALE)
+
+    def test_last_place_is_relegated(self) -> None:
+        from models.entities import SeasonOutcome
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            ctrl.state.tier = CompetitionTier.NAZIONALE
+            self._force_position(ctrl.state, 8)
+            report = self._end_season(ctrl)
+            self.assertEqual(report.season_end.outcome, SeasonOutcome.RELEGATED)
+            self.assertEqual(ctrl.state.tier, CompetitionTier.REGIONALE)
+            self.assertTrue(any("RETROCESSIONE" in m for m in ctrl.state.milestones))
+
+    def test_category_limits(self) -> None:
+        from models.entities import SeasonOutcome
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            self._force_position(ctrl.state, 8)  # can't go below Provinciale
+            self.assertEqual(self._end_season(ctrl).season_end.outcome, SeasonOutcome.STAYED)
+            self.assertEqual(ctrl.state.tier, CompetitionTier.PROVINCIALE)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            ctrl.state.tier = CompetitionTier.INTERNAZIONALE
+            self._force_position(ctrl.state, 1)  # top category: the title
+            self.assertEqual(self._end_season(ctrl).season_end.outcome, SeasonOutcome.CHAMPION)
+            self.assertEqual(ctrl.state.tier, CompetitionTier.INTERNAZIONALE)
+
+    def test_league_standings_include_everyone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            s = self._career(tmpdir).state
+            self.assertEqual(len(s.league_standings()), 8)
+            self.assertEqual(s.weeks_to_season_end, 36)
+            s.league_table = {s.rivals_in()[0].name: 3}
+            self.assertEqual(s.league_standings()[0], (s.rivals_in()[0].name, 3))
+            zero_points = sorted(t for t, p in s.league_standings() if p == 0)
+            self.assertEqual([t for t, _p in s.league_standings()[1:]], zero_points)  # ties: alphabetical
+            self.assertEqual(s.league_position, 2 + zero_points.index(s.team_name))
+
+    def test_season_history_roundtrip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            self._force_position(ctrl.state, 1)
+            self._end_season(ctrl)
+            loaded = ctrl.db.load_game()
+            assert loaded is not None
+            self.assertEqual(len(loaded.season_history), 1)
+            h, o = loaded.season_history[0], ctrl.state.season_history[0]
+            self.assertEqual((h.season, h.tier, h.placement, h.outcome, h.new_tier, h.final_table),
+                             (o.season, o.tier, o.placement, o.outcome, o.new_tier, o.final_table))
 
 
 class TestPyQtViewsV2(unittest.TestCase):
@@ -780,6 +903,18 @@ class TestPyQtViewsV2(unittest.TestCase):
             if ctrl.state.pending_dilemma is not None:
                 dil_dlg = EthicalDilemmaDialog(ctrl.state.pending_dilemma)
                 dil_dlg.close()
+
+            from models.entities import SeasonEndResult, SeasonOutcome
+            from views.dialogs import SeasonEndDialog
+
+            result = SeasonEndResult(
+                season=1, tier=CompetitionTier.REGIONALE, placement=8,
+                outcome=SeasonOutcome.RELEGATED, final_table=ctrl.state.league_standings(),
+                new_tier=CompetitionTier.PROVINCIALE,
+            )
+            season_dlg = SeasonEndDialog(result, ctrl.state.team_name)
+            self.assertEqual(season_dlg.table.rowCount(), 8)
+            season_dlg.close()
 
             win.close()
 

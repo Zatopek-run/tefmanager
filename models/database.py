@@ -23,7 +23,9 @@ from models.entities import (
     Relay,
     RivalAthlete,
     RivalClub,
+    SeasonEndResult,
     SeasonObjective,
+    SeasonOutcome,
     SeasonPhase,
     Specialty,
     StaffMember,
@@ -33,7 +35,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -74,11 +76,46 @@ V4_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V5_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("rivals_json", "TEXT NOT NULL DEFAULT '[]'")],
 }
+# Columns added in v6 (end-of-season promotion & relegation history).
+V6_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("season_history_json", "TEXT NOT NULL DEFAULT '[]'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
     4: V5_COLUMNS,
+    5: V6_COLUMNS,
 }
+
+
+def _season_history_to_json(history: List[SeasonEndResult]) -> str:
+    return json.dumps(
+        [
+            {
+                "season": h.season,
+                "tier": h.tier.value,
+                "placement": h.placement,
+                "outcome": h.outcome.value,
+                "final_table": [[t, p] for t, p in h.final_table],
+                "new_tier": h.new_tier.value if h.new_tier else None,
+            }
+            for h in history
+        ]
+    )
+
+
+def _season_history_from_json(raw: str) -> List[SeasonEndResult]:
+    return [
+        SeasonEndResult(
+            season=int(h["season"]),
+            tier=CompetitionTier(h["tier"]),
+            placement=int(h["placement"]),
+            outcome=SeasonOutcome(h["outcome"]),
+            final_table=[(str(t), int(p)) for t, p in h["final_table"]],
+            new_tier=CompetitionTier(h["new_tier"]) if h.get("new_tier") else None,
+        )
+        for h in json.loads(raw)
+    ]
 
 
 def _rivals_to_json(clubs: List[RivalClub]) -> str:
@@ -207,7 +244,8 @@ class DatabaseManager:
                     league_table_json TEXT NOT NULL DEFAULT '{}',
                     relays_json TEXT NOT NULL DEFAULT '{}',
                     coach_hired_week INTEGER NOT NULL DEFAULT 0,
-                    rivals_json TEXT NOT NULL DEFAULT '[]'
+                    rivals_json TEXT NOT NULL DEFAULT '[]',
+                    season_history_json TEXT NOT NULL DEFAULT '[]'
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -339,8 +377,8 @@ class DatabaseManager:
                     event_lineup_json, club_records_json, objectives_json, milestones_json,
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
-                    relays_json, coach_hired_week, rivals_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    relays_json, coach_hired_week, rivals_json, season_history_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -382,6 +420,7 @@ class DatabaseManager:
                     ),
                     state.coach_hired_week,
                     _rivals_to_json(state.rival_clubs),
+                    _season_history_to_json(state.season_history),
                 ),
             )
 
@@ -741,4 +780,5 @@ class DatabaseManager:
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),
+                season_history=_season_history_from_json(row["season_history_json"]),
             )
