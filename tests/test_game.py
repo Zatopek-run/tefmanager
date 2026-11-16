@@ -162,6 +162,83 @@ class TestRaceViewer(unittest.TestCase):
             skipped.skip_to_end()
             self.assertEqual(skipped.board.item(0, FIELD_ROUNDS + 2).text()[-1], "°")
 
+    def test_3d_clipping_and_camera(self) -> None:
+        from views.race_3d import NEAR, Camera, clip_near, clip_segment_near
+
+        cam = Camera((0.0, 2.0, 0.0), (10.0, 1.0, 0.0), 48.0, 800, 400)
+        ahead = cam.proj(cam.to_cam((10.0, 1.0, 0.0)))
+        self.assertAlmostEqual(ahead[0], 400.0, delta=1.0)  # al centro dello schermo
+        # un poligono che attraversa il piano vicino non deve avere vertici dietro la camera
+        poly = [cam.to_cam(q) for q in [(-20.0, 0.0, -5.0), (30.0, 0.0, -5.0), (30.0, 0.0, 5.0), (-20.0, 0.0, 5.0)]]
+        clipped = clip_near(poly)
+        self.assertGreaterEqual(len(clipped), 3)
+        self.assertTrue(all(c[2] >= NEAR - 1e-9 for c in clipped))
+        self.assertEqual(clip_near([cam.to_cam((-5.0, 0.0, 0.0)), cam.to_cam((-6.0, 1.0, 0.0)), cam.to_cam((-7.0, 0.0, 1.0))]), [])
+        self.assertIsNone(clip_segment_near(cam.to_cam((-5.0, 0.0, 0.0)), cam.to_cam((-6.0, 0.0, 0.0))))
+        seg = clip_segment_near(cam.to_cam((-5.0, 1.0, 0.0)), cam.to_cam((5.0, 1.0, 0.0)))
+        assert seg is not None
+        self.assertTrue(seg[0][2] >= NEAR - 1e-9 and seg[1][2] >= NEAR - 1e-9)
+
+    def test_track_views_paint_in_every_state(self) -> None:
+        """Il disegno non deve mai sollevare eccezioni: corse, staffette, ritirati, squalifiche."""
+        import copy
+
+        from PyQt6.QtGui import QImage
+
+        from views.race_3d import Track3DWidget
+        from views.race_viewer import TrackRaceWidget, is_field_event
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv5.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            results = [r for r in summary.event_results if not is_field_event(r.event_name)]
+            withdrawn = copy.deepcopy(results[0])
+            withdrawn.withdrew_injured = True
+            disqualified = copy.deepcopy(next(r for r in results if r.event_name.startswith("4x")))
+            disqualified.disqualified = True
+            results += [withdrawn, disqualified]
+            painted = 0
+            for cls in (Track3DWidget, TrackRaceWidget):
+                for res in results:
+                    widget = cls()
+                    widget.resize(960, 520)
+                    widget.set_race(res.event_name, res, "seed")
+                    for step in (0.0, 1.0, 2.0, 1.0, 3.0, 6.0, 400.0):  # attesa, "pronti", via, corsa, arrivi
+                        widget.advance(step)
+                        image = QImage(960, 520, QImage.Format.Format_ARGB32)
+                        widget.render(image)
+                        painted += 1
+                    widget.skip_to_end()
+                    widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    widget.close()
+            self.assertGreater(painted, 40)
+
+    def test_view_toggle_keeps_race_position(self) -> None:
+        from views.race_3d import Track3DWidget
+        from views.race_viewer import RaceViewerDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv6.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            dlg = RaceViewerDialog(summary)
+            self.assertIsInstance(dlg.track, Track3DWidget)  # 3D di default
+            dlg.track.advance(5.0)
+            t = dlg.track._t
+            dlg._toggle_view()
+            self.assertIs(dlg.track, dlg.track2d)
+            self.assertAlmostEqual(dlg.track._t, t)
+            self.assertIs(dlg.stack.currentWidget(), dlg.track2d)
+            dlg._toggle_view()
+            self.assertIs(dlg.track, dlg.track3d)
+            dlg._skip_race()
+            self.assertTrue(dlg._race_done)
+            self.assertEqual(dlg.track.race_clock, min(r.mark_value for r in summary.event_results[0].standings))
+            dlg.close()
+
     def test_dialog_plays_every_event(self) -> None:
         from views.race_viewer import RaceViewerDialog
 
