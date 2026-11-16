@@ -10,8 +10,8 @@ import random
 import zlib
 from typing import List, Optional, Sequence
 
-from PyQt6.QtCore import QElapsedTimer, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPainter, QPen
+from PyQt6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -139,9 +139,12 @@ class TrackRaceWidget(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(400)
         self._runners: List[dict] = []
         self._event = "100m"
+        self._distance = 100
+        self._result: Optional[EventResult] = None
+        self._crowd_cache: Optional[QPixmap] = None
         self._winner_time = 1.0
         self._scale = 1.0  # secondi di gara per secondo di animazione
         self._t = 0.0  # secondi di animazione dall'inizio (compresa la sequenza di partenza)
@@ -149,6 +152,9 @@ class TrackRaceWidget(QWidget):
 
     def set_race(self, event_name: str, result: EventResult, seed: object) -> None:
         self._event = event_name
+        self._distance = TRACK_DISTANCES.get(event_name, 100)
+        self._result = result
+        self._crowd_cache = None
         self._runners = []
         valid = []
         for s in result.standings:
@@ -220,80 +226,326 @@ class TrackRaceWidget(QWidget):
     def _has_finished(self, runner: dict) -> bool:
         return (not runner["dnf"]) and self.race_time >= runner["s"].mark_value
 
+    # ------------------------------------------------------------------ disegno
+    CROWD_H = 78
+    LEFT_W = 200
+    MINIMAP_H = 30
+
+    def meters(self, r: dict) -> float:
+        """Posizione in metri; dopo il traguardo l'atleta rallenta (solo scena)."""
+        d = self._distance
+        m = self.fraction(r) * d
+        if self._has_finished(r):
+            t_end = r["s"].mark_value
+            probe = 0.1 * max(1.0, self._scale)
+            v_end = (d - position_fraction(self._event, t_end - probe, t_end, r["react"], r["phase"]) * d) / probe
+            m += v_end * 1.0 * (1.0 - math.exp(-(self.race_time - t_end) / 1.0))
+        return m
+
+    def _speed_ratio(self, r: dict) -> float:
+        """Velocità istantanea relativa (0..1) per cadenza e posa."""
+        if self.race_time <= 0:
+            return 0.0
+        if self._has_finished(r):
+            return max(0.0, 0.8 * math.exp(-(self.race_time - r["s"].mark_value) / 1.0))
+        d = self._distance
+        step = max(0.05, 0.01 * self._winner_time)
+        t = self.race_time
+        f0 = position_fraction(self._event, t - step, r["s"].mark_value, r["react"], r["phase"])
+        f1 = position_fraction(self._event, t + step, r["s"].mark_value, r["react"], r["phase"])
+        v = max(0.0, (f1 - f0)) * d / (2 * step)
+        mean = d / max(0.5, r["s"].mark_value)
+        return max(0.0, min(1.0, v / (1.3 * mean)))
+
+    @staticmethod
+    def _kit(name: str) -> QColor:
+        return QColor.fromHsv(zlib.crc32(name.encode()) % 360, 170, 215)
+
+    @staticmethod
+    def _skin(name: str) -> QColor:
+        tones = ["#f1c7a0", "#d9a066", "#a8714a", "#6b4429", "#3b2416"]
+        return QColor(tones[zlib.crc32(("skin" + name).encode()) % len(tones)])
+
+    def _crowd(self, width: int) -> QPixmap:
+        """Folla pre-disegnata (deterministica): si ricostruisce solo al cambio di larghezza."""
+        if self._crowd_cache is not None and self._crowd_cache.width() == width:
+            return self._crowd_cache
+        pm = QPixmap(width, self.CROWD_H)
+        pm.fill(QColor("#0b1220"))
+        q = QPainter(pm)
+        rng = _rng("crowd", self._event, width)
+        for tier in range(4):
+            y0 = 8 + tier * 17
+            q.fillRect(0, y0 + 11, width, 6, QColor("#1b2638"))
+            x = rng.randint(0, 5)
+            while x < width:
+                col = QColor.fromHsv(rng.randint(0, 359), rng.randint(60, 200), rng.randint(110, 230))
+                q.fillRect(x, y0, 5, 5, QColor("#e2b48f" if rng.random() < 0.6 else "#8a5a3c"))  # testa
+                q.fillRect(x - 1, y0 + 5, 7, 6, col)  # busto
+                x += rng.randint(7, 10)
+        q.end()
+        self._crowd_cache = pm
+        return pm
+
+    def _draw_runner(
+        self, p: QPainter, x: float, ground: float, h: float, phase: float, ratio: float,
+        kit: QColor, skin: QColor, crouch: bool, is_player: bool,
+    ) -> None:
+        u = h / 10.0
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 70))
+        p.drawEllipse(QPointF(x, ground), 3.2 * u, 0.7 * u)
+
+        lean = 0.95 if crouch else 0.12 + 0.30 * ratio
+        hip = QPointF(x, ground - (3.4 if crouch else 4.7) * u)
+        sh = QPointF(hip.x() + 3.0 * u * math.sin(lean), hip.y() - 3.0 * u * math.cos(lean))
+        head = QPointF(sh.x() + 1.2 * u * math.sin(lean + 0.1), sh.y() - 1.2 * u * math.cos(lean + 0.1))
+
+        def limb(a: QPointF, ang1: float, l1: float, ang2: float, l2: float):
+            b = QPointF(a.x() + l1 * math.sin(ang1), a.y() + l1 * math.cos(ang1))
+            c = QPointF(b.x() + l2 * math.sin(ang2), b.y() + l2 * math.cos(ang2))
+            return b, c
+
+        def draw_limb(a, b, c, col, w) -> None:
+            pen = QPen(col, w)
+            pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+            p.setPen(pen)
+            p.drawLine(a, b)
+            p.drawLine(b, c)
+
+        amp = 0.45 + 0.55 * ratio
+        shorts = QColor("#1e293b")
+        for k in (1, 0):  # prima il lato lontano, poi quello vicino
+            ph = phase + k * math.pi
+            if crouch:
+                leg_a, knee_flex = (0.9, 0.4) if k == 0 else (-0.3, 1.5)
+            else:
+                leg_a = amp * math.sin(ph)
+                knee_flex = 0.35 + 1.25 * ratio * max(0.0, math.sin(ph + 1.3))
+            kn, ft = limb(hip, leg_a, 2.4 * u, leg_a - knee_flex, 2.3 * u)
+            draw_limb(hip, kn, ft, skin.darker(130) if k else skin, 1.1 * u)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#f8fafc"))
+            p.drawRect(QRectF(ft.x() - 0.2 * u, ft.y() - 0.3 * u, 1.1 * u, 0.6 * u))  # scarpa
+            if k == 1:
+                arm_a = -amp * 1.1 * math.sin(ph + math.pi)
+                el, hand = limb(sh, arm_a if not crouch else 0.3, 1.6 * u, (arm_a if not crouch else 0.2) + 1.2, 1.5 * u)
+                draw_limb(sh, el, hand, skin.darker(130), 0.9 * u)
+        # busto e calzoncini
+        pen = QPen(kit, 1.9 * u)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        p.setPen(pen)
+        p.drawLine(hip, sh)
+        pen = QPen(shorts, 1.9 * u)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        p.setPen(pen)
+        p.drawLine(hip, QPointF(hip.x() + 0.9 * u * math.sin(lean), hip.y() - 0.9 * u * math.cos(lean)))
+        for k in (0,):
+            ph = phase
+            arm_a = -amp * 1.1 * math.sin(ph + math.pi) if not crouch else -0.2
+            el, hand = limb(sh, arm_a, 1.6 * u, arm_a + 1.2, 1.5 * u)
+            draw_limb(sh, el, hand, skin, 0.9 * u)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(skin)
+        p.drawRect(QRectF(head.x() - 0.8 * u, head.y() - 0.9 * u, 1.7 * u, 1.7 * u))
+        p.setBrush(QColor("#fbbf24") if is_player else QColor("#111827"))
+        p.drawRect(QRectF(head.x() - 0.9 * u, head.y() - 1.0 * u, 1.9 * u, 0.7 * u))  # capelli / fascia
+
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, hgt = self.width(), self.height()
         p.fillRect(self.rect(), QColor("#0b1220"))
         n = len(self._runners)
         if n == 0:
+            p.end()
             return
-        left, right = 190, 120
-        x0, x1 = left, self.width() - right
-        top, bottom = 10, self.height() - 10
-        lane_h = (bottom - top) / n
+        d = self._distance
+        res = self._result
         font = QFont(self.font())
         font.setPointSize(9)
         p.setFont(font)
 
-        for i, r in enumerate(self._runners):
-            y = top + i * lane_h
-            p.fillRect(int(x0), int(y + 2), int(x1 - x0), int(lane_h - 4), QColor("#7c2d12" if i % 2 else "#9a3412"))
-            p.fillRect(int(x0), int(y + 2), int(x1 - x0), int(lane_h - 4), QColor(0, 0, 0, 60))
-            p.setPen(QPen(QColor("#fde68a"), 1))
-            p.drawLine(int(x0), int(y), int(x1), int(y))
-        p.drawLine(int(x0), int(bottom), int(x1), int(bottom))
+        p.drawPixmap(0, 0, self._crowd(w))
+        track_top = self.CROWD_H + 4
+        mini = self.MINIMAP_H if d > 100 else 0
+        track_bottom = hgt - mini - 22
+        lane_h = (track_bottom - track_top) / n
+        x_left, x_right = self.LEFT_W, w - 10
 
-        # traguardo a scacchi
-        sq = 6
-        for j in range(int((bottom - top) // sq) + 1):
-            for k in range(2):
-                p.fillRect(int(x1 + k * sq), int(top + j * sq), sq, sq,
-                           QColor("#f8fafc" if (j + k) % 2 == 0 else "#0f172a"))
+        meters = [self.meters(r) for r in self._runners]
+        # camera: 100 m tutta la pista, altrimenti segue (capofila + atleta del club) / 2
+        if d <= 100:
+            view_w, cam = 118.0, -6.0
+        else:
+            view_w = 70.0
+            leader = max(meters)
+            mine = [m for m, r in zip(meters, self._runners) if r["s"].is_player]
+            focus = (leader + mine[0]) / 2 if mine else leader
+            cam = max(-8.0, min(d + 14.0 - view_w, focus - 0.62 * view_w))
+        px = (x_right - x_left) / view_w
 
+        def sx(m: float) -> float:
+            return x_left + (m - cam) * px
+
+        # corsie
+        for i in range(n):
+            y = track_top + i * lane_h
+            p.fillRect(int(x_left), int(y), int(x_right - x_left), int(lane_h) + 1,
+                       QColor("#a8431c" if i % 2 else "#b84d22"))
+            p.fillRect(int(x_left), int(y), int(x_right - x_left), 2, QColor("#f1f5f9"))
+        p.fillRect(int(x_left), int(track_bottom), int(x_right - x_left), 2, QColor("#f1f5f9"))
+
+        # zone cambio staffetta
+        if self._event.startswith("4x"):
+            for k in (1, 2, 3):
+                zx = sx(d * k / 4.0 - 10)
+                p.fillRect(int(zx), int(track_top), int(20 * px), int(track_bottom - track_top), QColor(250, 204, 21, 55))
+
+        # tacche dei metri e numeri
+        step = 10 if d <= 400 else 50
+        p.setPen(QColor(255, 255, 255, 70))
+        first = int(max(0, math.floor(cam / step) * step))
+        for mt in range(first, int(min(d + 16, cam + view_w + step)) + 1, step):
+            xx = sx(mt)
+            if x_left <= xx <= x_right:
+                p.drawLine(int(xx), int(track_top), int(xx), int(track_bottom))
+                p.setPen(QColor("#cbd5e1"))
+                p.drawText(int(xx - 14), int(track_bottom + 15), 28, 14, Qt.AlignmentFlag.AlignCenter, f"{mt}")
+                p.setPen(QColor(255, 255, 255, 70))
+
+        # linea di partenza
+        sxs = sx(0)
+        if x_left <= sxs <= x_right:
+            p.fillRect(int(sxs - 1), int(track_top), 3, int(track_bottom - track_top), QColor("#f8fafc"))
+
+        # traguardo + nastro
+        fx = sx(d)
+        first_done = any(self._has_finished(r) for r in self._runners)
+        if x_left <= fx <= x_right + 20:
+            sq = 6
+            for j in range(int((track_bottom - track_top) // sq) + 1):
+                for k in range(2):
+                    p.fillRect(int(fx + k * sq - 3), int(track_top + j * sq), sq, sq,
+                               QColor("#f8fafc" if (j + k) % 2 == 0 else "#0f172a"))
+            tape_y = int(track_top - 6)
+            if not first_done:
+                p.fillRect(int(fx - 40), tape_y, 40, 3, QColor("#f87171"))
+            else:
+                p.fillRect(int(fx - 40), tape_y, 14, 3, QColor("#f87171"))
+                p.fillRect(int(fx + 20), tape_y + 8, 12, 3, QColor("#f87171"))
+
+        # atleti
+        # classifica live: chi ha finito ha il piazzamento ufficiale, gli altri vanno per posizione
+        order = sorted(
+            range(n),
+            key=lambda i: (0, self._runners[i]["s"].placement)
+            if self._has_finished(self._runners[i])
+            else (1, -meters[i]),
+        )
+        crouch = self.race_time <= 0.0
         for i, r in enumerate(self._runners):
             s: EventStanding = r["s"]
-            y = top + i * lane_h + lane_h / 2
-            prog = self.fraction(r)
-            finished = self._has_finished(r)
-            colour = QColor("#fbbf24" if s.is_player else "#94a3b8")
+            y = track_top + i * lane_h + lane_h / 2
+            ratio = self._speed_ratio(r)
+            cycle = 0.7 + 1.6 * ratio
+            phase = 2 * math.pi * cycle * max(0.0, self._t - GUN_AT) + r["phase"]
+            xx = sx(meters[i])
+            sprite_h = min(lane_h * 0.92, 54)
+            kit = QColor("#fbbf24") if s.is_player else self._kit(s.team_name)
+            if x_left - 20 <= xx <= x_right + 20:
+                self._draw_runner(p, xx, y + sprite_h * 0.42, sprite_h, phase, ratio, kit,
+                                  self._skin(s.athlete_name), crouch, s.is_player)
+            else:  # fuori inquadratura
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                p.setPen(QColor("#fbbf24" if s.is_player else "#94a3b8"))
+                p.drawText(int(x_left + 6), int(y + 4), f"◀ {int(cam - meters[i])} m" if xx < x_left else f"{int(meters[i] - cam - view_w)} m ▶")
+            # numero corsia sul blocco di partenza
+            if x_left <= sx(0) <= x_right:
+                p.setPen(QColor("#fde68a"))
+                p.drawText(int(sx(0) - 18), int(y + 4), str(i + 1))
 
-            # etichetta a sinistra: corsia, nome, squadra
-            p.setPen(QColor("#f8fafc" if s.is_player else "#cbd5e1"))
+        # pannello a sinistra: classifica live
+        p.fillRect(0, int(track_top), self.LEFT_W - 6, int(track_bottom - track_top), QColor("#0f172a"))
+        for rank, i in enumerate(order, start=1):
+            r = self._runners[i]
+            s = r["s"]
+            y = track_top + rank * lane_h - lane_h / 2
+            fin = self._has_finished(r)
+            place = f"{s.placement}°" if fin else (f"{rank}" if self.race_time > 0 else str(i + 1))
+            p.setPen(QColor("#fbbf24" if s.is_player else "#e2e8f0"))
             bold = QFont(font)
             bold.setBold(s.is_player)
             p.setFont(bold)
-            p.drawText(8, int(y - 2), f"{i + 1}  {_short(s.athlete_name, 24)}")
+            p.drawText(8, int(y - 1), f"{place:>3}  {_short(s.athlete_name if not self._event.startswith('4x') else s.team_name, 22)}")
             p.setPen(QColor("#64748b"))
             p.setFont(font)
-            p.drawText(24, int(y + 12), _short(s.team_name, 26))
-
-            # atleta
-            cx = x0 + (x1 - x0) * prog
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(colour)
-            p.drawEllipse(int(cx - 8), int(y - 8), 16, 16)
-            p.setPen(QColor("#0f172a"))
-            p.drawText(int(cx - 8), int(y - 8), 16, 16, Qt.AlignmentFlag.AlignCenter, str(i + 1))
-
-            # esito a destra
-            if r["dnf"] and self.race_time > self._winner_time * 0.8:
-                p.setPen(QColor("#f87171"))
-                p.drawText(int(x1 + 18), int(y + 4), "RITIRATO")
-            elif finished:
+            if self._event.startswith("4x") and not r["dnf"]:
+                legs = s.athlete_name.split(" / ")
+                leg = min(3, int(max(0.0, min(0.999, meters[i] / d)) * 4))
+                sub = f"Fraz. {leg + 1}" + (f": {legs[leg]}" if len(legs) == 4 else "")
+            else:
+                sub = s.team_name
+            p.drawText(30, int(y + 12), _short(sub, 26))
+            if fin:
                 p.setPen(QColor("#fbbf24" if s.is_player else "#e2e8f0"))
-                p.drawText(int(x1 + 18), int(y + 4), f"{s.placement}°  {s.mark_display}")
+                p.drawText(self.LEFT_W - 70, int(y - 1), 64, 14, Qt.AlignmentFlag.AlignRight, s.mark_display)
+            elif r["dnf"] and self.race_time > self._winner_time * 0.8:
+                p.setPen(QColor("#f87171"))
+                p.drawText(self.LEFT_W - 70, int(y - 1), 64, 14, Qt.AlignmentFlag.AlignRight, "RIT")
 
-        phase = self.start_phase
-        if phase:
+        # minimappa
+        if mini:
+            my = track_bottom + 22
+            p.fillRect(int(x_left), my + 8, int(x_right - x_left), 4, QColor("#334155"))
+            vx0 = x_left + (x_right - x_left) * max(0.0, cam) / d
+            vw = (x_right - x_left) * min(1.0, view_w / d)
+            p.fillRect(int(vx0), my + 4, int(vw), 12, QColor(56, 189, 248, 50))
+            for i, r in enumerate(self._runners):
+                mx = x_left + (x_right - x_left) * max(0.0, min(1.0, meters[i] / d))
+                p.setBrush(QColor("#fbbf24" if r["s"].is_player else "#94a3b8"))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRect(int(mx - 3), my + 6, 7, 8)
+
+        # banner: partenza, foto finish, record, squalifica
+        phase_txt = self.start_phase
+        marks = sorted(r["s"].mark_value for r in self._runners if not r["dnf"])
+        photo = len(marks) > 1 and marks[1] - marks[0] <= 0.05
+        banners: List[tuple] = []
+        if phase_txt:
+            banners.append((phase_txt, "#fbbf24" if phase_txt == "VIA!" else "#f8fafc"))
+        if first_done and photo and self.race_time < self._winner_time + 3.0 * self._scale:
+            banners.append(("FOTO FINISH", "#38bdf8"))
+        if res is not None and self._done_all():
+            if res.is_club_record:
+                banners.append(("RECORD SOCIALE!", "#34d399"))
+            elif res.is_pb:
+                banners.append(("PRIMATO PERSONALE!", "#34d399"))
+            if res.disqualified:
+                banners.append(("SQUADRA SQUALIFICATA", "#f87171"))
+        if banners:
             big = QFont(font)
             big.setPointSize(26)
             big.setBold(True)
             p.setFont(big)
-            p.setPen(QColor(0, 0, 0, 150))
-            p.drawText(self.rect().adjusted(2, 2, 2, 2), Qt.AlignmentFlag.AlignCenter, phase)
-            p.setPen(QColor("#fbbf24" if phase == "VIA!" else "#f8fafc"))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, phase)
+            text, col = banners[-1]
+            area = QRectF(x_left, track_top, x_right - x_left, track_bottom - track_top)
+            p.setPen(QColor(0, 0, 0, 170))
+            p.drawText(area.adjusted(2, 2, 2, 2), Qt.AlignmentFlag.AlignCenter, text)
+            p.setPen(QColor(col))
+            p.drawText(area, Qt.AlignmentFlag.AlignCenter, text)
+
+        # vento
+        if res is not None and res.wind_ms is not None:
+            p.setFont(font)
+            p.fillRect(w - 156, 4, 148, 20, QColor(11, 18, 32, 220))
+            p.setPen(QColor("#fca5a5" if res.wind_illegal else "#e2e8f0"))
+            arrow = "→" if res.wind_ms >= 0 else "←"
+            p.drawText(w - 152, 6, 140, 16, Qt.AlignmentFlag.AlignRight, f"Vento {arrow} {res.wind_ms:+.1f} m/s")
         p.end()
+
+    def _done_all(self) -> bool:
+        return self.race_time >= self._last_finish() + 0.3
 
 
 # --------------------------------------------------------------------------- concorsi
