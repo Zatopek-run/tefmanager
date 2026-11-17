@@ -4,7 +4,9 @@ extends Node
 ##
 ## Tempo: `clock` e' il tempo di animazione (include il conto alla rovescia, lo sparo e' a GUN_AT);
 ## `race_time` e' il tempo di gara dallo sparo. Ogni corridore corre per (final_time - reaction_time)
-## secondi dopo la reazione, quindi taglia i 100 m esattamente a `final_time` (vedi RaceMotion).
+## secondi dopo la reazione, quindi taglia il traguardo esattamente a `final_time` (vedi RaceMotion).
+## Il tempo scorre in tempo reale (nessuna compressione, anche per le gare lunghe): e' l'utente a poter
+## accelerare con `time_scale` (tasti 1/2/4/8 in Stadium).
 
 signal race_loaded(runners: Array[RunnerData], info: Dictionary)
 signal countdown_started()
@@ -19,6 +21,7 @@ const AFTER_FINISH_SECONDS: float = 4.0  # quanto resta in RUNNING dopo l'ultimo
 
 var state: State = State.IDLE
 var info: Dictionary = {}
+var event_kind: String = "100m"       # nome dell'evento: sceglie curva, distanza e geometria della pista
 var runners: Array[RunnerData] = []
 var live_order: Array[RunnerData] = []  # ordine di classifica aggiornato a ogni fotogramma
 var clock: float = 0.0
@@ -42,8 +45,14 @@ func load_race(race_id: int) -> bool:
 	if loaded.all(func(r: RunnerData) -> bool: return r.dnf):
 		push_error("RaceController: gara %d senza classificati (tutti ritirati)." % race_id)
 		return false
+	var loaded_info: Dictionary = DatabaseManager.get_race_info(race_id)
+	var kind: String = str(loaded_info.get("event_name", "100m"))
+	if not RaceMotion.is_supported(kind):
+		push_error("RaceController: evento '%s' non supportato dal visualizzatore." % kind)
+		return false
 	runners = loaded
-	info = DatabaseManager.get_race_info(race_id)
+	info = loaded_info
+	event_kind = kind
 	_assign_places()
 	_finisher_count = 0
 	_winner_time = INF
@@ -76,8 +85,12 @@ func start() -> void:
 
 ## Salta alla fine: porta il tempo oltre l'ultimo arrivo (i risultati non cambiano).
 func skip_to_end() -> void:
-	if state == State.COUNTDOWN or state == State.RUNNING:
-		clock = GUN_AT + _last_finish_time + AFTER_FINISH_SECONDS
+	if state == State.COUNTDOWN:
+		state = State.RUNNING
+		gun_fired.emit()
+	if state == State.RUNNING:
+		race_time = _last_finish_time + AFTER_FINISH_SECONDS
+		clock = GUN_AT + race_time
 
 
 func leader_distance() -> float:
@@ -87,11 +100,14 @@ func leader_distance() -> float:
 func _process(delta: float) -> void:
 	if state != State.COUNTDOWN and state != State.RUNNING:
 		return
-	clock += delta * time_scale
-	race_time = maxf(0.0, clock - GUN_AT)
-	if state == State.COUNTDOWN and clock >= GUN_AT:
-		state = State.RUNNING
-		gun_fired.emit()
+	if state == State.COUNTDOWN:
+		clock += delta * time_scale
+		if clock >= GUN_AT:
+			state = State.RUNNING
+			gun_fired.emit()
+	else:
+		race_time += delta * time_scale
+		clock = GUN_AT + race_time
 	_update_runners()
 	_update_order()
 	display_time = minf(race_time, _winner_time) if _finished_count > 0 else race_time
@@ -101,7 +117,7 @@ func _process(delta: float) -> void:
 
 func _update_runners() -> void:
 	for r: RunnerData in runners:
-		var s: Vector2 = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time) if r.dnf 			else RaceMotion.state_at(race_time, r.reaction_time, r.final_time)
+		var s: Vector2 = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time, event_kind) if r.dnf 			else RaceMotion.state_at(race_time, r.reaction_time, r.final_time, event_kind)
 		r.distance = s.x
 		r.speed = s.y
 		if not r.dnf and not r.finished and race_time >= r.final_time:

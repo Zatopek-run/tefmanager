@@ -43,6 +43,8 @@ func _process(_delta: float) -> bool:
 			_check(is_equal_approx(rc.time_scale, 2.0), "tasto 2 -> velocita' 2x")
 			_press(KEY_4)
 			_check(is_equal_approx(rc.time_scale, 4.0), "tasto 4 -> velocita' 4x")
+			_press(KEY_8)
+			_check(is_equal_approx(rc.time_scale, 8.0), "tasto 8 -> velocita' 8x")
 			_press(KEY_1)
 			_check(is_equal_approx(rc.time_scale, 1.0), "tasto 1 -> velocita' 1x")
 			_press(KEY_SPACE)

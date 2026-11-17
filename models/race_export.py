@@ -1,4 +1,4 @@
-"""Esporta i risultati di una gara dei 100m in un DB SQLite letto dal visualizzatore Godot (godot_viewer/).
+"""Esporta i risultati di una gara (100m o 400m) in un DB SQLite letto dal visualizzatore Godot (godot_viewer/).
 
 Il modello decide tutto: qui si *copiano* tempi e ordine già calcolati. Le uniche cose ricavate sono la
 corsia (sorteggio deterministico) e il tempo di reazione (stessa funzione della vista 2D/3D PyQt).
@@ -20,6 +20,7 @@ from views.race_viewer import reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
+DISTANCES_M = {"100m": 100, "400m": 400}  # distanze supportate dal visualizzatore
 
 
 def race_seed(summary: CompetitionSummary) -> str:
@@ -50,6 +51,8 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
     per la sua velocità usa la mediana dei tempi degli altri. Se ci sono più corridori delle corsie, o tempi
     incoerenti, solleva ValueError (il chiamante ripiega sulla vista interna): niente scarti silenziosi.
     """
+    if result.event_name not in DISTANCES_M:
+        raise ValueError(f"Evento non supportato dal visualizzatore: {result.event_name}.")
     seed = race_seed(summary)
     standings = sorted(result.standings, key=lambda s: s.placement)
     if len(standings) > MAX_LANES:
@@ -69,7 +72,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
         race_id = conn.execute("SELECT COALESCE(MAX(race_id), 0) + 1 FROM races").fetchone()[0]
         conn.execute(
             "INSERT INTO races (race_id, event_name, meet_name, distance_m, wind_ms) VALUES (?, ?, ?, ?, ?)",
-            (race_id, result.event_name, summary.meet_name, 100, result.wind_ms or 0.0),
+            (race_id, result.event_name, summary.meet_name, DISTANCES_M[result.event_name], result.wind_ms or 0.0),
         )
         conn.executemany(
             "INSERT INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time, status) "

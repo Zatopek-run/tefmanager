@@ -24,3 +24,28 @@ INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, is_
 (2, 4, 'Ivo Salvetti',     'Atletica Brera',    0, 0.186, 10.11, 'OK'),
 (2, 5, 'Tomas Reinholt',   'Nordic Track',      0, 0.142, 9.87,  'OK'),
 (2, 6, 'Paulo Mendes',     'Clube Atlantico',   0, 0.163, 10.02, 'OK');
+
+-- Gara 3: 400m (partenza sfalsata sull'ovale).
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (3, '400m', 'Meeting Internazionale di Prova', 400, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time) VALUES
+(3, 1, 'Dario Conti',      'Atletica Brera',    0, 0.158, 46.91),
+(3, 2, 'Luca Ferrante',    'Polisportiva Nord', 0, 0.171, 46.35),
+(3, 3, 'Marco Valenti',    'Club Aurora',       1, 0.139, 45.80),
+(3, 4, 'Ivo Salvetti',     'Atletica Brera',    0, 0.186, 46.62),
+(3, 5, 'Tomas Reinholt',   'Nordic Track',      0, 0.142, 45.12),
+(3, 6, 'Paulo Mendes',     'Clube Atlantico',   0, 0.163, 45.57),
+(3, 7, 'Kenji Arakawa',    'Sakura AC',         0, 0.121, 45.33),
+(3, 8, 'Elias Ndlovu',     'Highveld Harriers', 0, 0.198, 47.48);
+
+-- Gara 4: 400m con il corridore del club ritirato (DNF) a meta' gara.
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (4, '400m', 'Meeting di Prova (ritiro 400m)', 400, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time, status) VALUES
+(4, 2, 'Luca Ferrante',    'Polisportiva Nord', 0, 0.171, 46.35, 'OK'),
+(4, 3, 'Marco Valenti',    'Club Aurora',       1, 0.139, 46.00, 'DNF'),
+(4, 4, 'Ivo Salvetti',     'Atletica Brera',    0, 0.186, 46.62, 'OK'),
+(4, 5, 'Tomas Reinholt',   'Nordic Track',      0, 0.142, 45.12, 'OK'),
+(4, 6, 'Paulo Mendes',     'Clube Atlantico',   0, 0.163, 45.57, 'OK');

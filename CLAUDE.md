@@ -84,7 +84,7 @@ container di sviluppo e non sarebbero testabili).
 
 ## Visualizzatore Godot (`godot_viewer/`)
 
-Modulo **separato** in Godot 4.3+ / GDScript (non fa parte dell'app PyQt): mette in scena i 100m in stile
+Modulo **separato** in Godot 4.3+ / GDScript (non fa parte dell'app PyQt): mette in scena i 100m e i 400m in stile
 "diretta TV" 2010 leggendo risultati già calcolati da SQLite (plugin godot-sqlite, in `addons/`, ignorato da git).
 Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 
@@ -100,7 +100,7 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
   controlla arrivo esatto a 100 m, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
   `--headless`) salva immagini della scena reale (`-- cartella [close] --race=2`); `tests/verify_input.gd -- --autoquit`
-  prova tasti e chiusura automatica. Testato con Godot 4.7.2 + godot-sqlite 4.9.
+  prova tasti e chiusura automatica; `verify_race.gd` copre 100m, 100m con ritirato, 400m e 400m con ritirato (geometria inclusa). Testato con Godot 4.7.2 + godot-sqlite 4.9.
 - **Personaggi.** `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
   (`assets/athlete/`, vedi `CREDITS.md`); abiti ricavati dalla mesh con uno shader. Il modello originale guarda +Z
   e viene ruotato (`FACING_Y`) per correre verso +X.
@@ -113,7 +113,17 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   (`RaceMotion.DNF_STOP_DISTANCE`), rallenta, si ferma (HUD «RIT.») ed è ultimo; `final_time` è solo un tempo di
   riferimento (mediana degli altri). Più corridori delle 8 corsie → `export_race` solleva `ValueError` e il gioco
   usa la vista interna (mai scarti silenziosi).
-- Il visualizzatore Godot copre solo i **100m** (niente 400m, 1500m, staffette, concorsi né squalificati).
+- **400m.** Pista ovale: `models/TrackGeometry.gd` (rettilinei 84,39 m, raggio corsia 1 = 36,8 m, corsie da 1,22 m;
+  partenza sfalsata `start_offset`, traguardo a x = 0) è l'unica fonte sia per la posizione dei corridori sia per il
+  disegno (`scripts/OvalTrackBuilder.gd`). `RaceMotion` ha una curva per evento (`kind`); la distanza è per corsia
+  dalla SUA partenza. Camera "chase" sul lato esterno. **La mira è sempre esattamente sul primo in classifica**
+  (`live_order[0]`), senza ritardo di inseguimento (nemmeno a 8x); solo quando il primo cambia (con la partenza
+  sfalsata due primi possono distare decine di metri) la mira scivola dal vecchio al nuovo (`_aim_offset` che decade).
+  Fino allo sparo si inquadra tutto il gruppo. `tests/verify_camera.gd` misura lo scarto del primo dal centro.
+  **Niente compressione del tempo**: si guarda in tempo reale e l'utente accelera con i tasti 1/2/4/8
+  (indicatore in basso a destra). `GODOT_EVENTS` in `views/godot_launcher.py` è un elenco esatto: le staffette
+  (`4x100m`…) restano sulla vista PyQt.
+- Il visualizzatore Godot copre solo **100m e 400m** (niente 1500m, staffette, concorsi né squalificati).
 
 ## Test: cosa verificano e cosa no
 

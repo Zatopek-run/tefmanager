@@ -2,7 +2,7 @@ extends Node3D
 ## VIEW 3D - scena principale: luce, ambiente, pista, tribune, corridori. Il HUD e' una scena separata.
 ##
 ## Avvio: la gara 1 del DB (o `--race=N` dopo `--` sulla riga di comando) parte da sola dopo 1.5 s.
-## Tasti: Spazio = (ri)parti, 1/2/4 = velocita' 1x/2x/4x, Esc = salta alla fine.
+## Tasti: Spazio = (ri)parti, 1/2/4/8 = velocita' 1x/2x/4x/8x, Esc = salta alla fine.
 ## `--autoquit` (dopo `--`): a gara finita chiude l'app dopo AUTOQUIT_DELAY secondi.
 
 const LANE_WIDTH: float = 1.22
@@ -23,14 +23,14 @@ const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
 var _race_id: int = 1
 var _autoquit: bool = false      # --autoquit: chiude l'app a fine gara (usato dal gioco PyQt)
 var _quit_scheduled: bool = false
+var _world_kind: String = ""       # "100m" (rettilineo) oppure "oval": quale scena e' costruita
+var _crowd_material: StandardMaterial3D = null
 
 
 func _ready() -> void:
 	Engine.max_fps = 60
 	_configure_sun()
 	_configure_environment()
-	_build_track()
-	_build_stands()
 	add_child(HUD_SCENE.instantiate())
 
 	RaceController.race_loaded.connect(_on_race_loaded)
@@ -38,6 +38,9 @@ func _ready() -> void:
 	_autoquit = OS.get_cmdline_user_args().has("--autoquit")
 	if RaceController.load_race(_race_id):
 		get_tree().create_timer(AUTO_START_DELAY).timeout.connect(RaceController.start)
+	elif _autoquit:
+		push_error("Stadium: gara %d non caricabile: esco con errore." % _race_id)
+		get_tree().quit(1)  # il gioco PyQt se ne accorge e usa la vista interna
 
 
 func _process(_delta: float) -> void:
@@ -57,6 +60,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_1: RaceController.time_scale = 1.0
 		KEY_2: RaceController.time_scale = 2.0
 		KEY_4: RaceController.time_scale = 4.0
+		KEY_8: RaceController.time_scale = 8.0
 		KEY_ESCAPE: RaceController.skip_to_end()
 
 
@@ -68,6 +72,7 @@ func _race_id_from_args() -> int:
 
 
 func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
+	_rebuild_world(RaceController.event_kind)
 	for child: Node in _runners_root.get_children():
 		child.queue_free()
 	for r: RunnerData in runners:
@@ -121,6 +126,30 @@ func _configure_environment() -> void:
 
 # --- geometria ----------------------------------------------------------------------------------
 
+## Costruisce la scena giusta per la gara: rettilineo dei 100m oppure ovale da 400 m. Se e' gia' quella, non fa nulla.
+func _rebuild_world(kind: String) -> void:
+	var wanted: String = "100m" if kind == "100m" else "oval"
+	if wanted == _world_kind:
+		return
+	_world_kind = wanted
+	for child: Node in _track_root.get_children():
+		_track_root.remove_child(child)
+		child.queue_free()
+	if wanted == "oval":
+		OvalTrackBuilder.build(_track_root)
+		# Tribune dietro il rettilineo d'arrivo (dietro la camera) e dietro quello opposto (sfondo): lontane dalla pista,
+		# cosi' la camera esterna che insegue il gruppo non ci finisce dentro.
+		var mid_x: float = -TrackGeometry.STRAIGHT * 0.5
+		_build_stand_block(mid_x, 200.0, 50.0, 1.0, [-130.0, -42.0, 45.0])
+		_build_stand_block(mid_x, 200.0, -125.0, -1.0, [-130.0, -42.0, 45.0])
+		_sun.directional_shadow_max_distance = 160.0  # la camera si allontana dal gruppo sparpagliato
+	else:
+		_build_track()
+		_build_stand_block((TRACK_X_MIN + TRACK_X_MAX) * 0.5, TRACK_X_MAX - TRACK_X_MIN + 20.0, -6.0, -1.0,
+			[-10.0, 40.0, 100.0, 140.0])
+		_sun.directional_shadow_max_distance = 90.0
+
+
 func _build_track() -> void:
 	var length: float = TRACK_X_MAX - TRACK_X_MIN
 	var center_x: float = (TRACK_X_MIN + TRACK_X_MAX) * 0.5
@@ -142,20 +171,20 @@ func _build_track() -> void:
 	_add_box(_track_root, Vector3(0.25, 0.012, width), Vector3(FINISH_X, 0.007, center_z), line)     # traguardo
 
 
-func _build_stands() -> void:
-	var crowd: StandardMaterial3D = StandardMaterial3D.new()
-	crowd.albedo_texture = _crowd_texture()
-	crowd.uv1_triplanar = true
-	crowd.uv1_world_triplanar = true                   # mappatura in metri: gli spettatori restano ~0,5 m
-	crowd.uv1_scale = Vector3.ONE / CROWD_TILE_METERS
-	crowd.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	crowd.roughness = 1.0
+## Gradinata a gradoni che si allontana da z_start nella direzione `dir` (+1/-1), con torri faro dietro di essa.
+func _build_stand_block(center_x: float, length: float, z_start: float, dir: float, lamp_xs: Array) -> void:
+	if _crowd_material == null:
+		_crowd_material = StandardMaterial3D.new()
+		_crowd_material.albedo_texture = _crowd_texture()
+		_crowd_material.uv1_triplanar = true
+		_crowd_material.uv1_world_triplanar = true       # mappatura in metri: gli spettatori restano ~0,5 m
+		_crowd_material.uv1_scale = Vector3.ONE / CROWD_TILE_METERS
+		_crowd_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+		_crowd_material.roughness = 1.0
 
-	var back_z: float = -6.0  # tribune sul lato prato, dietro i corridori visti dalla camera
-	for step in range(6):  # gradinata a gradoni: tribuna principale sul lato esterno
+	for step in range(6):
 		var rise: float = 0.7 * (step + 1)
-		_add_box(_track_root, Vector3(TRACK_X_MAX - TRACK_X_MIN + 20.0, rise, 1.8),
-			Vector3((TRACK_X_MIN + TRACK_X_MAX) * 0.5, rise * 0.5, back_z - step * 1.8), crowd)
+		_add_box(_track_root, Vector3(length, rise, 1.8), Vector3(center_x, rise * 0.5, z_start + dir * step * 1.8), _crowd_material)
 
 	# Torri faro con testa emissiva: alimentano il bloom (glow_hdr_threshold = 1.0).
 	var lamp: StandardMaterial3D = StandardMaterial3D.new()
@@ -163,9 +192,9 @@ func _build_stands() -> void:
 	lamp.emission_enabled = true
 	lamp.emission = Color(1.0, 0.95, 0.8)
 	lamp.emission_energy_multiplier = 6.0
-	for x: float in [-10.0, 40.0, 100.0, 140.0]:
-		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, back_z - 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
-		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, back_z - 13.6), lamp)
+	for x: float in lamp_xs:
+		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, z_start + dir * 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
+		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, z_start + dir * 13.6), lamp)
 
 
 ## Folla procedurale: file di spettatori (testa tonda + busto colorato) su fondo scuro, deterministica.

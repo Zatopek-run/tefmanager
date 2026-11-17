@@ -1276,12 +1276,36 @@ class TestRaceExport(unittest.TestCase):
             with self.assertRaises(ValueError):
                 export_race(summary, result, path)
 
-    def test_godot_viewer_is_skipped_when_disabled_and_only_for_100m(self):
+    def test_export_400m_records_distance_and_refuses_unsupported_events(self):
+        import sqlite3
+        from models.race_export import export_race
+
+        summary, result = self._summary()
+        result.event_name = "400m"
+        for s, m in zip(result.standings, [45.1, 45.8, 46.4, 47.0]):
+            s.mark_value = m
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "race_results.db"
+            race_id = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            event, distance = conn.execute("SELECT event_name, distance_m FROM races WHERE race_id = ?", (race_id,)).fetchone()
+            times = sorted(r[0] for r in conn.execute("SELECT final_time FROM race_results WHERE race_id = ?", (race_id,)))
+            conn.close()
+            self.assertEqual((event, distance), ("400m", 400))
+            self.assertEqual(times, [45.1, 45.8, 46.4, 47.0])
+            result.event_name = "4x100m"
+            with self.assertRaises(ValueError):
+                export_race(summary, result, path)
+
+    def test_godot_viewer_is_skipped_when_disabled_and_only_for_supported_events(self):
         import views.godot_launcher as gl
 
         self.assertIsNone(gl.find_godot())           # TEF_NO_GODOT attivo nei test
         self.assertIsNone(gl.viewer_available("100m"))
         self.assertIsNone(gl.viewer_available("400m"))
+        self.assertIsNone(gl.viewer_available("4x100m"))   # staffette: mai nel visualizzatore Godot
+        self.assertIn("400m", gl.GODOT_EVENTS)
+        self.assertNotIn("4x100m", gl.GODOT_EVENTS)
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 

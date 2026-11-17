@@ -19,6 +19,8 @@ const PLAYER_COLOR: Color = Color(0.45, 0.85, 1.0)
 var _rows: Array[Dictionary] = []  # {box, place, name, value}
 var _last_timer_text: String = ""
 var _last_banner_text: String = ""
+var _speed_label: Label = null
+var _last_speed_text: String = ""
 
 
 func _ready() -> void:
@@ -31,6 +33,7 @@ func _ready() -> void:
 	_banner.add_theme_font_size_override("font_size", 36)
 	_banner.add_theme_color_override("font_outline_color", Color.BLACK)
 	_banner.add_theme_constant_override("outline_size", 8)
+	_make_speed_label()
 	RaceController.race_loaded.connect(_on_race_loaded)
 	_on_race_loaded(RaceController.runners, RaceController.info)
 
@@ -39,6 +42,7 @@ func _process(_delta: float) -> void:
 	_update_timer()
 	_update_ranking()
 	_update_banner()
+	_update_speed_label()
 
 
 func _on_race_loaded(runners: Array[RunnerData], info: Dictionary) -> void:
@@ -98,6 +102,28 @@ func _update_banner() -> void:
 	if text != _last_banner_text:
 		_last_banner_text = text
 		_banner.text = text
+
+
+## Indicatore in basso a destra: velocita' attuale e tasti per cambiarla.
+func _make_speed_label() -> void:
+	_speed_label = Label.new()
+	_speed_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	_speed_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_speed_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_speed_label.offset_right = -16.0
+	_speed_label.offset_bottom = -12.0
+	_speed_label.add_theme_font_size_override("font_size", 16)
+	_speed_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.85))
+	_speed_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_speed_label.add_theme_constant_override("outline_size", 6)
+	$Root.add_child(_speed_label)
+
+
+func _update_speed_label() -> void:
+	var text: String = "Velocita' %dx    [1] [2] [4] [8]    Esc: salta alla fine" % int(RaceController.time_scale)
+	if text != _last_speed_text:
+		_last_speed_text = text
+		_speed_label.text = text
 
 
 # --- helper -------------------------------------------------------------------------------------

@@ -45,7 +45,7 @@ var _current_anim: StringName = &""
 
 func setup(runner: RunnerData) -> void:
 	data = runner
-	position = Vector3(0.0, 0.0, (runner.lane - 1) * LANE_WIDTH)
+	_apply_transform()
 
 	_model = (load(CHARACTER_PATH) as PackedScene).instantiate() as Node3D
 	_model.rotation.y = FACING_Y
@@ -65,8 +65,19 @@ func setup(runner: RunnerData) -> void:
 func _process(_delta: float) -> void:
 	if data == null:
 		return
-	position.x = data.distance
+	_apply_transform()
 	_update_animation()
+
+
+## Posizione e orientamento in pista: rettilineo dei 100m, oppure anello da 400 m con partenza sfalsata.
+func _apply_transform() -> void:
+	if RaceController.event_kind == "100m":
+		position = Vector3(data.distance, 0.0, (data.lane - 1) * LANE_WIDTH)
+		rotation.y = 0.0
+	else:
+		var pose: Dictionary = TrackGeometry.pose(data.lane, data.distance)
+		position = pose["position"]
+		rotation.y = pose["yaw"]
 
 
 # --- animazione ---------------------------------------------------------------------------------
@@ -106,7 +117,7 @@ func _update_animation() -> void:
 		_player.speed_scale = RaceController.time_scale
 	else:
 		var length: float = _player.get_animation(_current_anim).length
-		_player.speed_scale = clampf(s / stride * length, 0.25, 3.0) * RaceController.time_scale
+		_player.speed_scale = clampf(s / stride * length * RaceController.time_scale, 0.25, 8.0)
 
 
 func _play(anim: StringName) -> void:

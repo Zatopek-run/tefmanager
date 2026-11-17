@@ -35,7 +35,8 @@ godot_viewer/
 2. Premi F5. Al primo avvio crea `user://race_results.db` con la gara demo; la gara parte da sola.
 3. Con un DB reale: variabile d'ambiente `TEF_RACE_DB=C:\percorso\race_results.db`; gara diversa:
    `godot --path godot_viewer -- --race=3`.
-4. Tasti: **Spazio** riparte · **1/2/4** velocità · **Esc** salta alla fine.
+4. Tasti: **Spazio** riparte · **1/2/4/8** velocità (indicatore in basso a destra) · **Esc** salta alla fine. Il tempo
+   scorre sempre in tempo reale (anche nei 400m, ~50 s): sta all'utente accelerare.
 
 ## Contratto con il DB
 
@@ -66,15 +67,25 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: solo i 100m; la partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le
+Limiti noti: solo 100m e 400m (niente 1500m, staffette, concorsi); la partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le
 mani a terra (la libreria di animazioni non ne ha una); la finestra Godot è separata dal gioco; nessun pettorale
 (dalla camera laterale non si vedrebbe); il pubblico è una texture procedurale a blocchetti, non persone modellate.
 Provati: tasti Spazio/1/2/4/Esc e `--autoquit` (`tests/verify_input.gd`), ritiro per infortunio (gara 2 del DB
 demo), fotofinish (la camera fissa stacca quando il leader supera i 90 m).
 
+## 400m (pista ovale)
+
+`TrackGeometry.gd` descrive l'ovale (rettilinei 84,39 m, raggio corsia 1 = 36,8 m): ogni corsia fa esattamente 400 m
+con la partenza sfalsata e tutte arrivano sulla linea a x = 0 (`verify_race.gd` lo controlla corsia per corsia).
+`OvalTrackBuilder.gd` disegna tartan, linee di corsia, linee di partenza sfalsate e traguardo dagli stessi numeri.
+La camera `ChaseCam` sta sul lato esterno e punta sempre sul primo in classifica (resta al centro dell'inquadratura
+anche a 8x; `tests/verify_camera.gd` lo misura: scarto massimo 42 px su 1152). Se il primo cambia la mira scivola
+dal vecchio al nuovo; fino allo sparo si vede tutto il gruppo. I corridori vanno sempre da sinistra a destra.
+Stacco sul fotofinish negli ultimi 10 m.
+
 ## Uso dal gioco PyQt
 
-Alle gare dei 100m il gioco lancia questo visualizzatore da solo (`views/godot_launcher.py`): esporta la gara,
+Alle gare dei 100m e dei 400m il gioco lancia questo visualizzatore da solo (`views/godot_launcher.py`): esporta la gara,
 avvia Godot con `--autoquit` e riprende quando si chiude (a fine gara, dopo 3 s). Serve Godot (`TEF_GODOT`,
 `~/scoop/apps/godot/current/godot.exe` o PATH) e il plugin in `addons/godot-sqlite/`; altrimenti il gioco usa
 la vista interna. «Salta alla fine» nel dialog chiude Godot.
