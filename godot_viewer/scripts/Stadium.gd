@@ -111,12 +111,12 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 		_runners_root.add_child(_field_marker)
 		if RaceController.event_kind == "Getto del Peso":
 			var ball: SphereMesh = SphereMesh.new()
-			ball.radius = 0.12
-			ball.height = 0.24
+			ball.radius = 0.16
+			ball.height = 0.32
 			var ball_mat: StandardMaterial3D = StandardMaterial3D.new()
-			ball_mat.albedo_color = Color(0.55, 0.58, 0.64)
-			ball_mat.metallic = 0.85
-			ball_mat.roughness = 0.25
+			ball_mat.albedo_color = Color(0.86, 0.89, 0.94)
+			ball_mat.metallic = 0.45
+			ball_mat.roughness = 0.22
 			ball.material = ball_mat
 			_shot_mesh = MeshInstance3D.new()
 			_shot_mesh.mesh = ball

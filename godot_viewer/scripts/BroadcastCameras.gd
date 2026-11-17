@@ -243,9 +243,9 @@ func _apply(cam: Camera3D) -> void:
 	elif cam == _field_cam:
 		if RaceController.event_kind == "Getto del Peso":
 			var focus: Vector3 = RaceController.shot_pos if RaceController.shot_visible else RaceController.jumper_pos
-			_field_cam.fov = 38.0
-			_field_cam.position = Vector3(clampf(focus.x + 2.5, -44.0, -18.0), 4.8, -18.0)
-			_field_cam.look_at(Vector3(focus.x, clampf(focus.y * 0.65, 1.2, 3.0), focus.z), Vector3.UP)
+			_field_cam.fov = 40.0
+			_field_cam.position = Vector3(clampf(focus.x + 0.5, -42.0, -22.0), 4.6, -16.0)
+			_field_cam.look_at(Vector3(lerpf(RaceController.jumper_pos.x, focus.x, 0.65), clampf(focus.y * 0.60, 1.2, 3.0), focus.z), Vector3.UP)
 		else:
 			var jp: Vector3 = RaceController.jumper_pos
 			_field_cam.fov = 34.0

@@ -307,6 +307,8 @@ func _process_field(dt: float) -> void:
 
 	if field_step_t == 0.0:
 		field_landed_foul = false
+		if bool(step["animate"]):
+			field_landed_mark = -100.0
 		shot_visible = false
 	field_step_t += dt
 
