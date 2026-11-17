@@ -26,12 +26,17 @@ GODOT_EVENTS = ("100m", "400m")  # gare che il visualizzatore Godot sa mettere i
 
 
 def find_godot() -> Optional[Path]:
-    """Cerca l'eseguibile di Godot 4 (TEF_GODOT, scoop, PATH). None se non c'è o è disattivato."""
+    """Cerca l'eseguibile di Godot 4 (TEF_GODOT, root progetto, scoop, PATH). None se non c'è o è disattivato."""
     if os.environ.get("TEF_NO_GODOT"):
         return None
     candidates = []
     if os.environ.get("TEF_GODOT"):
         candidates.append(Path(os.environ["TEF_GODOT"]))
+    project_root = GODOT_PROJECT.parent
+    candidates.extend(
+        sorted(p for p in project_root.glob("Godot*.exe") if "console" not in p.name.lower())
+    )
+    candidates.append(project_root / "godot.exe")
     candidates.append(Path.home() / "scoop" / "apps" / "godot" / "current" / "godot.exe")
     on_path = shutil.which("godot")
     if on_path:
