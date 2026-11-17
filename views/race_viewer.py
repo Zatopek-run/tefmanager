@@ -1095,7 +1095,7 @@ class RaceViewerDialog(QDialog):
         super().__init__(parent)
         self.summary = summary
         self.setWindowTitle(f"Gare in diretta — {summary.meet_name}")
-        self.resize(900, 560)
+        self.resize(1160, 740)
         self._index = -1
         self._speed_idx = 0
         self._paused = False
@@ -1122,14 +1122,23 @@ class RaceViewerDialog(QDialog):
         self.stack.addWidget(self.track2d)
         self.stack.addWidget(self.track3d)
         self.stack.addWidget(self.field)
-        self.godot_page = QLabel("")
-        self.godot_page.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.godot_page.setWordWrap(True)
-        self.godot_page.setStyleSheet("font-size: 20px; font-weight: 700; color: #cbd5e1;")
+        self.godot_page = QWidget()
+        self.godot_layout = QVBoxLayout(self.godot_page)
+        self.godot_layout.setContentsMargins(0, 0, 0, 0)
+        self.godot_status = QLabel("")
+        self.godot_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.godot_status.setWordWrap(True)
+        self.godot_status.setStyleSheet("font-size: 18px; font-weight: 700; color: #cbd5e1;")
+        self.godot_layout.addWidget(self.godot_status)
         self.stack.addWidget(self.godot_page)
         self._godot = None  # QProcess del visualizzatore Godot, se la gara è in corso lì
+        self._godot_container = None
         self._godot_killed = False
         self._godot_clock = QElapsedTimer()
+        self._embed_attempts = 0
+        self._embed_timer = QTimer(self)
+        self._embed_timer.setInterval(40)
+        self._embed_timer.timeout.connect(self._poll_godot_window)
         root.addWidget(self.stack, stretch=1)
 
         self.clock = QLabel("")
@@ -1218,34 +1227,71 @@ class RaceViewerDialog(QDialog):
         self.stack.setCurrentWidget(self.track)
 
     def _start_godot(self, res: EventResult) -> bool:
-        """Prova a far vedere la gara nel visualizzatore Godot. False = si usa la vista interna."""
+        """Prova a far vedere la gara nel visualizzatore Godot integrato nella finestra."""
         from views.godot_launcher import launch_race_viewer
 
-        proc = launch_race_viewer(self.summary, res, self._on_godot_finished, parent=self)
+        self._cleanup_godot_embed()
+        size = (max(640, self.stack.width()), max(360, self.stack.height()))
+        proc = launch_race_viewer(
+            self.summary, res, self._on_godot_finished, parent=self, embed=True, size=size
+        )
         if proc is None:
             return False
         self._godot = proc
         self._godot_killed = False
         self._godot_clock.start()
-        self.godot_page.setText(
-            f"{res.event_name}: gara in corso nel visualizzatore 3D (Godot).\n"
-            "Si chiude da solo a fine gara; puoi anche chiuderlo con la X o con «Salta alla fine»."
-        )
+        self._embed_attempts = 0
+        self.godot_status.setText(f"{res.event_name}: avvio visualizzatore 3D…")
+        self.godot_status.show()
         self.stack.setCurrentWidget(self.godot_page)
+        self._embed_timer.start()
         self.btn_pause.setEnabled(False)
         self.btn_speed.setEnabled(False)
         self.btn_view.setEnabled(False)
         return True
+
+    def _poll_godot_window(self) -> None:
+        if self._godot is None:
+            self._embed_timer.stop()
+            return
+        self._embed_attempts += 1
+        from views.godot_launcher import embed_hwnd, find_process_hwnd
+
+        hwnd = find_process_hwnd(self._godot.processId())
+        if hwnd:
+            self._embed_timer.stop()
+            container = embed_hwnd(hwnd, self.godot_page)
+            if container is not None:
+                self._godot_container = container
+                self.godot_status.hide()
+                self.godot_layout.addWidget(container, stretch=1)
+                return
+        if self._embed_attempts >= 150:
+            self._embed_timer.stop()
+            self.godot_status.setText(
+                "Gara in corso nel visualizzatore 3D (Godot).\n"
+                "Si chiude da solo a fine gara; puoi anche premere «Salta alla fine»."
+            )
+
+    def _cleanup_godot_embed(self) -> None:
+        self._embed_timer.stop()
+        if self._godot_container is not None:
+            self.godot_layout.removeWidget(self._godot_container)
+            self._godot_container.setParent(None)
+            self._godot_container.deleteLater()
+            self._godot_container = None
+        self.godot_status.setText("")
+        self.godot_status.show()
 
     def _on_godot_finished(self, exit_code: int = 0) -> None:
         if self._godot is None:
             return
         crashed = exit_code != 0 and not self._godot_killed and self._godot_clock.elapsed() < 5000
         self._godot = None
+        self._cleanup_godot_embed()
         self.btn_pause.setEnabled(True)
         self.btn_speed.setEnabled(True)
         self.btn_view.setEnabled(True)
-        self.godot_page.setText("")
         if crashed and 0 <= self._index < len(self.summary.event_results):
             self._show_internal_race(self.summary.event_results[self._index])  # Godot non è partito: vista interna
             self._clock.start()
@@ -1317,6 +1363,7 @@ class RaceViewerDialog(QDialog):
 
     def done(self, r: int) -> None:  # chiusura: ferma il timer e il visualizzatore Godot
         self._timer.stop()
+        self._cleanup_godot_embed()
         if self._godot is not None:
             proc, self._godot = self._godot, None
             proc.kill()

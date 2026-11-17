@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment
+from PyQt6.QtGui import QWindow
+from PyQt6.QtWidgets import QWidget
 
 from models.database import get_default_save_path
 from models.entities import CompetitionSummary, EventResult
@@ -62,6 +65,8 @@ def launch_race_viewer(
     result: EventResult,
     on_finished: Callable[[int], None],
     parent: Optional[QObject] = None,
+    embed: bool = False,
+    size: Optional[tuple[int, int]] = None,
 ) -> Optional[QProcess]:
     """Esporta la gara e avvia Godot. `on_finished(codice_uscita)` viene chiamata alla chiusura. None se non riesce."""
     godot = viewer_available(result.event_name)
@@ -80,7 +85,53 @@ def launch_race_viewer(
     proc.setProcessEnvironment(env)
     proc.setWorkingDirectory(str(GODOT_PROJECT))
     proc.finished.connect(lambda code, _status: on_finished(code))
-    proc.start(str(godot), ["--path", str(GODOT_PROJECT), "--", f"--race={race_id}", "--autoquit"])
+    args = ["--path", str(GODOT_PROJECT)]
+    if embed and sys.platform == "win32":
+        w, h = size if size else (960, 540)
+        args.extend(["-w", "--resolution", f"{max(640, w)}x{max(360, h)}", "--position", "-32000,-32000"])
+    args.extend(["--", f"--race={race_id}", "--autoquit"])
+    proc.start(str(godot), args)
     if not proc.waitForStarted(5000):
         return None
     return proc
+
+
+def find_process_hwnd(pid: int) -> int:
+    """Su Windows ritorna l'HWND visibile principale associato a `pid`, oppure 0."""
+    if sys.platform != "win32" or pid <= 0:
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def _enum_cb(hwnd: int, _lp: int) -> bool:
+        if user32.IsWindowVisible(hwnd):
+            proc_id = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
+            if proc_id.value == pid:
+                found.append(int(hwnd))
+                return False
+        return True
+
+    user32.EnumWindows(_enum_cb, 0)
+    return found[0] if found else 0
+
+
+def embed_hwnd(hwnd: int, host: QWidget) -> Optional[QWidget]:
+    """Incapsula una finestra esterna (`hwnd`) senza bordi dentro `host` su Windows."""
+    if sys.platform != "win32" or not hwnd:
+        return None
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    gwl_style = -16
+    strip_flags = 0x00C00000 | 0x00040000 | 0x00020000 | 0x00010000 | 0x00080000  # caption, frame, min/max, sysmenu
+    swp_flags = 0x0002 | 0x0001 | 0x0004 | 0x0020  # NOMOVE | NOSIZE | NOZORDER | FRAMECHANGED
+    style = user32.GetWindowLongW(hwnd, gwl_style)
+    user32.SetWindowLongW(hwnd, gwl_style, style & ~strip_flags)
+    user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, swp_flags)
+    qwin = QWindow.fromWinId(hwnd)
+    return QWidget.createWindowContainer(qwin, host)
