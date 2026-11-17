@@ -76,6 +76,40 @@ static func pose(lane: int, distance_run: float) -> Dictionary:
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
 
 
+## Coordinata d'anello da cui parte la 1500m in corsia 1 (3,75 giri prima del traguardo).
+static func start_offset_1500m() -> float:
+	return 4.0 * loop_length(1) - 1500.0
+
+
+## Posizione (x, z) alla coordinata d'anello `c` (riferita alla corsia 1) con offset radiale esterno `lat` >= 0.
+static func position_at_radial(c: float, lat: float) -> Vector2:
+	var r: float = R1 + lat
+	c = fposmod(c, loop_length(1))
+	var arc: float = PI * R1
+	if c < arc:
+		var a: float = c / R1
+		return Vector2(r * sin(a), -R1 + r * cos(a))
+	c -= arc
+	if c < STRAIGHT:
+		return Vector2(-c, -R1 - r)
+	c -= STRAIGHT
+	if c < arc:
+		var a2: float = c / R1
+		return Vector2(-STRAIGHT - r * sin(a2), -R1 - r * cos(a2))
+	return Vector2(-STRAIGHT + (c - arc), lat)
+
+
+## Posa 3D nei 1500m: partenza in linea curva sulla corsia assegnata, poi rientro graduale alla corda (corsie 1-3).
+static func pose_1500m(lane: int, distance_run: float) -> Dictionary:
+	var c: float = start_offset_1500m() + distance_run
+	var start_lat: float = float(lane - 1) * LANE_WIDTH
+	var pack_lat: float = minf(2.1, float(lane - 1) * 0.30)
+	var lat: float = lerpf(start_lat, pack_lat, smoothstep(10.0, 90.0, distance_run))
+	var p: Vector2 = position_at_radial(c, lat)
+	var h: Vector2 = heading_at(1, c)
+	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
+
+
 ## Linea di partenza dei 100m: sul rettilineo d'arrivo prolungato all'indietro ("chute") oltre l'inizio dell'arco.
 const START_100M_X: float = -100.0
 
@@ -83,8 +117,11 @@ const START_100M_X: float = -100.0
 ## Posizione 3D, direzione e angolo di un corridore in gara. Unica fonte per RunnerView, camere e test.
 ## - 100m: corre dalla linea di partenza (x = -100) al traguardo (x = 0) sul rettilineo, poi prosegue nella curva
 ##   della sua corsia (la "corsa dopo il traguardo" segue la pista, non la attraversa).
-## - altre gare sull'ovale: partenza sfalsata per corsia (vedi pose()).
+## - 1500m: partenza a gruppi sulla linea curva e rientro alla corda.
+## - 400m: partenza sfalsata per corsia (vedi pose()).
 static func runner_pose(kind: String, lane: int, distance_run: float) -> Dictionary:
+	if kind == "1500m":
+		return pose_1500m(lane, distance_run)
 	if kind != "100m":
 		return pose(lane, distance_run)
 	if distance_run <= 100.0:
@@ -99,11 +136,22 @@ static func runner_pose(kind: String, lane: int, distance_run: float) -> Diction
 enum Region { ARC1, BACK, ARC2, HOME }
 
 
-## In quale tratto dell'anello si trova un corridore (usato dalla regia dei 400m): curva 1, rettilineo opposto,
+## In quale tratto dell'anello si trova un corridore (usato dalla regia ovale): curva 1, rettilineo opposto,
 ## curva 2, rettilineo d'arrivo. Oltre il traguardo si riavvolge sulla curva 1.
 static func region(lane: int, distance_run: float) -> int:
-	var c: float = fposmod(start_offset(lane) + distance_run, loop_length(lane))
-	var arc: float = PI * radius(lane)
+	return region_for("400m", lane, distance_run)
+
+
+static func region_for(kind: String, lane: int, distance_run: float) -> int:
+	var c: float
+	var r: float
+	if kind == "1500m":
+		c = fposmod(start_offset_1500m() + distance_run, loop_length(1))
+		r = R1
+	else:
+		c = fposmod(start_offset(lane) + distance_run, loop_length(lane))
+		r = radius(lane)
+	var arc: float = PI * r
 	if c < arc:
 		return Region.ARC1
 	c -= arc

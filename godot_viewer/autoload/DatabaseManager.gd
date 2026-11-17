@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and not _has_gender_column():
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or _demo_race_count() < 6):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()
@@ -34,6 +34,11 @@ func _has_gender_column() -> bool:
 		if str(c.get("name", "")) == "gender":
 			return true
 	return false
+
+
+func _demo_race_count() -> int:
+	var rows: Array[Dictionary] = _select("SELECT COUNT(*) AS cnt FROM races;", [])
+	return int(rows[0].get("cnt", 0)) if not rows.is_empty() else 0
 
 
 func _exit_tree() -> void:

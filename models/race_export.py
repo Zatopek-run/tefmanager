@@ -21,7 +21,7 @@ from views.race_viewer import reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
-DISTANCES_M = {"100m": 100, "400m": 400}  # distanze supportate dal visualizzatore
+DISTANCES_M = {"100m": 100, "400m": 400, "1500m": 1500}  # distanze supportate dal visualizzatore
 
 
 def race_seed(summary: CompetitionSummary) -> str:

@@ -37,7 +37,7 @@ const FINISH_CAM_Z: float = 16.0
 const FRAME_WIDTH_BASE: float = 14.4      # larghezza (m) inquadrata dal carrello con fov TRACK_FOV a distanza base
 const FRAME_MARGIN: float = 8.0      # margine: la corsia piu' vicina alla camera appare piu' larga (prospettiva)
 const FRAME_PULLBACK_MAX: float = 1.6     # oltre z = 47 il carrello finirebbe nelle tribune
-const FRAME_FOV_MAX: float = 40.0
+const FRAME_FOV_MAX: float = 50.0
 
 @onready var _path: Path3D = $BroadcastPath
 @onready var _dolly: PathFollow3D = $BroadcastPath/CameraDolly
@@ -116,16 +116,31 @@ func reset() -> void:
 	_race_distance = RaceMotion.race_distance(RaceController.event_kind)
 	var fx: float = TrackGeometry.FINISH_X
 	if _oval:
-		# Traguardo dei 400m: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo, come nel riferimento).
+		var s: float = TrackGeometry.STRAIGHT
+		# Traguardo ovale: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo).
 		_finish_cam.fov = 38.0
 		_finish_cam.look_at_from_position(Vector3(fx + 3.0, 11.0, 22.0), Vector3(fx - 9.0, 0.4, TRACK_Z_CENTER), Vector3.UP)
-		# Primo piano sui blocchi della corsia 6 (al centro dello schieramento), dal lato esterno.
-		var pose: Dictionary = TrackGeometry.pose(6, 0.0)
-		var h: Vector2 = pose["heading"]
-		var right: Vector3 = Vector3(-h.y, 0.0, h.x)
-		var p: Vector3 = pose["position"]
-		_o_close.look_at_from_position(p + right * 3.4 + Vector3(0.0, 0.75, 0.0),
-			p + Vector3(h.x, 0.0, h.y) * -0.3 + Vector3(0.0, 0.5, 0.0), Vector3.UP)
+		if RaceController.event_kind == "1500m":
+			var wp: Dictionary = TrackGeometry.runner_pose("1500m", 4, 0.0)
+			var wpos: Vector3 = wp["position"]
+			var wh: Vector2 = wp["heading"]
+			var wright: Vector3 = Vector3(-wh.y, 0.0, wh.x)
+			_o_open.look_at_from_position(wpos + wright * 18.0 + Vector3(0.0, 11.0, 0.0), wpos + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+			_o_close.look_at_from_position(wpos + wright * 5.0 + Vector3(wh.x, 0.0, wh.y) * 2.5 + Vector3(0.0, 1.3, 0.0), wpos + Vector3(0.0, 0.9, 0.0), Vector3.UP)
+			_o_start.look_at_from_position(Vector3(-14.0, 12.0, -26.0), wpos + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+		else:
+			_o_open.look_at_from_position(Vector3(-14.0, 17.0, -20.0), Vector3(20.0, 0.0, -12.0), Vector3.UP)
+			_o_start.look_at_from_position(Vector3(-14.0, 12.0, -26.0), Vector3(15.0, 0.0, -8.0), Vector3.UP)
+			# Primo piano sui blocchi della corsia 6 (al centro dello schieramento), dal lato esterno.
+			var pose: Dictionary = TrackGeometry.pose(6, 0.0)
+			var h: Vector2 = pose["heading"]
+			var right: Vector3 = Vector3(-h.y, 0.0, h.x)
+			var p: Vector3 = pose["position"]
+			_o_close.look_at_from_position(p + right * 3.4 + Vector3(0.0, 0.75, 0.0),
+				p + Vector3(h.x, 0.0, h.y) * -0.3 + Vector3(0.0, 0.5, 0.0), Vector3.UP)
+			_o_start.position = Vector3(-14.0, 12.0, -26.0)
+			_o_open.position = Vector3(-14.0, 17.0, -20.0)
+			_o_far.position = Vector3(-s * 0.5, 5.0, 34.0)
 	else:
 		# 100m: dall'alto, appena oltre la linea, sul lato esterno; i corridori arrivano da sinistra.
 		_finish_cam.fov = 30.0
@@ -194,7 +209,7 @@ func _direct_oval() -> void:
 				elif lead.distance >= _race_distance - CUT_BEFORE_FINISH:
 					cam = _finish_cam
 				else:
-					match TrackGeometry.region(lead.lane, lead.distance):
+					match TrackGeometry.region_for(RaceController.event_kind, lead.lane, lead.distance):
 						TrackGeometry.Region.ARC1: cam = _o_start
 						TrackGeometry.Region.BACK: cam = _o_far
 						TrackGeometry.Region.ARC2: cam = _o_curve
@@ -251,7 +266,6 @@ func _racing_spread() -> float:
 ## Posizione del primo in classifica. Prima dello sparo: centro delle corsie alla linea di partenza.
 func _leader_world_position() -> Vector3:
 	var live: Array[RunnerData] = RaceController.live_order
-	var start_x: float = TrackGeometry.START_100M_X if RaceController.event_kind == "100m" else 0.0
 	if live.is_empty() or RaceController.state == RaceController.State.LOADED or RaceController.state == RaceController.State.COUNTDOWN:
-		return Vector3(start_x, 0.0, TRACK_Z_CENTER)
+		return TrackGeometry.runner_pose(RaceController.event_kind, 4, 0.0)["position"]
 	return TrackGeometry.runner_pose(RaceController.event_kind, live[0].lane, live[0].distance)["position"]

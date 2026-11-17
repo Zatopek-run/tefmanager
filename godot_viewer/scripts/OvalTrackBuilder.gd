@@ -53,6 +53,15 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 		_box(parent, Vector3(0.1, 0.014, width), Vector3(TrackGeometry.START_100M_X, 0.008, (lanes - 1) * w * 0.5), line)
 		for lane in range(1, lanes + 1):
 			_blocks_and_placard(parent, Vector3(TrackGeometry.START_100M_X, 0.0, (lane - 1) * w), 0.0, lane)
+	elif kind == "1500m":
+		# Partenza in piedi su linea curva unica senza blocchi (corsie 1..8 convergono poi alla corda).
+		var c0: float = TrackGeometry.start_offset_1500m()
+		for lane in range(1, lanes + 1):
+			var lat: float = (float(lane) - 1.0) * w
+			var p: Vector2 = TrackGeometry.position_at_radial(c0, lat)
+			var h: Vector2 = TrackGeometry.heading_at(1, c0)
+			var mark: MeshInstance3D = _box(parent, Vector3(0.1, 0.014, w), Vector3(p.x, 0.008, p.y), line)
+			mark.rotation.y = atan2(-h.y, h.x)
 	else:
 		# Linee di partenza: una per corsia, sfalsate; orientate di traverso alla corsia.
 		for lane in range(1, lanes + 1):

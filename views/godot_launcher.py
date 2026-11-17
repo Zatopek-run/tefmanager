@@ -25,7 +25,7 @@ from models.race_export import export_race
 
 GODOT_PROJECT = Path(__file__).resolve().parent.parent / "godot_viewer"
 SQLITE_PLUGIN = GODOT_PROJECT / "addons" / "godot-sqlite" / "gdsqlite.gdextension"
-GODOT_EVENTS = ("100m", "400m")  # gare che il visualizzatore Godot sa mettere in scena (esatto: niente staffette)
+GODOT_EVENTS = ("100m", "400m", "1500m")  # gare che il visualizzatore Godot sa mettere in scena (esatto: niente staffette)
 
 
 def find_godot() -> Optional[Path]:

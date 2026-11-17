@@ -15,7 +15,7 @@ const PAN_DY: float = 0.12
 const BAND_DX_MIN: float = 0.05     # carrello: il primo sta a destra del centro, fra queste frazioni della larghezza
 const BAND_DX_MAX: float = 0.32
 const MIN_OK_FRACTION: float = 0.95
-var CASES: Array[Vector2i] = [Vector2i(1, 1), Vector2i(1, 4), Vector2i(3, 1), Vector2i(3, 8), Vector2i(4, 4)]  # (gara, velocita'); --only=gara,velocita' per un caso solo
+var CASES: Array[Vector2i] = [Vector2i(1, 1), Vector2i(1, 4), Vector2i(3, 1), Vector2i(3, 8), Vector2i(4, 4), Vector2i(5, 8), Vector2i(6, 8)]  # (gara, velocita'); --only=gara,velocita' per un caso solo
 
 var _failures: int = 0
 var _case: int = -1

@@ -4,7 +4,7 @@ extends SceneTree
 ## Gara 1: tutti arrivano; gara 2: un ritirato (DNF) che si ferma e non entra nell'ordine d'arrivo.
 ## Esce con codice 0 se tutto torna, 1 altrimenti.
 
-const LAST_RACE: int = 4          # 1 = 100m, 2 = 100m con ritirato, 3 = 400m, 4 = 400m con ritirato
+const LAST_RACE: int = 6          # 1-2 = 100m, 3-4 = 400m, 5 = 1500m M, 6 = 1500m F
 
 var _failures: int = 0
 var _race_id: int = 1
@@ -34,6 +34,8 @@ func _start_race(race_id: int) -> bool:
 	print("--- gara %d: %s (%d corridori)" % [race_id, rc.event_kind, rc.runners.size()])
 	if rc.event_kind == "400m":
 		_check_oval_geometry()
+	elif rc.event_kind == "1500m":
+		_check_1500m_geometry(rc)
 	for r: RunnerData in rc.runners:
 		if r.dnf:
 			continue
@@ -124,3 +126,12 @@ func _check_oval_geometry() -> void:
 		var end: Vector3 = TrackGeometry.pose(lane, 400.0)["position"]
 		_check(absf(end.x - TrackGeometry.FINISH_X) < 0.01 and absf(end.z - (lane - 1) * TrackGeometry.LANE_WIDTH) < 0.01,
 			"corsia %d: arriva sulla linea del traguardo (%.3f, %.3f)" % [lane, end.x, end.z])
+
+
+func _check_1500m_geometry(rc: Node) -> void:
+	_check(rc.format_time(232.15) == "3:52.15", "format_time >= 60s (%s)" % rc.format_time(232.15))
+	_check(not rc.uses_blocks("1500m"), "1500m senza blocchi (partenza in piedi)")
+	for lane in range(1, TrackGeometry.LANES + 1):
+		var end: Vector3 = TrackGeometry.runner_pose("1500m", lane, 1500.0)["position"]
+		_check(absf(end.x - TrackGeometry.FINISH_X) < 0.02 and end.z >= -0.01 and end.z <= 2.2,
+			"1500m corsia %d: arriva al traguardo alla corda (%.3f, %.3f)" % [lane, end.x, end.z])

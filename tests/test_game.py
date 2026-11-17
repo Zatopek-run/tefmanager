@@ -1301,6 +1301,16 @@ class TestRaceExport(unittest.TestCase):
             conn.close()
             self.assertEqual((event, distance), ("400m", 400))
             self.assertEqual(times, [45.1, 45.8, 46.4, 47.0])
+            result.event_name = "1500m"
+            for st, t in zip(result.standings, [232.4, 234.1, 236.8, 239.0]):
+                st.mark_value = t
+            race_1500 = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            ev1500, dist1500 = conn.execute(
+                "SELECT event_name, distance_m FROM races WHERE race_id = ?", (race_1500,)
+            ).fetchone()
+            conn.close()
+            self.assertEqual((ev1500, dist1500), ("1500m", 1500))
             result.event_name = "4x100m"
             with self.assertRaises(ValueError):
                 export_race(summary, result, path)
@@ -1311,8 +1321,10 @@ class TestRaceExport(unittest.TestCase):
         self.assertIsNone(gl.find_godot())           # TEF_NO_GODOT attivo nei test
         self.assertIsNone(gl.viewer_available("100m"))
         self.assertIsNone(gl.viewer_available("400m"))
+        self.assertIsNone(gl.viewer_available("1500m"))
         self.assertIsNone(gl.viewer_available("4x100m"))   # staffette: mai nel visualizzatore Godot
         self.assertIn("400m", gl.GODOT_EVENTS)
+        self.assertIn("1500m", gl.GODOT_EVENTS)
         self.assertNotIn("4x100m", gl.GODOT_EVENTS)
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna

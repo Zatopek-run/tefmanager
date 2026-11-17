@@ -114,7 +114,8 @@ func _setup_animation() -> void:
 func _update_animation() -> void:
 	var s: float = data.speed
 	var want: StringName
-	var at_blocks: bool = s < 0.01 and data.distance < 0.01
+	var standing: bool = not RaceController.uses_blocks(RaceController.event_kind)
+	var at_blocks: bool = (not standing) and s < 0.01 and data.distance < 0.01
 	var just_left_blocks: bool = false
 	if at_blocks != _rig.enabled:
 		_rig.set_enabled(at_blocks)
@@ -130,9 +131,17 @@ func _update_animation() -> void:
 			_posture_mod.active_weight = 0.0
 		_rig.update(set_amount_override if set_amount_override >= 0.0 else RaceController.set_amount())
 		return
+	if standing and s < 0.01 and data.distance < 0.01:
+		_model.rotation.x = 0.0
+		_model.position = Vector3.ZERO
+		if _posture_mod != null:
+			_posture_mod.active_weight = 0.0
+		_play(&"Idle")
+		_player.speed_scale = RaceController.time_scale
+		return
 
 	# Inclinazione in avanti nella fase di spinta fuori dai blocchi: si raddrizza gradualmente sui primi ~16 m.
-	var drive: float = 0.0 if data.finished else (1.0 - smoothstep(0.0, DRIVE_RISE_METERS, data.distance))
+	var drive: float = 0.0 if (standing or data.finished) else (1.0 - smoothstep(0.0, DRIVE_RISE_METERS, data.distance))
 	if data.dnf and s < SPRINT_FROM:
 		drive *= clampf(s / SPRINT_FROM, 0.0, 1.0)
 	_model.rotation.x = DRIVE_LEAN_MAX * drive

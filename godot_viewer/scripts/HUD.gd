@@ -231,7 +231,7 @@ func _update_banner() -> void:
 	var accent: Color = AMBER
 	match RaceController.state:
 		RaceController.State.COUNTDOWN:
-			if RaceController.set_amount() <= 0.0:
+			if not RaceController.uses_blocks(RaceController.event_kind) or RaceController.set_amount() <= 0.0:
 				text = "AI VOSTRI POSTI"
 				accent = CYAN
 			else:
@@ -515,7 +515,16 @@ func _update_tv_graphics() -> void:
 			_set_clock_plate_style(winner_in)
 		_set_text(_clock_status, "ARRIVO" if winner_in else "TEMPO")
 		# In gara i decimi (troncati: non superano mai il tempo del vincitore), all'arrivo i centesimi.
-		var text: String = rc.format_time(rc.display_time) if winner_in else "%.1f" % (floorf(rc.display_time * 10.0) / 10.0)
+		var truncated: float = floorf(rc.display_time * 10.0) / 10.0
+		var text: String
+		if winner_in:
+			text = rc.format_time(rc.display_time)
+		elif truncated >= 60.0:
+			var mins: int = int(truncated / 60.0)
+			var rem: float = truncated - float(mins) * 60.0
+			text = "%d:%04.1f" % [mins, rem]
+		else:
+			text = "%.1f" % truncated
 		if text != _last_clock_text:
 			_last_clock_text = text
 			_clock_label.text = text
