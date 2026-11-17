@@ -140,7 +140,12 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   braccia e gambe con `TwoBoneIK3D`); blocchi e cartellini di corsia in `OvalTrackBuilder`. **HUD** in stile TV:
   cronometro in basso a destra (decimi in gara, centesimi all'arrivo), vento e «risultato non ufficiale» dopo
   l'arrivo; la classifica laterale è **nascosta di default** (tasto H). Piste e luci: notte, blu per i 100m, viola per
-  i 400m. `tests/pose_lab.gd` serve a tarare la posa.
+  i 400m. `tests/pose_lab.gd` serve a tarare la posa (obsoleto: i corridori stanno a x ≈ −100 sull'ovale, la sua camera guarda x ≈ 0).
+  **Le mani toccano la pista** (`SetPoseRig._solve_torso`): inclinazione del busto e x del bacino NON sono costanti ma si
+  risolvono (bisezione, in cache) perché le spalle stiano a `ARM_REACH` × lunghezza braccio dai polsi; il bersaglio del
+  polso è `HAND_Y` = 0,20 m perché le dita stanno ~0,17 m oltre l'osso `hand`; le ossa non comandate (clavicole, dita)
+  tornano a riposo a ogni aggiornamento. `tests/verify_pose.gd` (headless) legge le ossa **dentro `skeleton_updated`**
+  (dopo l'IK: da `_process` si legge la posa pre-IK, che mente).
 - Il visualizzatore Godot copre solo **100m e 400m** (niente 1500m, staffette, concorsi né squalificati). Il 1500m è
   stato progettato (anello unico sulla corsia 1 + scostamento laterale solo visivo, andatura `Sprint`, tempi `m:ss.xx`)
   ma NON scritto.
