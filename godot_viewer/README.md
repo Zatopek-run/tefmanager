@@ -50,11 +50,11 @@ con un warning. L'esportatore è `models/race_export.py`: `python -m models.race
 **Ambiente** — nodo `WorldEnvironment` con `Environment`: Background `Sky` (ProceduralSkyMaterial),
 Tonemap `ACES`, SSAO On, Glow On (Intensity `0.7`, Bloom `0.08`, HDR Threshold `1.0`).
 
-**Telecamere** — `Cameras/BroadcastPath` (Path3D): curva retta da `(-12, 2.3, -9)` a `(118, 2.3, -9)`
-(lato prato, a ~9 m dalla corsia 1). `CameraDolly` (PathFollow3D, Loop Off, Rotation Mode `None`) porta
+**Telecamere** — `Cameras/BroadcastPath` (Path3D): curva retta da `(-12, 2.3, 17)` a `(118, 2.3, 17)`
+(lato esterno, davanti alla corsia 8: guardando verso -Z, +X è a destra). `CameraDolly` (PathFollow3D, Loop Off, Rotation Mode `None`) porta
 `SideCam` (FOV 28°, DoF far blur On, Distance 22, Transition 25, Amount 0.06). Lo script muove
 `CameraDolly.progress` seguendo il leader e la camera lo inquadra con `look_at`.
-`FinishCam` è fissa sul piano del traguardo `(100.15, 0.9, -7)`, FOV 22°: lo stacco avviene quando il
+`FinishCam` è fissa sul piano del traguardo `(100.15, 0.9, 16)`, FOV 22°: lo stacco avviene quando il
 leader supera i 90 m (`CUT_TO_FINISH_AT`).
 
 ## Verifica
@@ -65,5 +65,5 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: i corridori corrono verso **sinistra** (la camera sul lato prato guarda verso +Z, quindi +X è a
-sinistra dello schermo); la posa di corsa è approssimativa; mai provato con input da tastiera/mouse.
+Limiti noti: la posa di corsa è approssimativa; mai provato con input da tastiera/mouse. Le tribune sono sul lato prato,
+dietro i corridori; il pubblico è una texture a rumore.

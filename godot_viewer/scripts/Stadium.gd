@@ -120,7 +120,7 @@ func _build_track() -> void:
 	_add_box(_track_root, Vector3(length + 80.0, 0.1, 60.0), Vector3(center_x, -0.1, -width * 0.5 - 30.0),
 		_flat(Color(0.18, 0.45, 0.2), 1.0))                                   # prato interno
 	_add_box(_track_root, Vector3(length + 80.0, 0.1, 40.0), Vector3(center_x, -0.1, center_z + width * 0.5 + 20.0),
-		_flat(Color(0.22, 0.24, 0.26), 1.0))                                  # area esterna
+		_flat(Color(0.16, 0.4, 0.18), 1.0))                                  # prato esterno
 
 	var line: StandardMaterial3D = _flat(Color(0.95, 0.95, 0.95), 0.7)
 	for i in range(LANES + 1):
@@ -143,11 +143,11 @@ func _build_stands() -> void:
 	crowd.uv1_scale = Vector3(14.0, 1.0, 1.0)
 	crowd.roughness = 1.0
 
-	var back_z: float = LANES * LANE_WIDTH + 6.0
+	var back_z: float = -6.0  # tribune sul lato prato, dietro i corridori visti dalla camera
 	for step in range(6):  # gradinata a gradoni: tribuna principale sul lato esterno
 		var rise: float = 0.7 * (step + 1)
 		_add_box(_track_root, Vector3(TRACK_X_MAX - TRACK_X_MIN + 20.0, rise, 1.8),
-			Vector3((TRACK_X_MIN + TRACK_X_MAX) * 0.5, rise * 0.5, back_z + step * 1.8), crowd)
+			Vector3((TRACK_X_MIN + TRACK_X_MAX) * 0.5, rise * 0.5, back_z - step * 1.8), crowd)
 
 	# Torri faro con testa emissiva: alimentano il bloom (glow_hdr_threshold = 1.0).
 	var lamp: StandardMaterial3D = StandardMaterial3D.new()
@@ -156,8 +156,8 @@ func _build_stands() -> void:
 	lamp.emission = Color(1.0, 0.95, 0.8)
 	lamp.emission_energy_multiplier = 6.0
 	for x: float in [-10.0, 40.0, 100.0, 140.0]:
-		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, back_z + 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
-		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, back_z + 13.6), lamp)
+		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, back_z - 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
+		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, back_z - 13.6), lamp)
 
 
 func _crowd_gradient() -> Gradient:

@@ -10,11 +10,11 @@ extends Node3D
 ##   \- FinishCam (Camera3D)
 
 const TRACK_Z_CENTER: float = 4.27        # centro delle 8 corsie
-const PATH_Z: float = -9.0                # il carrello corre sul lato interno (prato)
+const PATH_Z: float = 17.0                # il carrello corre sul lato esterno: guardando verso -Z, +X e' a destra
 const PATH_Y: float = 2.3
 const PATH_START_X: float = -12.0
 const PATH_END_X: float = 118.0
-const LEAD_ROOM: float = 5.0              # la camera guarda leggermente davanti al leader
+const LEAD_OFFSET: float = -1.0           # il punto guardato sta poco dietro il leader: il gruppo resta visibile a sinistra
 const FOLLOW_SPEED: float = 3.5           # 1/s: morbidezza dell'inseguimento
 const CUT_TO_FINISH_AT: float = 90.0      # stacco sul fotofinish quando il leader supera questa distanza
 const FINISH_X: float = 100.0
@@ -47,7 +47,7 @@ func _ready() -> void:
 	_finish_cam.fov = 22.0
 	_finish_cam.attributes = lens
 	# Fotofinish: sul piano del traguardo, guarda trasversalmente tutte le corsie.
-	_finish_cam.position = Vector3(FINISH_X + 0.15, 0.9, -7.0)
+	_finish_cam.position = Vector3(FINISH_X + 0.15, 0.9, 16.0)
 	_finish_cam.look_at_from_position(_finish_cam.position, Vector3(FINISH_X, 0.8, TRACK_Z_CENTER), Vector3.UP)
 
 	RaceController.race_loaded.connect(func(_r: Array[RunnerData], _i: Dictionary) -> void: reset())
@@ -73,7 +73,7 @@ func _process(delta: float) -> void:
 
 
 func _update_side_cam(delta: float, snap: bool) -> void:
-	var target_x: float = RaceController.leader_distance() + LEAD_ROOM
+	var target_x: float = RaceController.leader_distance() + LEAD_OFFSET
 	var weight: float = 1.0 if snap else 1.0 - exp(-FOLLOW_SPEED * delta)
 	_follow_x = lerpf(_follow_x, target_x, weight)
 	_dolly.progress = clampf(_follow_x - PATH_START_X, 0.0, PATH_END_X - PATH_START_X)
