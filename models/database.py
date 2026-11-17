@@ -37,7 +37,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -98,6 +98,10 @@ V8_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("club_records_f_json", "TEXT NOT NULL DEFAULT '{}'"),
     ],
 }
+# Columns added in v9 (separate women's relays).
+V9_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("relays_f_json", "TEXT NOT NULL DEFAULT '{}'")]
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -105,7 +109,35 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     5: V6_COLUMNS,
     6: V7_COLUMNS,
     7: V8_COLUMNS,
+    8: V9_COLUMNS,
 }
+
+
+def _relays_to_json(relays: Dict[str, Relay]) -> str:
+    return json.dumps(
+        {
+            name: {
+                "member_ids": r.member_ids,
+                "reserve_id": r.reserve_id,
+                "harmony": r.harmony,
+                "last_change_week": r.last_change_week,
+            }
+            for name, r in relays.items()
+        }
+    )
+
+
+def _relays_from_json(raw: str) -> Dict[str, Relay]:
+    return {
+        name: Relay(
+            event=name,
+            member_ids=list(rj["member_ids"]),
+            reserve_id=rj.get("reserve_id"),
+            harmony=int(rj.get("harmony", 30)),
+            last_change_week=int(rj.get("last_change_week", -100)),
+        )
+        for name, rj in json.loads(raw).items()
+    }
 
 
 def _backfill_bodies(athletes: List[Athlete]) -> List[Athlete]:
@@ -295,7 +327,8 @@ class DatabaseManager:
                     rivals_json TEXT NOT NULL DEFAULT '[]',
                     season_history_json TEXT NOT NULL DEFAULT '[]',
                     event_lineup_f_json TEXT NOT NULL DEFAULT '{}',
-                    club_records_f_json TEXT NOT NULL DEFAULT '{}'
+                    club_records_f_json TEXT NOT NULL DEFAULT '{}',
+                    relays_f_json TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -435,8 +468,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -465,22 +498,13 @@ class DatabaseManager:
                     state.scouting_points_used,
                     1 if state.bankrupt else 0,
                     json.dumps(state.league_table),
-                    json.dumps(
-                        {
-                            name: {
-                                "member_ids": r.member_ids,
-                                "reserve_id": r.reserve_id,
-                                "harmony": r.harmony,
-                                "last_change_week": r.last_change_week,
-                            }
-                            for name, r in state.relays.items()
-                        }
-                    ),
+                    _relays_to_json(state.relays),
                     state.coach_hired_week,
                     _rivals_to_json(state.rival_clubs),
                     _season_history_to_json(state.season_history),
                     json.dumps(state.event_lineup_f),
                     records_f_json,
+                    _relays_to_json(state.relays_f),
                 ),
             )
 
@@ -704,16 +728,8 @@ class DatabaseManager:
                 )
                 for r in conn.execute("SELECT * FROM coaches ORDER BY id ASC").fetchall()
             ]
-            relays: Dict[str, Relay] = {
-                name: Relay(
-                    event=name,
-                    member_ids=list(rj["member_ids"]),
-                    reserve_id=rj.get("reserve_id"),
-                    harmony=int(rj.get("harmony", 30)),
-                    last_change_week=int(rj.get("last_change_week", -100)),
-                )
-                for name, rj in json.loads(row["relays_json"]).items()
-            }
+            relays = _relays_from_json(row["relays_json"])
+            relays_f = _relays_from_json(row["relays_f_json"])
 
             transactions: List[Transaction] = [
                 Transaction(
@@ -857,4 +873,5 @@ class DatabaseManager:
                 season_history=_season_history_from_json(row["season_history_json"]),
                 event_lineup_f=json.loads(row["event_lineup_f_json"]),
                 club_records_f=club_records_f,
+                relays_f=relays_f,
             )

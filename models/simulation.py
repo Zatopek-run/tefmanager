@@ -172,14 +172,17 @@ def relay_leg_score(athlete: Athlete, rdef: RelayDefinition) -> float:
     return base + (athlete.form - 60) * 0.15 - max(0, athlete.fatigue - 62) * 0.2 + build
 
 
-def auto_build_relay(state: GameState, event: str, with_reserve: bool = True) -> Relay:
-    """Pick the 4 best available legs (best runner on the anchor leg) plus a reserve."""
+def auto_build_relay(
+    state: GameState, event: str, with_reserve: bool = True, gender: str = "M"
+) -> Relay:
+    """Pick the 4 best available legs of a division (best runner on anchor) plus a reserve."""
     rdef = RELAYS[event]
-    relay = state.relays.get(event) or Relay(event=event)
-    taken = {aid for name, r in state.relays.items() if name != event for aid in r.all_ids()}
+    relays = state.relays_for(gender)
+    relay = relays.get(event) or Relay(event=event)
+    taken = {aid for name, r in relays.items() if name != event for aid in r.all_ids()}
     pool = [
         a for a in state.main_squad
-        if a.id is not None and not a.is_injured and a.id not in taken
+        if a.gender == gender and a.id is not None and not a.is_injured and a.id not in taken
     ]
     pool.sort(key=lambda a: relay_leg_score(a, rdef), reverse=True)
     best = pool[:5] if with_reserve else pool[:4]
@@ -194,40 +197,47 @@ def auto_build_relay(state: GameState, event: str, with_reserve: bool = True) ->
     if old and set(new_ids) != old:
         relay.harmony = int(relay.harmony * 0.75)
         relay.last_change_week = state.week
-    state.relays[event] = relay
+    relays[event] = relay
     return relay
 
 
-def auto_build_all_relays(state: GameState) -> None:
-    """Compose every active relay: all legs first, reserves only from who is left over."""
-    for name in state.active_relays:
-        auto_build_relay(state, name, with_reserve=False)
-    for name in state.active_relays:
-        relay = state.relays[name]
-        taken = {aid for r in state.relays.values() for aid in r.all_ids()}
-        rdef = RELAYS[name]
-        spare = [
-            a for a in state.main_squad
-            if a.id is not None and not a.is_injured and a.id not in taken
-        ]
-        if spare:
-            relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
+def auto_build_all_relays(state: GameState, gender: Optional[str] = None) -> None:
+    """Compose active relays (M and F unless gender is specified): legs first, then reserves."""
+    genders = (gender,) if gender in ("M", "F") else ("M", "F")
+    for g in genders:
+        relays = state.relays_for(g)
+        for name in state.active_relays:
+            auto_build_relay(state, name, with_reserve=False, gender=g)
+        for name in state.active_relays:
+            relay = relays[name]
+            taken = {aid for r in relays.values() for aid in r.all_ids()}
+            rdef = RELAYS[name]
+            spare = [
+                a for a in state.main_squad
+                if a.gender == g and a.id is not None and not a.is_injured and a.id not in taken
+            ]
+            if spare:
+                relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
 
 
 def _relay_dq_chance(harmony: int, substituted: bool) -> float:
     return max(0.0, (60 - harmony) * 0.006) + (0.03 if substituted else 0.0)
 
 
-def _relay_mark(rdef: RelayDefinition, score: float) -> Tuple[float, str]:
+def _relay_mark(rdef: RelayDefinition, score: float, gender: str = "M") -> Tuple[float, str]:
     norm = max(0.15, min(1.18, score / 100.0))
-    seconds = max(rdef.min_seconds, rdef.base_seconds - norm * rdef.span_seconds)
+    if gender == "F" and rdef.base_seconds_f > 0:
+        base_s, span_s, min_s = rdef.base_seconds_f, rdef.span_seconds_f, rdef.min_seconds_f
+    else:
+        base_s, span_s, min_s = rdef.base_seconds, rdef.span_seconds, rdef.min_seconds
+    seconds = max(min_s, base_s - norm * span_s)
     if seconds >= 60:
         mins = int(seconds // 60)
         return seconds, f"{mins}:{seconds % 60:05.2f}"
     return seconds, f"{seconds:.2f}s"
 
 
-def _update_relay_harmony(state: GameState, raced: Set[str]) -> None:
+def _update_relay_harmony(state: GameState, raced: Set) -> None:
     """Relay teams gel by training together; incomplete or injured teams lose harmony."""
     by_id = {a.id: a for a in state.athletes}
 
@@ -235,15 +245,17 @@ def _update_relay_harmony(state: GameState, raced: Set[str]) -> None:
         a = by_id.get(aid) if aid is not None else None
         return a is not None and not a.is_injured and not a.in_youth_squad
 
-    for name, relay in state.relays.items():
-        missing = sum(1 for mid in relay.member_ids if not fit(mid))
-        if missing == 0:
-            relay.harmony += 4 + (6 if name in raced else 0)
-        elif missing == 1 and fit(relay.reserve_id):
-            relay.harmony += 2 + (6 if name in raced else 0)  # the reserve fills in at practice
-        else:
-            relay.harmony -= 2
-        relay.harmony = max(0, min(100, relay.harmony))
+    for gender in ("M", "F"):
+        for name, relay in state.relays_for(gender).items():
+            did_race = (name, gender) in raced or (gender == "M" and name in raced)
+            missing = sum(1 for mid in relay.member_ids if not fit(mid))
+            if missing == 0:
+                relay.harmony += 4 + (6 if did_race else 0)
+            elif missing == 1 and fit(relay.reserve_id):
+                relay.harmony += 2 + (6 if did_race else 0)  # the reserve fills in at practice
+            else:
+                relay.harmony -= 2
+            relay.harmony = max(0, min(100, relay.harmony))
 
 
 def _recalculate_form(
@@ -894,105 +906,111 @@ def simulate_competition(
                 )
             )
 
-    # ---- Relays: harmony, legs and baton changes; no effect on individual form or fans
+    # ---- Relays: harmony, legs and baton changes (M & F); no effect on individual form or fans
     for relay_name in state.active_relays:
         rdef = RELAYS[relay_name]
-        relay = state.relays.get(relay_name)
-        legs: List[Athlete] = []
-        substituted = False
-        if relay is not None:
-            reserve = athlete_by_id.get(relay.reserve_id) if relay.reserve_id is not None else None
-            for mid in relay.member_ids:
-                runner = athlete_by_id.get(mid) if mid is not None else None
-                if (runner is None or runner.is_injured) and reserve is not None and not reserve.is_injured:
-                    runner, reserve, substituted = reserve, None, True
-                if runner is not None and not runner.is_injured:
-                    legs.append(runner)
-        if relay is None or len(legs) < 4:
-            _rival_only_points(clubs, rdef.requires_event, team_points, r)
-            continue
+        for gender in ("M", "F"):
+            relay = state.relays_for(gender).get(relay_name)
+            legs: List[Athlete] = []
+            substituted = False
+            if relay is not None:
+                reserve = athlete_by_id.get(relay.reserve_id) if relay.reserve_id is not None else None
+                for mid in relay.member_ids:
+                    runner = athlete_by_id.get(mid) if mid is not None else None
+                    if (runner is None or runner.is_injured) and reserve is not None and not reserve.is_injured:
+                        runner, reserve, substituted = reserve, None, True
+                    if runner is not None and not runner.is_injured:
+                        legs.append(runner)
+            if relay is None or len(legs) < 4:
+                _rival_only_points(clubs, rdef.requires_event, team_points, r, gender=gender)
+                continue
 
-        harmony = relay.harmony - (15 if substituted else 0)
-        disqualified = r.random() < _relay_dq_chance(harmony, substituted)
-        if disqualified:
-            p_val, p_disp = 9999.0, RELAY_DQ_MARK
-        else:
-            leg_scores = [relay_leg_score(a, rdef) for a in legs]
-            p_score = sum(sc * w for sc, w in zip(leg_scores, RELAY_LEG_WEIGHTS))
-            p_score += (harmony - 50) * 0.08 + r.gauss(0.0, 2.5)
-            if is_home:
-                p_score += 1.0
-            p_val, p_disp = _relay_mark(rdef, p_score)
-        team_label = " / ".join(f"{a.name[0]}. {a.name.split(' ', 1)[-1]}" for a in legs)
-        standings = [
-            EventStanding(
-                athlete_name=team_label,
-                team_name=state.team_name,
-                is_player=True,
-                mark_value=p_val,
-                mark_display=p_disp,
-            )
-        ]
-        for club in clubs:
-            # A club's relay is as fast as its sprinters in that distance
-            o_val, o_disp = _relay_mark(rdef, r.gauss(club.athletes[rdef.requires_event].skill, 4.0))
-            standings.append(
+            harmony = relay.harmony - (15 if substituted else 0)
+            disqualified = r.random() < _relay_dq_chance(harmony, substituted)
+            if disqualified:
+                p_val, p_disp = 9999.0, RELAY_DQ_MARK
+            else:
+                leg_scores = [relay_leg_score(a, rdef) for a in legs]
+                p_score = sum(sc * w for sc, w in zip(leg_scores, RELAY_LEG_WEIGHTS))
+                p_score += (harmony - 50) * 0.08 + r.gauss(0.0, 2.5)
+                if is_home:
+                    p_score += 1.0
+                p_val, p_disp = _relay_mark(rdef, p_score, gender=gender)
+            team_label = " / ".join(f"{a.name[0]}. {a.name.split(' ', 1)[-1]}" for a in legs)
+            standings = [
                 EventStanding(
-                    athlete_name=f"Staffetta {club.name}",
-                    team_name=club.name,
-                    is_player=False,
-                    mark_value=o_val,
-                    mark_display=o_disp,
+                    athlete_name=team_label,
+                    team_name=state.team_name,
+                    is_player=True,
+                    mark_value=p_val,
+                    mark_display=p_disp,
                 )
-            )
-        standings.sort(key=lambda st: st.mark_value)
-        if disqualified:
-            standings.sort(key=lambda st: st.is_player)
-        player_place = 1
-        for idx, st in enumerate(standings, start=1):
-            st.placement = idx
-            if st.is_player:
-                player_place = idx
-            if not (st.is_player and disqualified):
-                team_points[st.team_name] = team_points.get(st.team_name, 0) + TEAM_POINTS.get(idx, 0)
+            ]
+            for club in clubs:
+                # A club's relay is as fast as its division sprinters in that distance
+                opp_ref = club.athlete_for(rdef.requires_event, gender)
+                opp_skill = opp_ref.skill if opp_ref is not None else 50.0
+                o_val, o_disp = _relay_mark(rdef, r.gauss(opp_skill, 4.0), gender=gender)
+                standings.append(
+                    EventStanding(
+                        athlete_name=f"Staffetta {club.name}",
+                        team_name=club.name,
+                        is_player=False,
+                        mark_value=o_val,
+                        mark_display=o_disp,
+                    )
+                )
+            standings.sort(key=lambda st: st.mark_value)
+            if disqualified:
+                standings.sort(key=lambda st: st.is_player)
+            player_place = 1
+            for idx, st in enumerate(standings, start=1):
+                st.placement = idx
+                if st.is_player:
+                    player_place = idx
+                if not (st.is_player and disqualified):
+                    team_points[st.team_name] = team_points.get(st.team_name, 0) + TEAM_POINTS.get(idx, 0)
 
-        is_club_rec = False
-        if disqualified:
-            prize, prestige_gain = 0, 0
-            state.news_log.insert(
-                0,
-                f"Sett. {state.week}: Staffetta {relay_name} squalificata per cambio fuori zona "
-                f"(affiatamento {harmony_grade(max(0, harmony))}).",
-            )
-        else:
-            existing_rec = state.club_records.get(relay_name)
-            if existing_rec is None or p_val < existing_rec[0]:
-                state.club_records[relay_name] = (p_val, p_disp, team_label)
-                is_club_rec = True
-                state.milestones.insert(
-                    0, f"Sett. {state.week}: Nuovo Record Sociale nella {relay_name} ({team_label}): {p_disp}."
+            is_club_rec = False
+            records = state.records_for(gender)
+            if disqualified:
+                prize, prestige_gain = 0, 0
+                state.news_log.insert(
+                    0,
+                    f"Sett. {state.week}: Staffetta {relay_name} ({gender}) squalificata per cambio fuori zona "
+                    f"(affiatamento {harmony_grade(max(0, harmony))}).",
                 )
-            prize = int(tier_cfg["prize_base"] * {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}.get(player_place, 0.0))
-            prestige_gain = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}.get(player_place, 1) + (5 if is_club_rec else 0)
-        total_prize += prize
-        total_prestige += prestige_gain
-        event_results.append(
-            EventResult(
-                event_name=relay_name,
-                player_athlete_name=team_label,
-                placement=player_place,
-                total_competitors=len(standings),
-                player_mark=p_disp,
-                prize_money=prize,
-                prestige_gained=prestige_gain,
-                is_club_record=is_club_rec,
-                standings=standings,
-                attitude=f"Affiatamento {harmony_grade(max(0, harmony))}",
-                withdrew_injured=False,
-                disqualified=disqualified,
-                gender="",
+            else:
+                existing_rec = records.get(relay_name)
+                if existing_rec is None or p_val < existing_rec[0]:
+                    records[relay_name] = (p_val, p_disp, team_label)
+                    is_club_rec = True
+                    state.milestones.insert(
+                        0,
+                        f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nella {relay_name} "
+                        f"({team_label}): {p_disp}.",
+                    )
+                prize = int(tier_cfg["prize_base"] * {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}.get(player_place, 0.0))
+                prestige_gain = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}.get(player_place, 1) + (5 if is_club_rec else 0)
+            total_prize += prize
+            total_prestige += prestige_gain
+            event_results.append(
+                EventResult(
+                    event_name=relay_name,
+                    player_athlete_name=team_label,
+                    placement=player_place,
+                    total_competitors=len(standings),
+                    player_mark=p_disp,
+                    prize_money=prize,
+                    prestige_gained=prestige_gain,
+                    is_club_record=is_club_rec,
+                    standings=standings,
+                    attitude=f"Affiatamento {harmony_grade(max(0, harmony))}",
+                    withdrew_injured=False,
+                    disqualified=disqualified,
+                    gender=gender,
+                )
             )
-        )
 
     _adapt_rival_ambition(state, team_points)
     team_standings = sorted(team_points.items(), key=lambda kv: kv[1], reverse=True)
@@ -1110,7 +1128,11 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
         for athlete in state.athletes:
             auto_assign_coach(state, athlete)
     if any(name not in state.relays for name in state.active_relays):
-        auto_build_all_relays(state)
+        auto_build_all_relays(state, gender="M")
+    if any(name not in state.relays_f for name in state.active_relays) and any(
+        a.gender == "F" for a in state.main_squad
+    ):
+        auto_build_all_relays(state, gender="F")
     if not state.rival_clubs:
         state.rival_clubs = create_rival_clubs(rng=r)
     for club in state.rival_clubs:
@@ -1171,12 +1193,13 @@ def close_season(state: GameState) -> SeasonEndResult:
     return result
 
 
-def comp_summary_relays(summary: Optional[CompetitionSummary]) -> List[str]:
-    """Relays that finished (not disqualified) in a meet."""
+def comp_summary_relays(summary: Optional[CompetitionSummary]) -> List[Tuple[str, str]]:
+    """Relays `(event_name, gender)` that finished (not disqualified) in a meet."""
     if summary is None:
         return []
     return [
-        er.event_name for er in summary.event_results
+        (er.event_name, er.gender or "M")
+        for er in summary.event_results
         if er.event_name in RELAYS and not er.disqualified
     ]
 

@@ -253,28 +253,30 @@ def generate_vertical_slice_roster(rng: Optional[random.Random] = None) -> List[
 
 
 def generate_initial_roster(rng: Optional[random.Random] = None) -> List[Athlete]:
-    """Generate a balanced 8-athlete starting career roster covering all 4 specialties (M & F)."""
+    """Generate a balanced 16-athlete starting career roster (8 M + 8 F across all 4 specialties)."""
     r = rng or random.Random()
     specialties = [
         Specialty.SPRINTS,
-        Specialty.SPRINTS,
-        Specialty.MIDDLE_DISTANCE,
         Specialty.MIDDLE_DISTANCE,
         Specialty.JUMPS,
-        Specialty.JUMPS,
         Specialty.THROWS,
-        Specialty.THROWS,
+    ]
+    slots = [
+        (spec, gender)
+        for _cycle in range(2)
+        for spec in specialties
+        for gender in ("M", "F")
     ]
     roster: List[Athlete] = []
     used_names: set[str] = set()
-    for idx, spec in enumerate(specialties, start=1):
+    for idx, (spec, gender) in enumerate(slots, start=1):
         athlete = generate_athlete(
             tier=CompetitionTier.PROVINCIALE,
             specialty=spec,
             rng=r,
             existing_names=used_names,
             youth_prospect=(idx == 2),
-            gender="M" if idx % 2 == 1 else "F",
+            gender=gender,
         )
         athlete.id = idx
         if idx == 1:

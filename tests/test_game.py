@@ -378,7 +378,7 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
             db = DatabaseManager(db_path=Path(tmpdir) / "career.db")
             ctrl = GameController(db_manager=db, rng=random.Random(77))
             ctrl.start_new_game(team_name="CUS Test", game_mode="career")
-            self.assertEqual(len(ctrl.state.athletes), 8)
+            self.assertEqual(len(ctrl.state.athletes), 16)
             self.assertEqual(len(ctrl.state.active_events), 5)
 
             ctrl.toggle_staff(4)  # Hire Physio
@@ -547,10 +547,10 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.event_lineup["1500m"] = None  # empty slot: rivals still score
             summary = sim.simulate_competition(ctrl.state, rng=random.Random(2))
             self.assertEqual(len(summary.team_standings), 8)
-            # 3 M events + 3 F events + 4x100m relay, each worth 8+7+...+1 = 36 points, minus the
-            # 8th-place point nobody takes in the empty 1500m slot and for each withdrawal/DQ
+            # 3 M events + 3 F events + 4x100m M + 4x100m F, each worth 8+7+...+1 = 36 points,
+            # minus the 8th-place point nobody takes in the empty 1500m slot and each withdrawal/DQ
             dropped = sum(1 for er in summary.event_results if er.withdrew_injured or er.disqualified)
-            self.assertEqual(sum(p for _t, p in summary.team_standings), 7 * 36 - 1 - dropped)
+            self.assertEqual(sum(p for _t, p in summary.team_standings), 8 * 36 - 1 - dropped)
             self.assertEqual(dict(summary.team_standings), ctrl.state.league_table)
             self.assertGreater(summary.team_placement, 0)
 
@@ -790,9 +790,9 @@ class TestCoachesAndRelays(unittest.TestCase):
             # replacing a healthy runner: -25% harmony, then a 4-week wait
             from models.generator import generate_athlete
 
-            outsider = generate_athlete(specialty=Specialty.SPRINTS, rng=random.Random(1))
+            outsider = generate_athlete(specialty=Specialty.SPRINTS, rng=random.Random(1), gender="M")
             outsider.id = 99
-            s.athletes.append(outsider)  # all 8 career athletes are already in a relay
+            s.athletes.append(outsider)  # all 8 career men are already in a relay
             self.assertTrue(ctrl.set_relay_slot("4x100m", 4, outsider.id))  # empty reserve slot: free
             self.assertEqual(relay.harmony, 80)
             self.assertTrue(ctrl.set_relay_slot("4x400m", 0, None))  # frees a 4x400m runner
@@ -1184,7 +1184,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             rep = advance_week(ctrl.state, rng=random.Random(15))
             assert rep.competition_summary is not None
             comp_dlg = CompetitionResultsDialog(rep.competition_summary)
-            self.assertEqual(comp_dlg.events_table.rowCount(), 7)  # 3 M + 3 F + 4x100m relay
+            self.assertEqual(comp_dlg.events_table.rowCount(), 8)  # 3 M + 3 F + 4x100m M + 4x100m F
             self.assertEqual(comp_dlg.team_table.rowCount(), 8)
             comp_dlg.close()
 
@@ -1340,6 +1340,10 @@ class TestRaceExport(unittest.TestCase):
 class TestGenderDivisions(unittest.TestCase):
     """Separate Men's (M) and Women's (F) athletic divisions across sim, DB, and export."""
 
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_mixed_roster_lineups_and_separate_records(self) -> None:
         from models import simulation as sim
 
@@ -1442,6 +1446,81 @@ class TestGenderDivisions(unittest.TestCase):
             conn.close()
             self.assertEqual(len(rows), len(f_100.standings))
             self.assertTrue(all(r[0] == "F" for r in rows))
+
+    def test_male_and_female_relays_career_sim_and_v9_migration(self) -> None:
+        import sqlite3
+        from models.simulation import upgrade_legacy_state
+        from views.tabs import RelayTab
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "relays_mf.db"
+            db = DatabaseManager(db_path=path)
+            ctrl = GameController(db_manager=db, rng=random.Random(19))
+            ctrl.start_new_game("CUS Relays", "career")
+            s = ctrl.state
+
+            # Both M and F 4x100m and 4x400m start complete with zero shared runners
+            for g in ("M", "F"):
+                pool = s.relays_for(g)
+                self.assertEqual(set(pool), {"4x100m", "4x400m"})
+                self.assertTrue(all(r.is_complete for r in pool.values()))
+                ids = [aid for r in pool.values() for aid in r.all_ids()]
+                self.assertEqual(len(ids), len(set(ids)))
+                by_id = {a.id: a for a in s.athletes}
+                self.assertTrue(all(by_id[aid].gender == g for aid in ids))
+
+            # Cross-gender relay slot assignment is rejected
+            first_f = next(a for a in s.main_squad if a.gender == "F")
+            first_m = next(a for a in s.main_squad if a.gender == "M")
+            self.assertFalse(ctrl.set_relay_slot("4x100m", 0, first_f.id, gender="M"))
+            self.assertFalse(ctrl.set_relay_slot("4x100m", 0, first_m.id, gender="F"))
+
+            # Simulate an outdoor meet -> runs both 4x100m (M) and 4x100m (F)
+            s.relays["4x100m"].harmony = 100
+            s.relays_f["4x100m"].harmony = 100
+            s.week = 4
+            s.prestige = -1000
+            summary = advance_week(s, rng=random.Random(5)).competition_summary
+            assert summary is not None
+            r4x1 = [er for er in summary.event_results if er.event_name == "4x100m"]
+            self.assertEqual([(er.gender, er.display_event_name) for er in r4x1], [
+                ("M", "4x100m (M)"),
+                ("F", "4x100m (F)"),
+            ])
+            f_relay = next(er for er in r4x1 if er.gender == "F")
+            self.assertGreaterEqual(min(st.mark_value for st in f_relay.standings), 40.8)
+            self.assertIn("4x100m", s.club_records)
+            self.assertIn("4x100m", s.club_records_f)
+
+            # UI RelayTab division switch shows female squad
+            tab = RelayTab(ctrl)
+            tab.refresh(s)
+            tab.division_combo.setCurrentIndex(1)  # Femminile (F)
+            self.assertIn("4x100m (F)", tab._titles["4x100m"].text())
+            self.assertEqual(tab._slot_combos["4x100m"][0].currentData(), s.relays_f["4x100m"].member_ids[0])
+            tab.close()
+
+            # v8 -> v9 migration preserves/rebuilds relays_f
+            s.relays_f["4x400m"].harmony = 88
+            db.save_game(s)
+            reloaded = db.load_game()
+            assert reloaded is not None
+            self.assertEqual(reloaded.relays_f["4x400m"].harmony, 88)
+
+            conn = sqlite3.connect(str(path))
+            try:
+                _drop_columns_after(conn, 8)
+                conn.execute("PRAGMA user_version = 8")
+                conn.commit()
+            finally:
+                conn.close()
+
+            mig_db = DatabaseManager(db_path=path)
+            migrated = mig_db.load_game()
+            assert migrated is not None
+            upgrade_legacy_state(migrated, rng=random.Random(19))
+            self.assertEqual(set(migrated.relays_f), {"4x100m", "4x400m"})
+            self.assertTrue(all(r.is_complete for r in migrated.relays_f.values()))
 
 
 if __name__ == "__main__":

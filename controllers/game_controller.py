@@ -118,7 +118,7 @@ class GameController(QObject):
         else:
             roster = generate_initial_roster(rng=self.rng)
             events = None
-            budget = 14000
+            budget = 18000
             intro = (
                 f"Sett. 1: Carriera Completa avviata per {team_name}! "
                 "Gestisci stagioni Outdoor, Cross e Indoor fino alla categoria Internazionale."
@@ -606,36 +606,40 @@ class GameController(QObject):
 
     # ------------------------------------------------------------------ relays
     def _remove_from_relays(self, athlete_id: int) -> None:
-        for relay in self.state.relays.values():
-            relay.member_ids = [None if mid == athlete_id else mid for mid in relay.member_ids]
-            if relay.reserve_id == athlete_id:
-                relay.reserve_id = None
+        for pool in (self.state.relays, self.state.relays_f):
+            for relay in pool.values():
+                relay.member_ids = [None if mid == athlete_id else mid for mid in relay.member_ids]
+                if relay.reserve_id == athlete_id:
+                    relay.reserve_id = None
 
-    def auto_build_relay(self, event: str) -> bool:
-        existing = self.state.relays.get(event)
+    def auto_build_relay(self, event: str, gender: str = "M") -> bool:
+        existing = self.state.relays_for(gender).get(event)
         weeks_since = self.state.week - (existing.last_change_week if existing else -100)
         if existing and existing.all_ids() and weeks_since < RELAY_CHANGE_COOLDOWN_WEEKS:
             self.status_message.emit(
-                f"La {event} è stata cambiata da poco: riprova tra "
+                f"La {event} ({gender}) è stata cambiata da poco: riprova tra "
                 f"{RELAY_CHANGE_COOLDOWN_WEEKS - weeks_since} settimana/e."
             )
             return False
-        relay = auto_build_relay(self.state, event)
+        relay = auto_build_relay(self.state, event, gender=gender)
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
-        self.status_message.emit(f"Staffetta {event} composta (affiatamento {relay.harmony}).")
+        self.status_message.emit(f"Staffetta {event} ({gender}) composta (affiatamento {relay.harmony}).")
         return True
 
-    def set_relay_slot(self, event: str, slot: int, athlete_id: Optional[int]) -> bool:
-        """Set leg `slot` (0-3) or the reserve (4).
+    def set_relay_slot(
+        self, event: str, slot: int, athlete_id: Optional[int], gender: str = "M"
+    ) -> bool:
+        """Set leg `slot` (0-3) or the reserve (4) for the given division (`M` or `F`).
 
         Reordering runners already in the relay is free. Bringing in a new runner in place of
         a healthy one costs 25% harmony and is allowed once every 4 weeks.
         """
-        if event not in RELAYS or not (0 <= slot <= 4):
+        if event not in RELAYS or gender not in ("M", "F") or not (0 <= slot <= 4):
             return False
         state = self.state
-        relay = state.relays.setdefault(event, Relay(event=event))
+        relays = state.relays_for(gender)
+        relay = relays.setdefault(event, Relay(event=event))
         slots: List[Optional[int]] = list(relay.member_ids) + [relay.reserve_id]
         current = slots[slot]
         if athlete_id == current:
@@ -643,11 +647,11 @@ class GameController(QObject):
 
         if athlete_id is not None:
             athlete = next((a for a in state.main_squad if a.id == athlete_id), None)
-            if athlete is None:
+            if athlete is None or athlete.gender != gender:
                 return False
-            other = state.relay_of(athlete_id)
+            other = state.relay_of(athlete_id, gender=gender)
             if other is not None and other != event:
-                self.status_message.emit(f"{athlete.name} corre già nella staffetta {other}.")
+                self.status_message.emit(f"{athlete.name} corre già nella staffetta {other} ({gender}).")
                 return False
 
         if athlete_id is not None and athlete_id in slots:
@@ -662,7 +666,7 @@ class GameController(QObject):
                 weeks_since = state.week - relay.last_change_week
                 if weeks_since < RELAY_CHANGE_COOLDOWN_WEEKS:
                     self.status_message.emit(
-                        f"Puoi cambiare un componente della {event} tra "
+                        f"Puoi cambiare un componente della {event} ({gender}) tra "
                         f"{RELAY_CHANGE_COOLDOWN_WEEKS - weeks_since} settimana/e."
                     )
                     return False
@@ -673,7 +677,7 @@ class GameController(QObject):
         relay.reserve_id = slots[4]
         self.db.save_game(state)
         self.state_changed.emit(state)
-        self.status_message.emit(f"Staffetta {event} aggiornata (affiatamento {relay.harmony}).")
+        self.status_message.emit(f"Staffetta {event} ({gender}) aggiornata (affiatamento {relay.harmony}).")
         return True
 
     def resolve_dilemma(self, accepted: bool) -> None:

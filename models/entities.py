@@ -221,6 +221,9 @@ class RelayDefinition:
     min_seconds: float
     indoor: bool  # also run during the indoor season
     requires_event: str  # only run when this individual event is in the programme
+    base_seconds_f: float = 0.0
+    span_seconds_f: float = 0.0
+    min_seconds_f: float = 0.0
 
 
 RELAYS: Dict[str, RelayDefinition] = {
@@ -232,6 +235,9 @@ RELAYS: Dict[str, RelayDefinition] = {
         min_seconds=36.8,
         indoor=False,
         requires_event="100m",
+        base_seconds_f=55.0,
+        span_seconds_f=11.8,
+        min_seconds_f=40.8,
     ),
     "4x400m": RelayDefinition(
         name="4x400m",
@@ -241,6 +247,9 @@ RELAYS: Dict[str, RelayDefinition] = {
         min_seconds=174.0,
         indoor=True,
         requires_event="400m",
+        base_seconds_f=250.0,
+        span_seconds_f=53.0,
+        min_seconds_f=195.0,
     ),
 }
 RELAY_LEG_WEIGHTS: List[float] = [0.24, 0.24, 0.24, 0.28]  # the anchor leg counts a bit more
@@ -789,12 +798,16 @@ class GameState:
     season_history: List[SeasonEndResult] = field(default_factory=list)  # newest first
     event_lineup_f: Dict[str, Optional[int]] = field(default_factory=dict)
     club_records_f: Dict[str, Tuple[float, str, str]] = field(default_factory=dict)
+    relays_f: Dict[str, Relay] = field(default_factory=dict)
 
     def lineup_for(self, gender: str = "M") -> Dict[str, Optional[int]]:
         return self.event_lineup_f if gender == "F" else self.event_lineup
 
     def records_for(self, gender: str = "M") -> Dict[str, Tuple[float, str, str]]:
         return self.club_records_f if gender == "F" else self.club_records
+
+    def relays_for(self, gender: str = "M") -> Dict[str, Relay]:
+        return self.relays_f if gender == "F" else self.relays
 
     def league_standings(self) -> List[Tuple[str, int]]:
         """Current league table with every club of the category (0 points if not scored yet).
@@ -848,10 +861,18 @@ class GameState:
             out.append(name)
         return out
 
-    def relay_of(self, athlete_id: Optional[int]) -> Optional[str]:
-        for name, relay in self.relays.items():
-            if athlete_id is not None and athlete_id in relay.all_ids():
-                return name
+    def relay_of(self, athlete_id: Optional[int], gender: Optional[str] = None) -> Optional[str]:
+        if athlete_id is None:
+            return None
+        pools = (
+            [self.relays_for(gender)]
+            if gender in ("M", "F")
+            else [self.relays, self.relays_f]
+        )
+        for pool in pools:
+            for name, relay in pool.items():
+                if athlete_id in relay.all_ids():
+                    return name
         return None
 
     @property

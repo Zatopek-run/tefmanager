@@ -1353,17 +1353,25 @@ class RelayTab(QWidget):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
 
+        top_bar = QHBoxLayout()
         hint = QLabel(
-            "Ogni atleta può correre in una sola staffetta. L'affiatamento (da E ad A++) cresce di "
-            "settimana in settimana se i 4 titolari sono sani, e di più quando la staffetta gareggia. "
-            "Con poco affiatamento aumenta il rischio di squalifica per cambio fuori zona. Cambiare "
-            "l'ordine è gratis; sostituire un titolare sano costa il 25% dell'affiatamento ed è "
-            f"possibile una volta ogni {RELAY_CHANGE_COOLDOWN_WEEKS} settimane. Se un titolare è "
-            "infortunato entra la riserva. Le staffette non consumano forma e non danno fan."
+            "Ogni atleta può correre in una sola staffetta della propria categoria (M/F). L'affiatamento "
+            "(da E ad A++) cresce di settimana in settimana se i 4 titolari sono sani, e di più quando "
+            "la staffetta gareggia. Con poco affiatamento aumenta il rischio di squalifica per cambio "
+            "fuori zona. Cambiare l'ordine è gratis; sostituire un titolare sano costa il 25% "
+            f"dell'affiatamento ed è possibile una volta ogni {RELAY_CHANGE_COOLDOWN_WEEKS} settimane. "
+            "Se un titolare è infortunato entra la riserva. Le staffette non consumano forma e non danno fan."
         )
         hint.setObjectName("SubTitle")
         hint.setWordWrap(True)
-        root.addWidget(hint)
+        top_bar.addWidget(hint, stretch=1)
+        top_bar.addWidget(QLabel("Categoria:"))
+        self.division_combo = QComboBox()
+        self.division_combo.addItem("Maschile (M)", "M")
+        self.division_combo.addItem("Femminile (F)", "F")
+        self.division_combo.currentIndexChanged.connect(lambda _i: self.refresh(self.controller.state))
+        top_bar.addWidget(self.division_combo)
+        root.addLayout(top_bar)
 
         row = QHBoxLayout()
         row.setSpacing(12)
@@ -1397,7 +1405,11 @@ class RelayTab(QWidget):
                 combos.append(combo)
             auto_btn = QPushButton("Componi automaticamente")
             auto_btn.setObjectName("PrimaryButton")
-            auto_btn.clicked.connect(lambda _c=False, n=name: self.controller.auto_build_relay(n))
+            auto_btn.clicked.connect(
+                lambda _c=False, n=name: self.controller.auto_build_relay(
+                    n, gender=self.division_combo.currentData() or "M"
+                )
+            )
             lay.addWidget(auto_btn)
             lay.addStretch()
             row.addWidget(panel)
@@ -1410,11 +1422,13 @@ class RelayTab(QWidget):
 
     def refresh(self, state: GameState) -> None:
         active = set(state.active_relays)
+        gender = self.division_combo.currentData() or "M"
+        relays = state.relays_for(gender)
         for name, rdef in RELAYS.items():
-            relay = state.relays.get(name)
+            relay = relays.get(name)
             harmony = relay.harmony if relay else 0
             self._titles[name].setText(
-                f"Staffetta {name} — affiatamento {harmony_grade(harmony)} ({harmony}/100)"
+                f"Staffetta {name} ({gender}) — affiatamento {harmony_grade(harmony)} ({harmony}/100)"
             )
             self._bars[name].setValue(harmony)
             self._bars[name].setFormat(f"Affiatamento {harmony_grade(harmony)}")
@@ -1440,7 +1454,9 @@ class RelayTab(QWidget):
                 combo.clear()
                 combo.addItem("— vuoto —", None)
                 for a in state.main_squad:
-                    other = state.relay_of(a.id)
+                    if a.gender != gender:
+                        continue
+                    other = state.relay_of(a.id, gender=gender)
                     if other is not None and other != name:
                         continue
                     tag = " (infort.)" if a.is_injured else ""
@@ -1453,7 +1469,8 @@ class RelayTab(QWidget):
             self._auto_btns[name].setEnabled(name in active)
 
     def _on_slot_changed(self, name: str, slot: int, combo: QComboBox) -> None:
-        if not self.controller.set_relay_slot(name, slot, combo.currentData()):
+        gender = self.division_combo.currentData() or "M"
+        if not self.controller.set_relay_slot(name, slot, combo.currentData(), gender=gender):
             self.refresh(self.controller.state)  # refused: show the real line-up again
 
 
