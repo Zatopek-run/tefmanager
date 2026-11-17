@@ -33,6 +33,11 @@ const WIDE_CUT_BEFORE_GUN_100M: float = 0.4
 const WIDE_CUT_BEFORE_GUN_OVAL: float = 2.2   # nei 400m lo start largo si vede piu' a lungo
 const START_WIDE_HOLD: float = 2.2        # 100m: la ripresa larga resta fino a questo tempo di gara
 const FINISH_CAM_Z: float = 16.0
+# Inquadratura adattiva del carrello alto:
+const FRAME_WIDTH_BASE: float = 14.4      # larghezza (m) inquadrata dal carrello con fov TRACK_FOV a distanza base
+const FRAME_MARGIN: float = 8.0      # margine: la corsia piu' vicina alla camera appare piu' larga (prospettiva)
+const FRAME_PULLBACK_MAX: float = 1.6     # oltre z = 47 il carrello finirebbe nelle tribune
+const FRAME_FOV_MAX: float = 40.0
 
 @onready var _path: Path3D = $BroadcastPath
 @onready var _dolly: PathFollow3D = $BroadcastPath/CameraDolly
@@ -42,6 +47,8 @@ const FINISH_CAM_Z: float = 16.0
 var _oval: bool = false
 var _race_distance: float = 100.0
 var _current_cam: Camera3D = null
+var _frame_scale: float = 1.0             # allontanamento attuale del carrello alto
+var _frame_fov: float = TRACK_FOV
 
 # 100m
 var _open_cam: Camera3D
@@ -77,7 +84,7 @@ func _ready() -> void:
 	var s: float = TrackGeometry.STRAIGHT
 	_o_open = _make_static_cam(Vector3(-14.0, 17.0, -20.0), Vector3(20.0, 0.0, -12.0), 50.0, 80.0)
 	_o_close = _make_static_cam(Vector3(0.0, 1.0, 5.0), Vector3(0.0, 0.5, 0.0), 38.0, 7.0)   # riposizionata in reset()
-	_o_start = _make_static_cam(Vector3(-4.0, 8.0, -14.0), Vector3(24.0, 0.0, -14.0), 28.0, 120.0)
+	_o_start = _make_static_cam(Vector3(-14.0, 12.0, -26.0), Vector3(15.0, 0.0, -8.0), 42.0, 120.0)   # inquadra tutte le 8 corsie sfalsate
 	_o_far = _make_static_cam(Vector3(-s * 0.5, 5.0, 34.0), Vector3(-s * 0.5, 0.8, -78.0), 9.0, 600.0)   # teleobiettivo dall'altro lato
 	_o_curve = _make_static_cam(Vector3(-s - 72.0, 18.0, -36.8), Vector3(-s - 30.0, 0.8, -36.8), 30.0, 150.0)
 
@@ -109,9 +116,9 @@ func reset() -> void:
 	_race_distance = RaceMotion.race_distance(RaceController.event_kind)
 	var fx: float = TrackGeometry.FINISH_X
 	if _oval:
-		# Traguardo dei 400m: sul piano della linea, guarda trasversalmente tutte le corsie.
-		_finish_cam.fov = 22.0
-		_finish_cam.look_at_from_position(Vector3(fx + 0.15, 0.9, FINISH_CAM_Z), Vector3(fx, 0.8, TRACK_Z_CENTER), Vector3.UP)
+		# Traguardo dei 400m: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo, come nel riferimento).
+		_finish_cam.fov = 38.0
+		_finish_cam.look_at_from_position(Vector3(fx + 3.0, 11.0, 22.0), Vector3(fx - 9.0, 0.4, TRACK_Z_CENTER), Vector3.UP)
 		# Primo piano sui blocchi della corsia 6 (al centro dello schieramento), dal lato esterno.
 		var pose: Dictionary = TrackGeometry.pose(6, 0.0)
 		var h: Vector2 = pose["heading"]
@@ -207,13 +214,38 @@ func _apply(cam: Camera3D) -> void:
 			cam.look_at(_leader_world_position() + Vector3(0.0, 0.9, 0.0), Vector3.UP)
 
 
-## Carrello alto su Path3D: segue il gruppo con il primo poco a destra del centro.
+## Carrello alto su Path3D: il primo sta a destra del centro (ripresa TV) e TUTTI i corridori ancora in gara restano
+## in inquadratura: se il gruppo si sparpaglia (400m sul rettilineo d'arrivo) la camera si allontana e apre l'obiettivo.
 func _update_side_cam() -> void:
-	var aim: Vector3 = _leader_world_position()
-	aim.x -= LEAD_IN_FRAME                       # il primo cade a destra del centro (ripresa TV)
+	var leader: Vector3 = _leader_world_position()
+	var spread: float = _racing_spread()
+	var a: float = maxf(LEAD_IN_FRAME, spread * 0.28)   # distanza del primo dal centro dell'inquadratura
+	var width_needed: float = 2.0 * maxf(a, spread - a) + FRAME_MARGIN
+	var s_goal: float = clampf(sqrt(width_needed / FRAME_WIDTH_BASE), 1.0, FRAME_PULLBACK_MAX)
+	var fov_goal: float = clampf(TRACK_FOV * width_needed / (FRAME_WIDTH_BASE * s_goal), TRACK_FOV, FRAME_FOV_MAX)
+	var weight: float = 1.0 - exp(-3.0 * get_process_delta_time() * RaceController.time_scale)
+	_frame_scale = lerpf(_frame_scale, s_goal, weight)
+	_frame_fov = lerpf(_frame_fov, fov_goal, weight)
+	var aim: Vector3 = leader
+	aim.x -= a
 	aim.z = TRACK_Z_CENTER                       # si guarda il centro pista, non la corsia del primo
 	_dolly.progress = clampf(aim.x - PATH_START_X, 0.0, PATH_END_X - PATH_START_X)
+	# Allontanamento: il vettore camera -> centro pista cresce di _frame_scale (la camera e' figlia del carrello).
+	_side_cam.position = Vector3(0.0, PATH_Y * (_frame_scale - 1.0), (PATH_Z - TRACK_Z_CENTER) * (_frame_scale - 1.0))
+	_side_cam.fov = _frame_fov
 	_side_cam.look_at(aim + Vector3(0.0, 0.4, 0.0), Vector3.UP)
+
+
+## Distanza (m) fra il primo e l'ultimo dei corridori ancora in gara (esclusi arrivati e ritirati).
+func _racing_spread() -> float:
+	var lo: float = INF
+	var hi: float = -INF
+	for r: RunnerData in RaceController.runners:
+		if r.finished or r.dnf:
+			continue
+		lo = minf(lo, r.distance)
+		hi = maxf(hi, r.distance)
+	return maxf(0.0, hi - lo) if hi >= lo else 0.0
 
 
 ## Posizione del primo in classifica. Prima dello sparo: centro delle corsie alla linea di partenza.

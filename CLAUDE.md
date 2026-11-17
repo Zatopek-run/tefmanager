@@ -116,9 +116,14 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **400m.** Pista ovale: `models/TrackGeometry.gd` (rettilinei 84,39 m, raggio corsia 1 = 36,8 m, corsie da 1,22 m;
   partenza sfalsata `start_offset`, traguardo a x = 0) è l'unica fonte sia per la posizione dei corridori sia per il
   disegno (`scripts/OvalTrackBuilder.gd`). `RaceMotion` ha una curva per evento (`kind`); la distanza è per corsia
-  dalla SUA partenza. **In gara la mira delle camere è sempre esattamente sul primo in classifica**
-  (`live_order[0]`), senza ritardo di inseguimento (nemmeno a 8x). `tests/verify_camera.gd` misura lo scarto del primo
-  dal centro (a 1x/4x/8x, anche sul 100m).
+  dalla SUA partenza. **Mira delle camere in gara:** le camere che PANORAMICANO (400m: start, rettilineo opposto,
+  curva 2) puntano esattamente sul primo (`live_order[0]`), senza ritardo di inseguimento, anche a 8x. Il **carrello
+  alto** (100m, rettilineo d'arrivo dei 400m, corsa oltre il traguardo) invece tiene il primo A DESTRA del centro
+  (fascia 5–32% della larghezza, come nel video) e inquadra TUTTI i corridori ancora in gara, allontanandosi e
+  aprendo l'obiettivo se il gruppo si sparpaglia (`_update_side_cam`). Questo inverte la richiesta precedente
+  dell'utente ("primo al centro") per i carrelli: scelta di regia dal riferimento, da confermare con l'utente.
+  `tests/verify_camera.gd` lo verifica su una finestra VERA 1280x720 (in `--headless` la finestra è 64x64: una
+  tolleranza in pixel sarebbe vuota).
   **Niente compressione del tempo**: si guarda in tempo reale e l'utente accelera con i tasti 1/2/4/8
   (indicatore in basso a destra). `GODOT_EVENTS` in `views/godot_launcher.py` è un elenco esatto: le staffette
   (`4x100m`…) restano sulla vista PyQt.

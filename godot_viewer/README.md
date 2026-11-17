@@ -78,10 +78,11 @@ demo), fotofinish (la camera fissa stacca quando il leader supera i 90 m).
 `TrackGeometry.gd` descrive l'ovale (rettilinei 84,39 m, raggio corsia 1 = 36,8 m): ogni corsia fa esattamente 400 m
 con la partenza sfalsata e tutte arrivano sulla linea a x = 0 (`verify_race.gd` lo controlla corsia per corsia).
 `OvalTrackBuilder.gd` disegna tartan, linee di corsia, linee di partenza sfalsate e traguardo dagli stessi numeri.
-La camera `ChaseCam` sta sul lato esterno e punta sempre sul primo in classifica (resta al centro dell'inquadratura
-anche a 8x; `tests/verify_camera.gd` lo misura: scarto massimo 42 px su 1152). Se il primo cambia la mira scivola
-dal vecchio al nuovo; fino allo sparo si vede tutto il gruppo. I corridori vanno sempre da sinistra a destra.
-Stacco sul fotofinish negli ultimi 10 m.
+La regia dei 400m (`BroadcastCameras._direct_oval`) cambia ripresa in base al tratto dell'anello in cui si trova il primo
+(`TrackGeometry.region`): start largo, teleobiettivo dall'altro lato dell'interno, alto sulla curva 2, carrello alto sul
+rettilineo d'arrivo, traguardo dall'alto. Le camere che panoramicano puntano esattamente sul primo; il carrello alto lo tiene
+a destra del centro e inquadra tutto il gruppo. `tests/verify_camera.gd` lo misura su una finestra 1280x720 (in `--headless`
+la finestra di default è 64x64: i test in pixel vanno fatti impostando `root.size`).
 
 ## Riprese e grafica "da diretta TV"
 
@@ -90,7 +91,8 @@ ricavati da due dirette di riferimento (100m di Roma e finale 400m di Parigi 202
 Sequenza dei 100m: apertura larga dall'alto dietro i blocchi → primo piano basso sui blocchi ("pronti", poi "set") →
 start largo → carrello alto sul gruppo (il primo a destra del centro) → traguardo dall'alto → corsa oltre il traguardo,
 in curva. Sequenza dei 400m: start largo → teleobiettivo dall'altro lato dell'interno → alto sulla curva 2 → carrello alto →
-traguardo. In gara la mira è sempre esattamente sul primo. HUD: cronometro in basso a destra, vento e risultato non
+traguardo. Le camere che panoramicano puntano esattamente sul primo; il carrello alto lo tiene a destra del centro e
+inquadra tutto il gruppo (si allontana se si sparpaglia). HUD: cronometro in basso a destra, vento e risultato non
 ufficiale dopo l'arrivo; **H** mostra/nasconde la classifica laterale (nascosta di default).
 Limiti: niente 9ª corsia (le corsie sono 8), niente audio, niente primi piani degli atleti, i marchi reali sono sostituiti
 da grafica originale.

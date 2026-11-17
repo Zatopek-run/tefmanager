@@ -4,9 +4,9 @@ extends SceneTree
 ## Scatta ai tempi di gara in SHOTS (secondi dallo sparo; -1 = ai blocchi prima dello sparo).
 
 ## 100m: preparazione (apertura larga, primo piano blocchi, set, ripresa larga), start, carrello alto, arrivo, oltre il traguardo
-const SHOTS_100M: Array[float] = [-8.6, -5.0, -1.0, -0.2, 0.8, 4.0, 8.4, 9.5, 11.5]
+const SHOTS_100M: Array[float] = [-8.6, -5.0, -1.0, -0.2, 0.8, 4.0, 8.4, 9.5, 11.5, 14.0]
 ## 400m: partenza, curva 1, rettilineo opposto, curva 2, rettilineo d'arrivo, fotofinish, dopo l'arrivo
-const SHOTS_400M: Array[float] = [-1.0, 6.0, 15.0, 25.0, 33.0, 40.0, 44.8, 46.5]
+const SHOTS_400M: Array[float] = [-6.6, -4.0, -1.5, 3.0, 12.0, 25.0, 36.0, 42.0, 44.3, 47.0, 50.0]
 
 var _out_dir: String = "user://shots"
 var _stage: int = 0
