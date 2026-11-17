@@ -37,6 +37,17 @@ FIRST_NAMES: List[str] = [
     "Kofi", "Amara", "Kenji", "Soren", "Nadia", "Mateo", "Freya", "Tariq",
 ]
 
+FEMALE_FIRST_NAMES: frozenset[str] = frozenset({
+    "Giulia", "Sofia", "Elena", "Chiara", "Francesca", "Alice", "Martina", "Sara",
+    "Giorgia", "Beatrice", "Camilla", "Viola", "Amara", "Nadia", "Freya",
+})
+
+
+def infer_gender(athlete_name: str) -> str:
+    """Infer 'F' or 'M' from an athlete's first name (defaults to 'M')."""
+    first = athlete_name.strip().split(" ", 1)[0] if athlete_name else ""
+    return "F" if first in FEMALE_FIRST_NAMES else "M"
+
 LAST_NAMES: List[str] = [
     "Rossi", "Bianchi", "Esposito", "Conti", "Moretti", "Greco", "Galli", "Ferri",
     "Rinaldi", "Lombardi", "De Luca", "Marchetti", "Barbieri", "Fontana", "Sartori", "Rizzo",

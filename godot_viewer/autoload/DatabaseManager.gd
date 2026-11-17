@@ -21,6 +21,19 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
+	if db_path == DEFAULT_DB_PATH and _db != null and not _has_gender_column():
+		close_database()
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
+		_create_demo_database()
+		open_database(db_path)
+
+
+func _has_gender_column() -> bool:
+	var cols: Array[Dictionary] = _select("PRAGMA table_info(race_results);", [])
+	for c: Dictionary in cols:
+		if str(c.get("name", "")) == "gender":
+			return true
+	return false
 
 
 func _exit_tree() -> void:
@@ -63,7 +76,7 @@ func get_race_info(race_id: int) -> Dictionary:
 func get_race_runners(race_id: int) -> Array[RunnerData]:
 	var result: Array[RunnerData] = []
 	var rows: Array[Dictionary] = _select(
-		"SELECT lane, athlete_name, team_name, is_player, reaction_time, final_time, status "
+		"SELECT lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status "
 		+ "FROM race_results WHERE race_id = ? ORDER BY lane;", [race_id])
 	for row: Dictionary in rows:
 		var runner: RunnerData = RunnerData.from_row(row)

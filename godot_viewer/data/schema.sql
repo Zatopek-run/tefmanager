@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS race_results (
     lane INTEGER NOT NULL CHECK (lane BETWEEN 1 AND 9),
     athlete_name TEXT NOT NULL,
     team_name TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT 'M' CHECK (gender IN ('M', 'F')),
     is_player INTEGER NOT NULL DEFAULT 0,
     reaction_time REAL NOT NULL CHECK (reaction_time > 0),
     final_time REAL NOT NULL CHECK (final_time > reaction_time),

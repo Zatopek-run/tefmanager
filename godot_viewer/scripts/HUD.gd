@@ -53,6 +53,7 @@ var _controls_panel: PanelContainer
 var _speed_chips: Dictionary = {}  # scale (1,2,4,8) -> {panel, label}
 
 var _tv_stack: VBoxContainer
+var _bug_category_prefix: String = ""
 var _clock_panel: PanelContainer
 var _clock_header: PanelContainer
 var _clock_caption: Label
@@ -114,7 +115,11 @@ func _on_race_loaded(runners: Array[RunnerData], info: Dictionary) -> void:
 	var meet_name: String = str(info.get("meet_name", "MEETING")).to_upper()
 	_title_label.text = "%s  •  CLASSIFICA LIVE" % event_name
 	_bug_meet.text = meet_name
-	_bug_event.text = "%s MASCHILE" % event_name
+	var all_f: bool = not runners.is_empty() and runners.all(func(r: RunnerData) -> bool: return r.gender == "F")
+	var all_m: bool = not runners.is_empty() and runners.all(func(r: RunnerData) -> bool: return r.gender == "M")
+	var cat_label: String = " FEMMINILE" if all_f else (" MASCHILE" if all_m else "")
+	_bug_category_prefix = "F " if all_f else ("M " if all_m else "")
+	_bug_event.text = "%s%s" % [event_name, cat_label]
 	_result_event.text = "%s  •  %s" % [event_name, meet_name]
 	for i in range(runners.size()):
 		_rows.append(_make_row())
@@ -502,7 +507,7 @@ func _update_tv_graphics() -> void:
 	var rc: Node = RaceController
 	var running: bool = rc.state == rc.State.RUNNING or rc.state == rc.State.FINISHED
 	_clock_panel.visible = running
-	_set_text(_clock_caption, "M %s" % str(rc.info.get("event_name", "")).to_upper())
+	_set_text(_clock_caption, "%s%s" % [_bug_category_prefix, str(rc.info.get("event_name", "")).to_upper()])
 	if running:
 		var winner_in: bool = not rc.live_order.is_empty() and rc.live_order[0].finished
 		if winner_in != _last_clock_official:

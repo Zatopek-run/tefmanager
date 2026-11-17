@@ -12,12 +12,19 @@ extends Node3D
 const LANE_WIDTH: float = 1.22
 
 const CHARACTER_PATH: String = "res://assets/athlete/Superhero_Male_FullBody.gltf"
+const CHARACTER_PATH_F: String = "res://assets/athlete/Superhero_Female_FullBody.gltf"
 const ANIMATION_PATH: String = "res://assets/athlete/UAL1_Standard.glb"
 const SKIN_LIGHT_PATH: String = "res://assets/athlete/T_Superhero_Male_Light.png"
 const SKIN_DARK_PATH: String = "res://assets/athlete/T_Superhero_Male_Dark.png"
+const SKIN_LIGHT_PATH_F: String = "res://assets/athlete/T_Superhero_Female_Light_BaseColor.png"
+const SKIN_DARK_PATH_F: String = "res://assets/athlete/T_Superhero_Female_Dark_BaseColor.png"
 const HAIR_PATHS: Array[String] = [
 	"res://assets/athlete/Hair_Buzzed.gltf",
 	"res://assets/athlete/Hair_SimpleParted.gltf",
+]
+const HAIR_PATHS_F: Array[String] = [
+	"res://assets/athlete/Hair_Long.gltf",
+	"res://assets/athlete/Hair_Buns.gltf",
 ]
 
 ## Il modello guarda verso +Z (convenzione glTF): lo giriamo di 90 gradi per farlo correre verso +X.
@@ -54,15 +61,18 @@ func setup(runner: RunnerData) -> void:
 	data = runner
 	_apply_transform()
 
-	_model = (load(CHARACTER_PATH) as PackedScene).instantiate() as Node3D
+	var is_female: bool = runner.gender == "F"
+	var char_path: String = CHARACTER_PATH_F if is_female else CHARACTER_PATH
+	_model = (load(char_path) as PackedScene).instantiate() as Node3D
 	_model.rotation.y = FACING_Y
 	add_child(_model)
 	_skeleton = _model.find_child("Skeleton3D", true, false) as Skeleton3D
 
-	var body: MeshInstance3D = _skeleton.get_node("SuperHero_Male") as MeshInstance3D
+	var body: MeshInstance3D = _find_body_mesh()
 	var height: float = _dress(body)
 	_attach_hair()
-	var target_height: float = 1.72 + float(absi(hash(runner.athlete_name + "height")) % 17) / 100.0
+	var base_h: float = 1.63 if is_female else 1.72
+	var target_height: float = base_h + float(absi(hash(runner.athlete_name + "height")) % 15) / 100.0
 	_model.scale = Vector3.ONE * (target_height / height)
 
 	_setup_animation()
@@ -163,11 +173,24 @@ func _play(anim: StringName, blend: float = BLEND_TIME) -> void:
 
 # --- vestiti e capelli --------------------------------------------------------------------------
 
+func _find_body_mesh() -> MeshInstance3D:
+	for name_try: String in ["Superhero_Female", "SuperHero_Male"]:
+		var n: Node = _skeleton.get_node_or_null(name_try)
+		if n is MeshInstance3D:
+			return n as MeshInstance3D
+	for child: Node in _skeleton.get_children():
+		if child is MeshInstance3D and not child.name in ["Eyebrows", "Eyes"]:
+			return child as MeshInstance3D
+	return null
+
+
 ## Colora la pelle, aggiunge canotta/pantaloncini/scarpette. Ritorna l'altezza del modello a riposo (m).
 func _dress(body: MeshInstance3D) -> float:
 	var skin: StandardMaterial3D = body.get_active_material(0).duplicate() as StandardMaterial3D
 	var tone: int = absi(hash(data.athlete_name)) % 4
-	skin.albedo_texture = load(SKIN_LIGHT_PATH if tone < 2 else SKIN_DARK_PATH) as Texture2D
+	var light_tex: String = SKIN_LIGHT_PATH_F if data.gender == "F" else SKIN_LIGHT_PATH
+	var dark_tex: String = SKIN_DARK_PATH_F if data.gender == "F" else SKIN_DARK_PATH
+	skin.albedo_texture = load(light_tex if tone < 2 else dark_tex) as Texture2D
 	skin.albedo_color = [Color(1, 1, 1), Color(0.82, 0.68, 0.56), Color(1, 1, 1), Color(0.8, 0.72, 0.68)][tone]
 	body.set_surface_override_material(0, skin)
 
@@ -220,6 +243,8 @@ func _add_cloth(body: MeshInstance3D, base_y: float, height: float, bounds: Vect
 	arrays[Mesh.ARRAY_VERTEX] = grown
 	arrays[Mesh.ARRAY_INDEX] = kept
 	arrays[Mesh.ARRAY_TEX_UV2] = rel
+	for ci: int in [Mesh.ARRAY_CUSTOM0, Mesh.ARRAY_CUSTOM1, Mesh.ARRAY_CUSTOM2, Mesh.ARRAY_CUSTOM3]:
+		arrays[ci] = null
 	var mesh: ArrayMesh = ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
 		src.surface_get_format(0) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
@@ -255,7 +280,8 @@ void fragment() {
 
 
 func _attach_hair() -> void:
-	var path: String = HAIR_PATHS[absi(hash(data.athlete_name + "hair")) % HAIR_PATHS.size()]
+	var pool: Array[String] = HAIR_PATHS_F if data.gender == "F" else HAIR_PATHS
+	var path: String = pool[absi(hash(data.athlete_name + "hair")) % pool.size()]
 	var scene: Node = (load(path) as PackedScene).instantiate()
 	var hair: MeshInstance3D = scene.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
 	hair.get_parent().remove_child(hair)

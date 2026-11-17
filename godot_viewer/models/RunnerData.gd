@@ -6,6 +6,7 @@ extends RefCounted
 # --- dal database (immutabili dopo il caricamento) ---
 var athlete_name: String = ""
 var team_name: String = ""
+var gender: String = "M"
 var lane: int = 1
 var is_player: bool = false
 var reaction_time: float = 0.0  # secondi, incluso nel tempo ufficiale
@@ -23,6 +24,7 @@ static func from_row(row: Dictionary) -> RunnerData:
 	var r: RunnerData = RunnerData.new()
 	r.athlete_name = str(row.get("athlete_name", ""))
 	r.team_name = str(row.get("team_name", ""))
+	r.gender = str(row.get("gender", "M")).to_upper()
 	r.lane = int(row.get("lane", 1))
 	r.is_player = int(row.get("is_player", 0)) != 0
 	r.reaction_time = float(row.get("reaction_time", 0.0))

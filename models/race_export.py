@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from models.entities import CompetitionSummary, EventResult, EventStanding
+from models.generator import infer_gender
 from views.race_viewer import reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
@@ -75,14 +76,15 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
             (race_id, result.event_name, summary.meet_name, DISTANCES_M[result.event_name], result.wind_ms or 0.0),
         )
         conn.executemany(
-            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     race_id,
                     lanes[s.athlete_name],
                     s.athlete_name,
                     s.team_name,
+                    infer_gender(s.athlete_name),
                     int(s.is_player),
                     round(reaction_time(seed, s.athlete_name), 3),
                     reference_time if _withdrew(result, s) else s.mark_value,

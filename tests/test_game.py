@@ -1309,6 +1309,25 @@ class TestRaceExport(unittest.TestCase):
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 
+    def test_export_race_includes_inferred_gender(self) -> None:
+        import sqlite3
+        from models.generator import infer_gender
+        from models.race_export import export_race
+
+        self.assertEqual(infer_gender("Giulia Rossi"), "F")
+        self.assertEqual(infer_gender("Marco Valenti"), "M")
+        summary, result = self._summary()
+        result.standings[0].athlete_name = "Giulia Conti"
+        result.standings[1].athlete_name = "Marco Valenti"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "gender.db"
+            race_id = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            genders = dict(conn.execute("SELECT athlete_name, gender FROM race_results WHERE race_id = ?", (race_id,)))
+            conn.close()
+            self.assertEqual(genders["Giulia Conti"], "F")
+            self.assertEqual(genders["Marco Valenti"], "M")
+
 
 if __name__ == "__main__":
     unittest.main()
