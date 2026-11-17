@@ -84,10 +84,10 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        self.hud_budget = QLabel("Budget: $0")
-        self.hud_budget.setStyleSheet("font-weight: 700; color: #34d399; font-size: 14px;")
+        self.hud_budget = QLabel("Bilancio: $0")
+        self.hud_budget.setObjectName("HudBudgetPill")
         self.hud_prestige = QLabel("Prestigio: 0")
-        self.hud_prestige.setStyleSheet("font-weight: 700; color: #fbbf24; font-size: 14px;")
+        self.hud_prestige.setObjectName("HudPrestigePill")
         header_layout.addWidget(self.hud_budget)
         header_layout.addWidget(self.hud_prestige)
 

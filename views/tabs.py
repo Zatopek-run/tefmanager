@@ -151,7 +151,9 @@ class DashboardTab(QWidget):
         obj_title.setObjectName("SectionHeader")
         obj_layout.addWidget(obj_title)
         self.objectives_list = QListWidget()
-        self.objectives_list.setMaximumHeight(92)
+        self.objectives_list.setWordWrap(True)
+        self.objectives_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.objectives_list.setMaximumHeight(108)
         obj_layout.addWidget(self.objectives_list)
         mid_row.addWidget(obj_panel, stretch=2)
 
@@ -188,6 +190,8 @@ class DashboardTab(QWidget):
         right_title.setObjectName("SectionHeader")
         right_layout.addWidget(right_title)
         self.news_list = QListWidget()
+        self.news_list.setWordWrap(True)
+        self.news_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         right_layout.addWidget(self.news_list)
         bottom_row.addWidget(right_panel, stretch=2)
 
