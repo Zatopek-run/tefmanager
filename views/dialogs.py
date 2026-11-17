@@ -140,7 +140,7 @@ class CompetitionResultsDialog(QDialog):
             note_str = " · ".join(notes) if notes else "—"
 
             items = [
-                QTableWidgetItem(res.event_name),
+                QTableWidgetItem(res.display_event_name),
                 QTableWidgetItem(res.player_athlete_name),
                 QTableWidgetItem(res.attitude),
                 QTableWidgetItem(res.player_mark),
@@ -293,7 +293,7 @@ class RecruitAthleteDialog(QDialog):
             origin = "Camp. Studenteschi" if a.is_youth_prospect else "Svincolato"
             note = f"Vel {a.speed} · Res {a.stamina} · Tec {a.technique}"
             vals = [
-                a.name,
+                f"{a.name} ({a.gender})",
                 str(a.age),
                 origin,
                 a.specialty.value,

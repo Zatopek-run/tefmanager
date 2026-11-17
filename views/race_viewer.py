@@ -1196,7 +1196,7 @@ class RaceViewerDialog(QDialog):
             return
         res = results[self._index]
         total = len(results)
-        self.title.setText(f"{res.event_name} — gara {self._index + 1} di {total}")
+        self.title.setText(f"{res.display_event_name} — gara {self._index + 1} di {total}")
         wind = "" if res.wind_ms is None else f"  |  Vento: {res.wind_ms:+.1f} m/s" + (" (non omologato)" if res.wind_illegal else "")
         self.info.setText(
             f"Meteo: {self.summary.weather.value}  |  Pista: {self.summary.track_surface}{wind}"

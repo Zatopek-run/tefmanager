@@ -252,9 +252,15 @@ class DashboardTab(QWidget):
                 f"Stagione {last.season}: {last.placement}° in {last.tier.value} — {last.outcome.value}"
             )
 
+        rec_sections = []
         if state.club_records:
-            rec_parts = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records.items()]
-            self.records_label.setText("Record Sociali: " + "  |  ".join(rec_parts))
+            rec_parts_m = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records.items()]
+            rec_sections.append("M: " + "  |  ".join(rec_parts_m))
+        if state.club_records_f:
+            rec_parts_f = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records_f.items()]
+            rec_sections.append("F: " + "  |  ".join(rec_parts_f))
+        if rec_sections:
+            self.records_label.setText("Record Sociali — " + "   •   ".join(rec_sections))
         else:
             self.records_label.setText("Record Sociali: nessun record ancora omologato.")
 
@@ -289,7 +295,7 @@ class DashboardTab(QWidget):
         self.top_table.setRowCount(len(sorted_athletes))
         for row, a in enumerate(sorted_athletes):
             vals = [
-                a.name,
+                f"{a.name} ({a.gender})",
                 a.specialty.value,
                 a.personality.value,
                 str(a.overall),
@@ -432,7 +438,7 @@ class RosterTab(QWidget):
 
         for row, a in enumerate(squad):
             self._athlete_row_ids.append(a.id or -1)
-            name_str = f"{a.name} *" if a.is_youth_prospect else a.name
+            name_str = f"{a.name} ({a.gender})" + (" *" if a.is_youth_prospect else "")
             cells = [
                 name_str,
                 str(a.age),
@@ -670,48 +676,51 @@ class CalendarTab(QWidget):
 
         active_events = state.active_events
         self._event_combos.clear()
-        self.lineup_table.setRowCount(len(active_events))
+        divisions = ("M", "F")
+        self.lineup_table.setRowCount(len(active_events) * len(divisions))
 
-        for row, event_name in enumerate(active_events):
+        for ev_idx, event_name in enumerate(active_events):
             event_def = EVENTS[event_name]
             key_stats = ", ".join(
                 f"{k.capitalize()} {int(v * 100)}%"
                 for k, v in event_def.weights.items()
                 if v >= 0.15
             )
-            for col, text in enumerate((event_name, event_def.specialty.value, key_stats)):
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.lineup_table.setItem(row, col, item)
+            for div_idx, gender in enumerate(divisions):
+                row = ev_idx * len(divisions) + div_idx
+                for col, text in enumerate((f"{event_name} ({gender})", event_def.specialty.value, key_stats)):
+                    item = QTableWidgetItem(text)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.lineup_table.setItem(row, col, item)
 
-            combo = QComboBox()
-            combo.addItem("-- Nessun Atleta --", None)
-            for a in state.main_squad:
-                if a.is_injured:
-                    continue
-                label = f"{a.name} ({a.specialty.value}, OVR {a.overall}, Forma {a.form})"
-                combo.addItem(label, a.id)
-            assigned_id = state.event_lineup.get(event_name)
-            idx = combo.findData(assigned_id)
-            combo.setCurrentIndex(idx if idx >= 0 else 0)
-            combo.currentIndexChanged.connect(
-                lambda _i, en=event_name, c=combo: self.controller.set_event_athlete(
-                    en, c.currentData()
+                combo = QComboBox()
+                combo.addItem("-- Nessun Atleta --", None)
+                for a in state.main_squad:
+                    if a.is_injured or a.gender != gender:
+                        continue
+                    label = f"{a.name} ({a.specialty.value}, OVR {a.overall}, Forma {a.form})"
+                    combo.addItem(label, a.id)
+                assigned_id = state.lineup_for(gender).get(event_name)
+                idx = combo.findData(assigned_id)
+                combo.setCurrentIndex(idx if idx >= 0 else 0)
+                combo.currentIndexChanged.connect(
+                    lambda _i, en=event_name, g=gender, c=combo: self.controller.set_event_athlete(
+                        en, c.currentData(), gender=g
+                    )
                 )
-            )
-            self._event_combos[event_name] = combo
-            self.lineup_table.setCellWidget(row, 3, combo)
+                self._event_combos[f"{event_name}:{gender}"] = combo
+                self.lineup_table.setCellWidget(row, 3, combo)
 
-            att_combo = QComboBox()
-            for att in RaceAttitude:
-                att_combo.addItem(att.value, att)
-            att_combo.setCurrentIndex(max(0, att_combo.findData(state.attitude_for(event_name))))
-            att_combo.currentIndexChanged.connect(
-                lambda _i, en=event_name, c=att_combo: self.controller.set_event_attitude(
-                    en, c.currentData()
+                att_combo = QComboBox()
+                for att in RaceAttitude:
+                    att_combo.addItem(att.value, att)
+                att_combo.setCurrentIndex(max(0, att_combo.findData(state.attitude_for(event_name))))
+                att_combo.currentIndexChanged.connect(
+                    lambda _i, en=event_name, c=att_combo: self.controller.set_event_attitude(
+                        en, c.currentData()
+                    )
                 )
-            )
-            self.lineup_table.setCellWidget(row, 4, att_combo)
+                self.lineup_table.setCellWidget(row, 4, att_combo)
 
         league_rows = state.league_standings()
         if state.game_mode == "career":
@@ -1246,7 +1255,7 @@ class YouthTab(QWidget):
         for row, a in enumerate(youth):
             self._youth_row_ids.append(a.id or -1)
             cells = [
-                a.name, str(a.age), a.specialty.value, a.personality.value,
+                f"{a.name} ({a.gender})", str(a.age), a.specialty.value, a.personality.value,
                 f"{a.overall}/{a.potential}", str(a.speed), str(a.stamina),
                 str(a.strength), str(a.technique), str(a.fatigue),
             ]
@@ -1272,7 +1281,7 @@ class YouthTab(QWidget):
         results = self.controller.scouting_results
         self.results_table.setRowCount(len(results))
         for row, k in enumerate(results):
-            vals = [k.name, str(k.age), k.specialty.value, k.personality.value,
+            vals = [f"{k.name} ({k.gender})", str(k.age), k.specialty.value, k.personality.value,
                     str(k.overall), str(k.potential), str(k.resilience)]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
@@ -1492,9 +1501,18 @@ class RivalsTab(QWidget):
         compare_panel.setObjectName("SectionPanel")
         compare_layout = QVBoxLayout(compare_panel)
         compare_layout.setContentsMargins(14, 12, 14, 12)
+        compare_header = QHBoxLayout()
         compare_title = QLabel("Confronto per gara (valore atteso in una giornata normale)")
         compare_title.setObjectName("SectionHeader")
-        compare_layout.addWidget(compare_title)
+        compare_header.addWidget(compare_title)
+        compare_header.addStretch()
+        compare_header.addWidget(QLabel("Categoria:"))
+        self.division_combo = QComboBox()
+        self.division_combo.addItem("Maschile (M)", "M")
+        self.division_combo.addItem("Femminile (F)", "F")
+        self.division_combo.currentIndexChanged.connect(lambda _i: self.refresh(self.controller.state))
+        compare_header.addWidget(self.division_combo)
+        compare_layout.addLayout(compare_header)
         self.compare_table = QTableWidget(0, 5)
         self.compare_table.setHorizontalHeaderLabels(
             ["Gara", "Tuo convocato", "Media categoria", "Miglior rivale", "Margine sul migliore"]
@@ -1559,30 +1577,33 @@ class RivalsTab(QWidget):
     def refresh(self, state: GameState) -> None:
         clubs = state.rivals_in()
         events = state.active_events
-        avg = sum(c.level(events) for c in clubs) / len(clubs) if clubs else 0.0
+        gender = self.division_combo.currentData() or "M"
+        lineup = state.lineup_for(gender)
+        avg = sum(c.level(events, gender=gender) for c in clubs) / len(clubs) if clubs else 0.0
         trend = sum(c.trend for c in clubs) / len(clubs) if clubs else 0.0
         by_id = {a.id: a for a in state.main_squad}
         mine = [
             expected_event_score(by_id[aid], EVENTS[ev], state.track_condition)
-            for ev, aid in state.event_lineup.items()
+            for ev, aid in lineup.items()
             if ev in events and aid in by_id
         ]
         mine_avg = sum(mine) / len(mine) if mine else 0.0
         self.summary_label.setText(
-            f"Categoria {state.tier.value}: livello medio rivali {avg:.1f} "
+            f"Categoria {state.tier.value} ({gender}): livello medio rivali {avg:.1f} "
             f"({_trend_text(trend)} nell'ultimo anno) · la tua formazione {mine_avg:.1f}"
         )
 
         self.compare_table.setRowCount(len(events))
         for row, ev in enumerate(events):
-            levels = [(c, c.athletes[ev]) for c in clubs if ev in c.athletes]
+            levels = [(c, c.athlete_for(ev, gender)) for c in clubs]
+            levels = [(c, a) for c, a in levels if a is not None]
             ev_avg = sum(a.skill for _c, a in levels) / len(levels) if levels else 0.0
             best_club, best = max(levels, key=lambda ca: ca[1].skill) if levels else (None, None)
-            aid = state.event_lineup.get(ev)
+            aid = lineup.get(ev)
             athlete = by_id.get(aid) if aid is not None else None
             mine_val = expected_event_score(athlete, EVENTS[ev], state.track_condition) if athlete else None
             vals = [
-                (ev, None),
+                (f"{ev} ({gender})", None),
                 (f"{athlete.name} ({mine_val:.1f})" if athlete else "— nessuno —", None),
                 (f"{ev_avg:.1f}", None),
                 (f"{best.name}, {best_club.name} ({best.skill:.1f})" if best else "—", None),
@@ -1631,13 +1652,15 @@ class RivalsTab(QWidget):
         if club is None:
             self.roster_table.setRowCount(0)
             return
-        self.roster_title.setText(f"Atleti — {club.name}")
-        events = [ev for ev in state.active_events if ev in club.athletes]
+        gender = self.division_combo.currentData() or "M"
+        athletes_map = club.athletes_for(gender)
+        self.roster_title.setText(f"Atleti ({gender}) — {club.name}")
+        events = [ev for ev in state.active_events if ev in athletes_map]
         self.roster_table.setRowCount(len(events))
         for row, ev in enumerate(events):
-            a = club.athletes[ev]
+            a = athletes_map[ev]
             age_color = "#34d399" if a.age <= 23 else ("#f87171" if a.age >= 30 else None)
-            vals = [(ev, None), (a.name, None), (str(a.age), age_color),
+            vals = [(f"{ev} ({gender})", None), (a.name, None), (str(a.age), age_color),
                     (f"{a.skill:.1f}", None), (a.pb_display or "—", None)]
             for col, (text, color) in enumerate(vals):
                 self.roster_table.setItem(row, col, self._cell(text, color))

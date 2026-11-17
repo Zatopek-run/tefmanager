@@ -56,6 +56,7 @@ from models.entities import (
     WeatherCondition,
 )
 from models.generator import (
+    build_default_lineup,
     clamp_stat,
     get_meet_name,
     SPECIALTY_COACH_FOCUS,
@@ -121,18 +122,21 @@ BODY_IDEALS: Dict[str, Tuple[int, str, float, str]] = {
     "Salto in Lungo": (184, "min", 21.6, "near"),
     "Getto del Peso": (189, "min", 27.5, "min"),
 }
+BODY_IDEALS_F: Dict[str, Tuple[int, str, float, str]] = {
+    "100m": (172, "near", 21.3, "near"),
+    "400m": (171, "near", 20.3, "near"),
+    "1500m": (166, "near", 19.2, "near"),
+    "Salto in Lungo": (174, "min", 20.4, "near"),
+    "Getto del Peso": (178, "min", 26.0, "min"),
+}
 BODY_MOD_MAX = 1.2  # best possible bonus (race-score points)
 BODY_MOD_MIN = -4.0  # worst possible penalty
 
 
 def body_modifier(athlete: Athlete, event_name: str) -> float:
-    """Race-score bonus/penalty for how well height and weight suit the event.
-
-    A typical athlete of the discipline gets about 0; a perfect build +1.2, a
-    mismatched one (a 1.65 m shot-putter, a heavy 1500m runner) down to -4.
-    Athletes without a body profile (old saves not yet filled in) are neutral.
-    """
-    ideal = BODY_IDEALS.get(event_name)
+    """Race-score bonus/penalty for how well height and weight suit the event."""
+    ideals = BODY_IDEALS_F if getattr(athlete, "gender", "M") == "F" else BODY_IDEALS
+    ideal = ideals.get(event_name)
     if ideal is None or not athlete.height_cm or not athlete.weight_kg:
         return 0.0
     ideal_h, h_mode, ideal_bmi, b_mode = ideal
@@ -449,35 +453,50 @@ def _score_to_mark(
     event_def: EventDefinition,
     performance_score: float,
     wind_ms: Optional[float] = None,
+    gender: str = "M",
 ) -> Tuple[float, str]:
     """Convert a composite performance score + wind into realistic athletics marks."""
     norm = max(0.15, min(1.18, performance_score / 100.0))
 
     if event_def.name == "100m":
-        seconds = 12.60 - norm * 2.75
-        if wind_ms is not None:
-            # Tailwind helps (~0.05s per 1.0 m/s), headwind slows
-            seconds -= wind_ms * 0.055
-        seconds = max(9.58, seconds)
+        if gender == "F":
+            seconds = 13.75 - norm * 2.85
+            if wind_ms is not None:
+                seconds -= wind_ms * 0.055
+            seconds = max(10.49, seconds)
+        else:
+            seconds = 12.60 - norm * 2.75
+            if wind_ms is not None:
+                # Tailwind helps (~0.05s per 1.0 m/s), headwind slows
+                seconds -= wind_ms * 0.055
+            seconds = max(9.58, seconds)
         return seconds, f"{seconds:.2f}s"
 
     if event_def.name == "400m":
-        seconds = max(43.10, 57.40 - norm * 12.90)
+        seconds = (
+            max(47.60, 62.50 - norm * 13.40)
+            if gender == "F"
+            else max(43.10, 57.40 - norm * 12.90)
+        )
         return seconds, f"{seconds:.2f}s"
 
     if event_def.name == "1500m":
-        total_seconds = max(206.0, 282.0 - norm * 68.0)
+        total_seconds = (
+            max(229.0, 312.0 - norm * 74.0)
+            if gender == "F"
+            else max(206.0, 282.0 - norm * 68.0)
+        )
         mins = int(total_seconds // 60)
         secs = total_seconds % 60
         return total_seconds, f"{mins}:{secs:05.2f}"
 
     if event_def.name == "Salto in Lungo":
-        meters = 5.30 + norm * 3.10
+        meters = (4.60 + norm * 2.65) if gender == "F" else (5.30 + norm * 3.10)
         if wind_ms is not None:
             meters += wind_ms * 0.08
         return meters, f"{meters:.2f}m"
 
-    meters = 11.40 + norm * 10.60
+    meters = (10.20 + norm * 9.80) if gender == "F" else (11.40 + norm * 10.60)
     return meters, f"{meters:.2f}m"
 
 
@@ -570,11 +589,15 @@ def _compute_ticket_income(
 
 
 def _rival_only_points(
-    clubs: List[RivalClub], event: str, team_points: Dict[str, int], rng: random.Random
+    clubs: List[RivalClub],
+    event: str,
+    team_points: Dict[str, int],
+    rng: random.Random,
+    gender: str = "M",
 ) -> None:
     """When the club enters nobody in an event, the rivals still score among themselves."""
     def day_score(club: RivalClub) -> float:
-        athlete = club.athletes.get(event)
+        athlete = club.athlete_for(event, gender)
         return rng.gauss(athlete.skill if athlete else 0.0, RIVAL_RACE_SIGMA)
 
     order = sorted(clubs, key=day_score, reverse=True)
@@ -597,11 +620,12 @@ def _weekly_rival_drift(age: int) -> float:
 def progress_rivals(state: GameState, rng: random.Random) -> None:
     """Every rival club in every category trains too; ambitious clubs improve faster."""
     for club in state.rival_clubs:
-        for athlete in club.athletes.values():
-            drift = _weekly_rival_drift(athlete.age)
-            if drift > 0:
-                drift *= club.ambition
-            athlete.skill = round(athlete.skill + drift + rng.gauss(0.0, 0.15), 2)
+        for pool in (club.athletes, club.female_athletes):
+            for athlete in pool.values():
+                drift = _weekly_rival_drift(athlete.age)
+                if drift > 0:
+                    drift *= club.ambition
+                athlete.skill = round(athlete.skill + drift + rng.gauss(0.0, 0.15), 2)
         if state.week % 4 == 0:
             club.history.append(round(club.level(), 2))
             club.history = club.history[-RIVAL_TREND_SNAPSHOTS:]
@@ -618,20 +642,21 @@ def renew_rivals_for_season(state: GameState, rng: random.Random) -> List[str]:
     for club in state.rival_clubs:
         club.offset = round(club.offset + (club.ambition - 1.0) * 1.5, 2)
         club.ambition = round(club.ambition + (1.0 - club.ambition) * 0.2, 2)  # drifts back to normal
-        for event, athlete in list(club.athletes.items()):
-            athlete.age += 1
-            retiring = athlete.age >= RIVAL_RETIREMENT_AGE or (athlete.age >= 31 and rng.random() < 0.3)
-            if not retiring:
-                continue
-            newcomer = generate_rival_athlete(
-                event, club.tier, club.offset, season=state.season_number, rng=rng, age_range=(18, 22)
-            )
-            club.athletes[event] = newcomer
-            if club.tier == state.tier and len(news) < 4:
-                news.append(
-                    f"Sett. {state.week}: {club.name} — si ritira {athlete.name} ({event}), "
-                    f"arriva il giovane {newcomer.name}."
+        for gender, pool in (("M", club.athletes), ("F", club.female_athletes)):
+            for event, athlete in list(pool.items()):
+                athlete.age += 1
+                retiring = athlete.age >= RIVAL_RETIREMENT_AGE or (athlete.age >= 31 and rng.random() < 0.3)
+                if not retiring:
+                    continue
+                newcomer = generate_rival_athlete(
+                    event, club.tier, club.offset, season=state.season_number, rng=rng, age_range=(18, 22), gender=gender
                 )
+                pool[event] = newcomer
+                if club.tier == state.tier and len(news) < 4:
+                    news.append(
+                        f"Sett. {state.week}: {club.name} — si ritira {athlete.name} ({event} {gender}), "
+                        f"arriva il giovane {newcomer.name}."
+                    )
     return news
 
 
@@ -686,172 +711,188 @@ def simulate_competition(
     total_prize = 0
     total_prestige = 0
 
-    for event_name in state.active_events:
-        event_def = EVENTS[event_name]
-        selected_id = state.event_lineup.get(event_name)
-        player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
+    for gender in ("M", "F"):
+        lineup = state.lineup_for(gender)
+        records = state.records_for(gender)
+        for event_name in state.active_events:
+            event_def = EVENTS[event_name]
+            selected_id = lineup.get(event_name)
+            player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
 
-        if player_athlete is None or player_athlete.is_injured:
-            _rival_only_points(clubs, event_name, team_points, r)
-            continue
+            if player_athlete is None or player_athlete.is_injured:
+                _rival_only_points(clubs, event_name, team_points, r, gender=gender)
+                continue
 
-        attitude = state.attitude_for(event_name)
-        att = ATTITUDE_EFFECTS[attitude]
+            attitude = state.attitude_for(event_name)
+            att = ATTITUDE_EFFECTS[attitude]
 
-        wind_ms: Optional[float] = (
-            _roll_meet_wind(weather, state.season_phase, r) if event_def.wind_affected else None
-        )
-        wind_illegal = bool(wind_ms is not None and wind_ms > 2.0)
-
-        standings: List[EventStanding] = []
-
-        # In-race injury check: attitude & accumulated fatigue drive the risk
-        injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
-        if has_doctor:
-            injury_chance *= 0.55
-        withdrew = r.random() < injury_chance
-
-        if withdrew:
-            p_val = 9999.0 if event_def.lower_is_better else 0.0
-            p_disp = DNF_MARK
-            weeks_out = r.randint(1, 3) + (1 if attitude == RaceAttitude.AGGRESSIVO else 0)
-            player_athlete.injured_weeks = max(player_athlete.injured_weeks, weeks_out)
-            player_athlete.form = clamp_stat(player_athlete.form - 15, 5, 100)
-            state.news_log.insert(
-                0,
-                f"Sett. {state.week}: {player_athlete.name} si ritira nei {event_name} per un "
-                f"problema muscolare (atteggiamento {attitude.value}) — stop di {weeks_out} sett.",
+            wind_ms: Optional[float] = (
+                _roll_meet_wind(weather, state.season_phase, r) if event_def.wind_affected else None
             )
-        else:
-            p_score = _compute_athlete_event_score(
-                player_athlete, event_def, weather, state.track_condition, has_mental, r
-            )
-            p_score += att["score"]
-            if att["sigma"] > 0:
-                p_score += r.gauss(0.0, att["sigma"])  # all-out efforts are less predictable
-            if is_home:
-                p_score += 1.0  # home crowd
-            p_val, p_disp = _score_to_mark(event_def, p_score, wind_ms)
+            wind_illegal = bool(wind_ms is not None and wind_ms > 2.0)
 
-        standings.append(
-            EventStanding(
-                athlete_name=player_athlete.name,
-                team_name=state.team_name,
-                is_player=True,
-                mark_value=p_val,
-                mark_display=p_disp,
-                wind_ms=wind_ms,
-                wind_illegal=wind_illegal,
-            )
-        )
+            standings: List[EventStanding] = []
 
-        # Match fatigue scales with attitude
-        player_athlete.fatigue = clamp_stat(player_athlete.fatigue + int(att["fatigue"]), 0, 100)
-        player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
+            # In-race injury check: attitude & accumulated fatigue drive the risk
+            injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
+            if has_doctor:
+                injury_chance *= 0.55
+            withdrew = r.random() < injury_chance
 
-        # One athlete per rival club: the same people you meet every time, getting better
-        for club in clubs:
-            opp = club.athletes[event_name]
-            opp_score = r.gauss(opp.skill, RIVAL_RACE_SIGMA)
-            o_val, o_disp = _score_to_mark(event_def, opp_score, wind_ms)
-            if not wind_illegal and (opp.pb is None or _is_better(event_def, o_val, opp.pb)):
-                opp.pb, opp.pb_display = o_val, o_disp
+            if withdrew:
+                p_val = 9999.0 if event_def.lower_is_better else 0.0
+                p_disp = DNF_MARK
+                weeks_out = r.randint(1, 3) + (1 if attitude == RaceAttitude.AGGRESSIVO else 0)
+                player_athlete.injured_weeks = max(player_athlete.injured_weeks, weeks_out)
+                player_athlete.form = clamp_stat(player_athlete.form - 15, 5, 100)
+                state.news_log.insert(
+                    0,
+                    f"Sett. {state.week}: {player_athlete.name} si ritira nei {event_name} ({gender}) per un "
+                    f"problema muscolare (atteggiamento {attitude.value}) — stop di {weeks_out} sett.",
+                )
+            else:
+                p_score = _compute_athlete_event_score(
+                    player_athlete, event_def, weather, state.track_condition, has_mental, r
+                )
+                p_score += att["score"]
+                if att["sigma"] > 0:
+                    p_score += r.gauss(0.0, att["sigma"])  # all-out efforts are less predictable
+                if is_home:
+                    p_score += 1.0  # home crowd
+                p_val, p_disp = _score_to_mark(event_def, p_score, wind_ms, gender=gender)
+
             standings.append(
                 EventStanding(
-                    athlete_name=opp.name,
-                    team_name=club.name,
-                    is_player=False,
-                    mark_value=o_val,
-                    mark_display=o_disp,
+                    athlete_name=player_athlete.name,
+                    team_name=state.team_name,
+                    is_player=True,
+                    mark_value=p_val,
+                    mark_display=p_disp,
                     wind_ms=wind_ms,
                     wind_illegal=wind_illegal,
                 )
             )
 
-        standings.sort(key=lambda s: s.mark_value, reverse=not event_def.lower_is_better)
-        if withdrew:
-            # A withdrawn athlete is always classified last
-            standings.sort(key=lambda s: s.is_player)
-        player_place = 1
-        for idx, standing in enumerate(standings, start=1):
-            standing.placement = idx
-            if standing.is_player:
-                player_place = idx
-            if not (standing.is_player and withdrew):
-                team_points[standing.team_name] = team_points.get(standing.team_name, 0) + TEAM_POINTS.get(idx, 0)
+            # Match fatigue scales with attitude
+            player_athlete.fatigue = clamp_stat(player_athlete.fatigue + int(att["fatigue"]), 0, 100)
+            player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
 
-        # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
-        is_pb = False
-        is_club_rec = False
-        if not wind_illegal and not withdrew:
-            if player_athlete.personal_best is None or _is_better(
-                event_def, p_val, player_athlete.personal_best
+            # One athlete per rival club in the same gender division
+            for club in clubs:
+                opp = club.athlete_for(event_name, gender)
+                if opp is None:
+                    continue
+                opp_score = r.gauss(opp.skill, RIVAL_RACE_SIGMA)
+                o_val, o_disp = _score_to_mark(event_def, opp_score, wind_ms, gender=gender)
+                if not wind_illegal and (opp.pb is None or _is_better(event_def, o_val, opp.pb)):
+                    opp.pb, opp.pb_display = o_val, o_disp
+                standings.append(
+                    EventStanding(
+                        athlete_name=opp.name,
+                        team_name=club.name,
+                        is_player=False,
+                        mark_value=o_val,
+                        mark_display=o_disp,
+                        wind_ms=wind_ms,
+                        wind_illegal=wind_illegal,
+                    )
+                )
+
+            standings.sort(key=lambda s: s.mark_value, reverse=not event_def.lower_is_better)
+            if withdrew:
+                # A withdrawn athlete is always classified last
+                standings.sort(key=lambda s: s.is_player)
+            player_place = 1
+            for idx, standing in enumerate(standings, start=1):
+                standing.placement = idx
+                if standing.is_player:
+                    player_place = idx
+                if not (standing.is_player and withdrew):
+                    team_points[standing.team_name] = team_points.get(standing.team_name, 0) + TEAM_POINTS.get(idx, 0)
+
+            # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
+            is_pb = False
+            is_club_rec = False
+            if not wind_illegal and not withdrew:
+                if player_athlete.personal_best is None or _is_better(
+                    event_def, p_val, player_athlete.personal_best
+                ):
+                    player_athlete.personal_best = p_val
+                    player_athlete.personal_best_display = p_disp
+                    is_pb = True
+
+                existing_rec = records.get(event_name)
+                if existing_rec is None or _is_better(event_def, p_val, existing_rec[0]):
+                    records[event_name] = (p_val, p_disp, player_athlete.name)
+                    is_club_rec = True
+                    state.milestones.insert(
+                        0,
+                        f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nei {event_name}! {player_athlete.name} segna {p_disp}.",
+                    )
+
+                # Historic benchmark check
+                h_mark = (
+                    event_def.historic_mark_f
+                    if (gender == "F" and event_def.historic_mark_f is not None)
+                    else event_def.historic_mark
+                )
+                h_label = (
+                    event_def.historic_label_f
+                    if (gender == "F" and event_def.historic_label_f)
+                    else event_def.historic_label
+                )
+                if _is_better(event_def, p_val, h_mark):
+                    milestone_msg = (
+                        f"Sett. {state.week}: MOMENTO STORICO! {player_athlete.name} abbatte il muro "
+                        f"{h_label} ({gender}) ({p_disp})!"
+                    )
+                    if milestone_msg not in state.milestones:
+                        state.milestones.insert(0, milestone_msg)
+            elif not withdrew and (
+                player_athlete.personal_best is None
+                or _is_better(event_def, p_val, player_athlete.personal_best)
             ):
-                player_athlete.personal_best = p_val
-                player_athlete.personal_best_display = p_disp
-                is_pb = True
-
-            existing_rec = state.club_records.get(event_name)
-            if existing_rec is None or _is_better(event_def, p_val, existing_rec[0]):
-                state.club_records[event_name] = (p_val, p_disp, player_athlete.name)
-                is_club_rec = True
-                state.milestones.insert(
+                state.news_log.insert(
                     0,
-                    f"Sett. {state.week}: Nuovo Record Sociale nei {event_name}! {player_athlete.name} segna {p_disp}.",
+                    f"Sett. {state.week}: {player_athlete.name} ha corso/saltato {p_disp} nei {event_name} ({gender}), "
+                    f"ma con vento +{wind_ms:.1f} m/s (>2.0 m/s): non valido per il record!",
                 )
 
-            # Historic benchmark check
-            if _is_better(event_def, p_val, event_def.historic_mark):
-                milestone_msg = (
-                    f"Sett. {state.week}: MOMENTO STORICO! {player_athlete.name} abbatte il muro "
-                    f"{event_def.historic_label} ({p_disp})!"
+            prize_multipliers = {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}
+            prestige_table = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}
+
+            if withdrew:
+                prize = 0
+                prestige_gain = 0
+            else:
+                prize = int(tier_cfg["prize_base"] * prize_multipliers.get(player_place, 0.0))
+                prestige_gain = prestige_table.get(player_place, 1) + (5 if is_club_rec else 0)
+                # Fans follow athletes who place well, set PBs and break records
+                fan_gain = max(0, 9 - player_place) * fan_mult + (5 if is_pb else 0) + (10 if is_club_rec else 0)
+                player_athlete.fans += fan_gain
+
+            total_prize += prize
+            total_prestige += prestige_gain
+
+            event_results.append(
+                EventResult(
+                    event_name=event_name,
+                    player_athlete_name=player_athlete.name,
+                    placement=player_place,
+                    total_competitors=len(standings),
+                    player_mark=p_disp,
+                    prize_money=prize,
+                    prestige_gained=prestige_gain,
+                    wind_ms=wind_ms,
+                    wind_illegal=wind_illegal,
+                    is_pb=is_pb,
+                    is_club_record=is_club_rec,
+                    standings=standings,
+                    attitude=attitude.value,
+                    withdrew_injured=withdrew,
+                    gender=gender,
                 )
-                if milestone_msg not in state.milestones:
-                    state.milestones.insert(0, milestone_msg)
-        elif not withdrew and (
-            player_athlete.personal_best is None
-            or _is_better(event_def, p_val, player_athlete.personal_best)
-        ):
-            state.news_log.insert(
-                0,
-                f"Sett. {state.week}: {player_athlete.name} ha corso/saltato {p_disp} nei {event_name}, "
-                f"ma con vento +{wind_ms:.1f} m/s (>2.0 m/s): non valido per il record!",
             )
-
-        prize_multipliers = {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}
-        prestige_table = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}
-
-        if withdrew:
-            prize = 0
-            prestige_gain = 0
-        else:
-            prize = int(tier_cfg["prize_base"] * prize_multipliers.get(player_place, 0.0))
-            prestige_gain = prestige_table.get(player_place, 1) + (5 if is_club_rec else 0)
-            # Fans follow athletes who place well, set PBs and break records
-            fan_gain = max(0, 9 - player_place) * fan_mult + (5 if is_pb else 0) + (10 if is_club_rec else 0)
-            player_athlete.fans += fan_gain
-
-        total_prize += prize
-        total_prestige += prestige_gain
-
-        event_results.append(
-            EventResult(
-                event_name=event_name,
-                player_athlete_name=player_athlete.name,
-                placement=player_place,
-                total_competitors=len(standings),
-                player_mark=p_disp,
-                prize_money=prize,
-                prestige_gained=prestige_gain,
-                wind_ms=wind_ms,
-                wind_illegal=wind_illegal,
-                is_pb=is_pb,
-                is_club_record=is_club_rec,
-                standings=standings,
-                attitude=attitude.value,
-                withdrew_injured=withdrew,
-            )
-        )
 
     # ---- Relays: harmony, legs and baton changes; no effect on individual form or fans
     for relay_name in state.active_relays:
@@ -949,6 +990,7 @@ def simulate_competition(
                 attitude=f"Affiatamento {harmony_grade(max(0, harmony))}",
                 withdrew_injured=False,
                 disqualified=disqualified,
+                gender="",
             )
         )
 
@@ -1071,6 +1113,16 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
         auto_build_all_relays(state)
     if not state.rival_clubs:
         state.rival_clubs = create_rival_clubs(rng=r)
+    for club in state.rival_clubs:
+        if not club.female_athletes:
+            for event in club.athletes:
+                club.female_athletes[event] = generate_rival_athlete(
+                    event, club.tier, club.offset, season=state.season_number, rng=r, gender="F"
+                )
+    if not state.event_lineup_f and any(a.gender == "F" for a in state.main_squad):
+        state.event_lineup_f = build_default_lineup(
+            state.athletes, event_names=state.active_events, gender="F"
+        )
 
 
 def close_season(state: GameState) -> SeasonEndResult:

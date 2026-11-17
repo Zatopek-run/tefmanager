@@ -124,7 +124,8 @@ class GameController(QObject):
                 "Gestisci stagioni Outdoor, Cross e Indoor fino alla categoria Internazionale."
             )
 
-        lineup = build_default_lineup(roster, event_names=events)
+        lineup = build_default_lineup(roster, event_names=events, gender="M")
+        lineup_f = build_default_lineup(roster, event_names=events, gender="F")
         staff = create_initial_staff()
         coaches = create_initial_coaches(roster, rng=self.rng)
         objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE)
@@ -154,7 +155,9 @@ class GameController(QObject):
             ],
             competition_history=[],
             event_lineup=lineup,
+            event_lineup_f=lineup_f,
             club_records={},
+            club_records_f={},
             objectives=objectives,
             milestones=[],
             news_log=[intro],
@@ -292,13 +295,18 @@ class GameController(QObject):
         self.state_changed.emit(self.state)
         self.status_message.emit(f"{action}: {member.name}.")
 
-    def set_event_athlete(self, event_name: str, athlete_id: Optional[int]) -> None:
-        self.state.event_lineup[event_name] = athlete_id
-        self.status_message.emit(f"Formazione aggiornata per {event_name}.")
+    def set_event_athlete(
+        self, event_name: str, athlete_id: Optional[int], gender: str = "M"
+    ) -> None:
+        self.state.lineup_for(gender)[event_name] = athlete_id
+        self.status_message.emit(f"Formazione aggiornata per {event_name} ({gender}).")
 
     def auto_fill_lineup(self) -> None:
         self.state.event_lineup = build_default_lineup(
-            self.state.athletes, event_names=self.state.active_events
+            self.state.athletes, event_names=self.state.active_events, gender="M"
+        )
+        self.state.event_lineup_f = build_default_lineup(
+            self.state.athletes, event_names=self.state.active_events, gender="F"
         )
         self.state_changed.emit(self.state)
         self.status_message.emit("Formazione ottimale completata automaticamente.")
@@ -369,6 +377,9 @@ class GameController(QObject):
         for event_name, assigned_id in list(self.state.event_lineup.items()):
             if assigned_id == athlete_id:
                 self.state.event_lineup[event_name] = None
+        for event_name, assigned_id in list(self.state.event_lineup_f.items()):
+            if assigned_id == athlete_id:
+                self.state.event_lineup_f[event_name] = None
 
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: {target.name} ha lasciato la società."

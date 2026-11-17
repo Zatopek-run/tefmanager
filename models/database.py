@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from models.generator import generate_body
+from models.generator import generate_body, infer_gender
 from models.entities import (
     Athlete,
     Coach,
@@ -37,7 +37,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -90,20 +90,33 @@ V7_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("weight_kg", "INTEGER NOT NULL DEFAULT 0"),
     ],
 }
+# Columns added in v8 (athlete gender + separate women's lineup and records).
+V8_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("gender", "TEXT NOT NULL DEFAULT ''")],
+    "game_state": [
+        ("event_lineup_f_json", "TEXT NOT NULL DEFAULT '{}'"),
+        ("club_records_f_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
     4: V5_COLUMNS,
     5: V6_COLUMNS,
     6: V7_COLUMNS,
+    7: V8_COLUMNS,
 }
 
 
 def _backfill_bodies(athletes: List[Athlete]) -> List[Athlete]:
-    """Old saves have no height/weight: generate stable values (seeded by athlete id)."""
+    """Old saves have no gender or height/weight: infer gender and generate stable builds."""
     for a in athletes:
+        if a.gender not in ("M", "F"):
+            a.gender = infer_gender(a.name)
         if not a.height_cm:
-            a.height_cm, a.weight_kg = generate_body(a.specialty, random.Random(a.id or 0), a.age)
+            a.height_cm, a.weight_kg = generate_body(
+                a.specialty, random.Random(a.id or 0), a.age, a.gender
+            )
     return athletes
 
 
@@ -138,6 +151,20 @@ def _season_history_from_json(raw: str) -> List[SeasonEndResult]:
 
 
 def _rivals_to_json(clubs: List[RivalClub]) -> str:
+    def ser(pool: Dict[str, RivalAthlete]) -> List[dict]:
+        return [
+            {
+                "name": a.name,
+                "event": a.event,
+                "age": a.age,
+                "skill": a.skill,
+                "pb": a.pb,
+                "pb_display": a.pb_display,
+                "gender": a.gender,
+            }
+            for a in pool.values()
+        ]
+
     return json.dumps(
         [
             {
@@ -146,17 +173,8 @@ def _rivals_to_json(clubs: List[RivalClub]) -> str:
                 "ambition": c.ambition,
                 "offset": c.offset,
                 "history": c.history,
-                "athletes": [
-                    {
-                        "name": a.name,
-                        "event": a.event,
-                        "age": a.age,
-                        "skill": a.skill,
-                        "pb": a.pb,
-                        "pb_display": a.pb_display,
-                    }
-                    for a in c.athletes.values()
-                ],
+                "athletes": ser(c.athletes),
+                "female_athletes": ser(c.female_athletes),
             }
             for c in clubs
         ]
@@ -173,7 +191,7 @@ def _rivals_from_json(raw: str) -> List[RivalClub]:
             offset=float(cj.get("offset", 0.0)),
             history=[float(h) for h in cj.get("history", [])],
         )
-        for aj in cj["athletes"]:
+        for aj in cj.get("athletes", []):
             club.athletes[aj["event"]] = RivalAthlete(
                 name=aj["name"],
                 event=aj["event"],
@@ -181,6 +199,17 @@ def _rivals_from_json(raw: str) -> List[RivalClub]:
                 skill=float(aj["skill"]),
                 pb=aj.get("pb"),
                 pb_display=aj.get("pb_display"),
+                gender=str(aj.get("gender", "M")),
+            )
+        for aj in cj.get("female_athletes", []):
+            club.female_athletes[aj["event"]] = RivalAthlete(
+                name=aj["name"],
+                event=aj["event"],
+                age=int(aj["age"]),
+                skill=float(aj["skill"]),
+                pb=aj.get("pb"),
+                pb_display=aj.get("pb_display"),
+                gender=str(aj.get("gender", "F")),
             )
         clubs.append(club)
     return clubs
@@ -264,7 +293,9 @@ class DatabaseManager:
                     relays_json TEXT NOT NULL DEFAULT '{}',
                     coach_hired_week INTEGER NOT NULL DEFAULT 0,
                     rivals_json TEXT NOT NULL DEFAULT '[]',
-                    season_history_json TEXT NOT NULL DEFAULT '[]'
+                    season_history_json TEXT NOT NULL DEFAULT '[]',
+                    event_lineup_f_json TEXT NOT NULL DEFAULT '{}',
+                    club_records_f_json TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE TABLE IF NOT EXISTS athletes (
@@ -296,7 +327,8 @@ class DatabaseManager:
                     coach_id INTEGER,
                     nationality TEXT NOT NULL DEFAULT 'Italia',
                     height_cm INTEGER NOT NULL DEFAULT 0,
-                    weight_kg INTEGER NOT NULL DEFAULT 0
+                    weight_kg INTEGER NOT NULL DEFAULT 0,
+                    gender TEXT NOT NULL DEFAULT ''
                 );
 
                 CREATE TABLE IF NOT EXISTS coaches (
@@ -382,6 +414,9 @@ class DatabaseManager:
         records_json = json.dumps(
             {k: [v[0], v[1], v[2]] for k, v in state.club_records.items()}
         )
+        records_f_json = json.dumps(
+            {k: [v[0], v[1], v[2]] for k, v in state.club_records_f.items()}
+        )
 
         with self._connect() as conn:
             conn.execute("DELETE FROM game_state")
@@ -399,8 +434,9 @@ class DatabaseManager:
                     event_lineup_json, club_records_json, objectives_json, milestones_json,
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
-                    relays_json, coach_hired_week, rivals_json, season_history_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    relays_json, coach_hired_week, rivals_json, season_history_json,
+                    event_lineup_f_json, club_records_f_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -443,6 +479,8 @@ class DatabaseManager:
                     state.coach_hired_week,
                     _rivals_to_json(state.rival_clubs),
                     _season_history_to_json(state.season_history),
+                    json.dumps(state.event_lineup_f),
+                    records_f_json,
                 ),
             )
 
@@ -453,8 +491,8 @@ class DatabaseManager:
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
-                    in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -487,6 +525,7 @@ class DatabaseManager:
                         a.nationality,
                         a.height_cm,
                         a.weight_kg,
+                        a.gender,
                     )
                     for a in state.athletes
                 ],
@@ -572,6 +611,7 @@ class DatabaseManager:
                                     "attitude": er.attitude,
                                     "withdrew_injured": er.withdrew_injured,
                                     "disqualified": er.disqualified,
+                                    "gender": er.gender,
                                     "standings": [
                                         {
                                             "athlete_name": s.athlete_name,
@@ -637,6 +677,7 @@ class DatabaseManager:
                     nationality=r["nationality"],
                     height_cm=r["height_cm"],
                     weight_kg=r["weight_kg"],
+                    gender=r["gender"],
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
@@ -720,6 +761,7 @@ class DatabaseManager:
                             attitude=er.get("attitude", "Normale"),
                             withdrew_injured=er.get("withdrew_injured", False),
                             disqualified=er.get("disqualified", False),
+                            gender=er.get("gender", ""),
                         )
                     )
                 history.append(
@@ -752,6 +794,10 @@ class DatabaseManager:
             raw_records = json.loads(row["club_records_json"])
             club_records: Dict[str, Tuple[float, str, str]] = {
                 k: (float(v[0]), str(v[1]), str(v[2])) for k, v in raw_records.items()
+            }
+            raw_records_f = json.loads(row["club_records_f_json"])
+            club_records_f: Dict[str, Tuple[float, str, str]] = {
+                k: (float(v[0]), str(v[1]), str(v[2])) for k, v in raw_records_f.items()
             }
             objectives = [
                 SeasonObjective(
@@ -809,4 +855,6 @@ class DatabaseManager:
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),
                 season_history=_season_history_from_json(row["season_history_json"]),
+                event_lineup_f=json.loads(row["event_lineup_f_json"]),
+                club_records_f=club_records_f,
             )

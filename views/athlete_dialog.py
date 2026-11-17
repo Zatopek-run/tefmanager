@@ -209,6 +209,8 @@ class AthleteDetailDialog(QDialog):
         names.addWidget(title)
         names.addWidget(team)
         lay.addLayout(names)
+        gender_bg = "#831843" if athlete.gender == "F" else "#1e40af"
+        lay.addWidget(self._pill(athlete.gender_label, gender_bg), alignment=Qt.AlignmentFlag.AlignVCenter)
         lay.addWidget(self._pill(athlete.specialty.value, "#7f1d4a"), alignment=Qt.AlignmentFlag.AlignVCenter)
         lay.addWidget(self._pill(athlete.status_label, "#4b3f1d", "#fcd34d"), alignment=Qt.AlignmentFlag.AlignVCenter)
         lay.addStretch()
@@ -251,6 +253,7 @@ class AthleteDetailDialog(QDialog):
 
         coach = self.controller.state.coach_of(a)
         info_rows = [
+            ("Categoria", a.gender_label),
             ("Età", f"{a.age} anni"),
             ("Nazionalità", f"{a.flag} {a.nationality}"),
             ("Altezza", a.height_display),

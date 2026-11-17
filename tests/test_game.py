@@ -266,10 +266,10 @@ class TestRaceViewer(unittest.TestCase):
 class TestBodyBuild(unittest.TestCase):
     """Height and weight change race scores according to the event."""
 
-    def _athlete(self, specialty, height, weight):
+    def _athlete(self, specialty, height, weight, gender: str = "M"):
         from models.generator import generate_athlete
 
-        a = generate_athlete(specialty=specialty, rng=random.Random(5))
+        a = generate_athlete(specialty=specialty, rng=random.Random(5), gender=gender)
         a.height_cm, a.weight_kg = height, weight
         return a
 
@@ -547,10 +547,10 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
             ctrl.state.event_lineup["1500m"] = None  # empty slot: rivals still score
             summary = sim.simulate_competition(ctrl.state, rng=random.Random(2))
             self.assertEqual(len(summary.team_standings), 8)
-            # 3 events + 4x100m relay, each worth 8+7+...+1 = 36 points, minus the
+            # 3 M events + 3 F events + 4x100m relay, each worth 8+7+...+1 = 36 points, minus the
             # 8th-place point nobody takes in the empty 1500m slot and for each withdrawal/DQ
             dropped = sum(1 for er in summary.event_results if er.withdrew_injured or er.disqualified)
-            self.assertEqual(sum(p for _t, p in summary.team_standings), 4 * 36 - 1 - dropped)
+            self.assertEqual(sum(p for _t, p in summary.team_standings), 7 * 36 - 1 - dropped)
             self.assertEqual(dict(summary.team_standings), ctrl.state.league_table)
             self.assertGreater(summary.team_placement, 0)
 
@@ -828,6 +828,7 @@ class TestCoachesAndRelays(unittest.TestCase):
             s.prestige = -1000
             for ev in s.active_events:
                 s.event_lineup[ev] = None  # only the relay runs
+                s.event_lineup_f[ev] = None
             relay = s.relays["4x100m"]
             relay.harmony = 100
             by_id = {a.id: a for a in s.athletes}
@@ -892,6 +893,7 @@ class TestRivalClubs(unittest.TestCase):
             for tier, names in RIVAL_TEAMS.items():
                 self.assertEqual([c.name for c in s.rivals_in(tier)], names)
             self.assertTrue(all(set(c.athletes) == set(EVENTS) for c in s.rival_clubs))
+            self.assertTrue(all(set(c.female_athletes) == set(EVENTS) for c in s.rival_clubs))
             # stronger categories have stronger clubs
             prov = sum(c.level() for c in s.rivals_in(CompetitionTier.PROVINCIALE))
             naz = sum(c.level() for c in s.rivals_in(CompetitionTier.NAZIONALE))
@@ -908,12 +910,18 @@ class TestRivalClubs(unittest.TestCase):
             for er in summary.event_results:
                 if er.event_name.startswith("4x"):
                     continue
-                expected = {c.athletes[er.event_name].name for c in s.rivals_in()}
+                expected = {c.athletes_for(er.gender)[er.event_name].name for c in s.rivals_in()}
                 rivals = {st.athlete_name for st in er.standings if not st.is_player}
                 self.assertEqual(rivals, expected)
-            lj = next(er for er in summary.event_results if er.event_name == "Salto in Lungo")
-            if not lj.wind_illegal:
-                self.assertTrue(all(c.athletes["Salto in Lungo"].pb is not None for c in s.rivals_in()))
+            for gender in ("M", "F"):
+                lj = next(
+                    er for er in summary.event_results
+                    if er.event_name == "Salto in Lungo" and er.gender == gender
+                )
+                if not lj.wind_illegal:
+                    self.assertTrue(
+                        all(c.athletes_for(gender)["Salto in Lungo"].pb is not None for c in s.rivals_in())
+                    )
 
     def test_young_rivals_improve_and_veterans_decline(self) -> None:
         from models.simulation import progress_rivals
@@ -1142,7 +1150,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertEqual(win.rivals_tab.compare_table.rowCount(), 3)
             self.assertEqual(win.rivals_tab.roster_table.rowCount(), 3)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)
-            self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 3)
+            self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 6)
             self.assertEqual(win.staff_tab.table.rowCount(), 3)
             self.assertEqual(win.staff_tab.coach_table.rowCount(), 3)
             self.assertEqual(len(win.relay_tab._slot_combos["4x100m"]), 5)
@@ -1176,7 +1184,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             rep = advance_week(ctrl.state, rng=random.Random(15))
             assert rep.competition_summary is not None
             comp_dlg = CompetitionResultsDialog(rep.competition_summary)
-            self.assertEqual(comp_dlg.events_table.rowCount(), 4)  # 3 events + 4x100m relay
+            self.assertEqual(comp_dlg.events_table.rowCount(), 7)  # 3 M + 3 F + 4x100m relay
             self.assertEqual(comp_dlg.team_table.rowCount(), 8)
             comp_dlg.close()
 
@@ -1327,6 +1335,113 @@ class TestRaceExport(unittest.TestCase):
             conn.close()
             self.assertEqual(genders["Giulia Conti"], "F")
             self.assertEqual(genders["Marco Valenti"], "M")
+
+
+class TestGenderDivisions(unittest.TestCase):
+    """Separate Men's (M) and Women's (F) athletic divisions across sim, DB, and export."""
+
+    def test_mixed_roster_lineups_and_separate_records(self) -> None:
+        from models import simulation as sim
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = DatabaseManager(db_path=Path(tmpdir) / "mf.db")
+            ctrl = GameController(db_manager=db, rng=random.Random(21))
+            s = ctrl.state
+
+            genders = {a.gender for a in s.main_squad}
+            self.assertEqual(genders, {"M", "F"})
+            self.assertTrue(all(a.id is not None for a in s.main_squad))
+            by_id = {a.id: a for a in s.main_squad}
+
+            # Every event has a male lineup slot and a female lineup slot matched by gender
+            for ev in s.active_events:
+                m_id = s.event_lineup.get(ev)
+                f_id = s.event_lineup_f.get(ev)
+                if m_id is not None:
+                    self.assertEqual(by_id[m_id].gender, "M")
+                if f_id is not None:
+                    self.assertEqual(by_id[f_id].gender, "F")
+
+            s.week = 4
+            s.prestige = -1000
+            summary = sim.simulate_competition(s, rng=random.Random(4))
+            indiv = [er for er in summary.event_results if not er.event_name.startswith("4x")]
+            self.assertEqual(len(indiv), len(s.active_events) * 2)
+            self.assertEqual(
+                [(er.event_name, er.gender) for er in indiv],
+                [(ev, g) for g in ("M", "F") for ev in s.active_events],
+            )
+
+            # Club records stay separated between Maschile and Femminile
+            self.assertIn("100m", s.club_records)
+            self.assertIn("100m", s.club_records_f)
+            self.assertNotEqual(s.club_records["100m"][2], s.club_records_f["100m"][2])
+
+            # Women's 100m time sits in realistic women's range (> 10.49s)
+            f_100 = next(er for er in indiv if er.event_name == "100m" and er.gender == "F")
+            self.assertGreater(min(st.mark_value for st in f_100.standings), 10.49)
+
+    def test_v7_to_v8_migration_and_roundtrip(self) -> None:
+        import sqlite3
+        from models.simulation import upgrade_legacy_state
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "v7mig.db"
+            db = DatabaseManager(db_path=path)
+            ctrl = GameController(db_manager=db, rng=random.Random(7))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(7)).competition_summary
+            assert summary is not None
+            db.save_game(ctrl.state)
+
+            # Verify v8 roundtrip preserves F lineup, F club records, and EventResult.gender
+            loaded_v8 = db.load_game()
+            assert loaded_v8 is not None
+            self.assertEqual(loaded_v8.event_lineup_f, ctrl.state.event_lineup_f)
+            self.assertEqual(loaded_v8.club_records_f, ctrl.state.club_records_f)
+            self.assertEqual(
+                [er.gender for er in loaded_v8.competition_history[0].event_results],
+                [er.gender for er in ctrl.state.competition_history[0].event_results],
+            )
+
+            # Simulate a v7 database without v8 columns and with empty female_athletes
+            for club in ctrl.state.rival_clubs:
+                club.female_athletes.clear()
+            db.save_game(ctrl.state)
+            conn = sqlite3.connect(str(path))
+            try:
+                _drop_columns_after(conn, 7)
+                conn.execute("PRAGMA user_version = 7")
+                conn.commit()
+            finally:
+                conn.close()
+
+            migrated_db = DatabaseManager(db_path=path)
+            migrated = migrated_db.load_game()
+            assert migrated is not None
+            upgrade_legacy_state(migrated, rng=random.Random(7))
+            self.assertTrue(all(a.gender in ("M", "F") for a in migrated.athletes))
+            self.assertTrue(all(len(c.female_athletes) > 0 for c in migrated.rival_clubs))
+            self.assertTrue(any(v is not None for v in migrated.event_lineup_f.values()))
+
+    def test_export_race_respects_explicit_female_division(self) -> None:
+        import sqlite3
+        from models.race_export import export_race
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = DatabaseManager(db_path=Path(tmpdir) / "exp.db")
+            ctrl = GameController(db_manager=db, rng=random.Random(12))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(12)).competition_summary
+            assert summary is not None
+            f_100 = next(er for er in summary.event_results if er.event_name == "100m" and er.gender == "F")
+            race_path = Path(tmpdir) / "race_f.db"
+            race_id = export_race(summary, f_100, race_path)
+            conn = sqlite3.connect(str(race_path))
+            rows = conn.execute("SELECT gender FROM race_results WHERE race_id = ?", (race_id,)).fetchall()
+            conn.close()
+            self.assertEqual(len(rows), len(f_100.standings))
+            self.assertTrue(all(r[0] == "F" for r in rows))
 
 
 if __name__ == "__main__":

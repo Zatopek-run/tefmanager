@@ -30,6 +30,16 @@ from models.entities import (
     coach_hire_skills,
 )
 
+MALE_FIRST_NAMES: List[str] = [
+    "Lorenzo", "Marco", "Alessandro", "Matteo", "Luca", "Davide", "Federico", "Gabriele",
+    "Tommaso", "Samuele", "Edoardo", "Nicolò", "Kofi", "Kenji", "Soren", "Mateo", "Tariq",
+]
+
+FEMALE_NAME_LIST: List[str] = [
+    "Giulia", "Sofia", "Elena", "Chiara", "Francesca", "Alice", "Martina", "Sara",
+    "Giorgia", "Beatrice", "Camilla", "Viola", "Amara", "Nadia", "Freya", "Yuki", "Amina",
+]
+
 FIRST_NAMES: List[str] = [
     "Lorenzo", "Marco", "Giulia", "Sofia", "Alessandro", "Elena", "Matteo", "Chiara",
     "Luca", "Francesca", "Davide", "Alice", "Federico", "Martina", "Gabriele", "Sara",
@@ -37,10 +47,7 @@ FIRST_NAMES: List[str] = [
     "Kofi", "Amara", "Kenji", "Soren", "Nadia", "Mateo", "Freya", "Tariq",
 ]
 
-FEMALE_FIRST_NAMES: frozenset[str] = frozenset({
-    "Giulia", "Sofia", "Elena", "Chiara", "Francesca", "Alice", "Martina", "Sara",
-    "Giorgia", "Beatrice", "Camilla", "Viola", "Amara", "Nadia", "Freya",
-})
+FEMALE_FIRST_NAMES: frozenset[str] = frozenset(FEMALE_NAME_LIST)
 
 
 def infer_gender(athlete_name: str) -> str:
@@ -96,12 +103,17 @@ _BODY_PROFILE = {
 }
 
 
-def generate_body(specialty: Specialty, r: random.Random, age: int = 24) -> tuple[int, int]:
-    """Height (cm) and weight (kg) consistent with the discipline; youngsters are a bit smaller."""
+def generate_body(
+    specialty: Specialty, r: random.Random, age: int = 24, gender: str = "M"
+) -> tuple[int, int]:
+    """Height (cm) and weight (kg) consistent with the discipline and gender."""
     mean_h, sd, bmi_mean = _BODY_PROFILE[specialty]
+    if gender == "F":
+        mean_h -= 11
+        bmi_mean -= 1.4 if specialty != Specialty.THROWS else 1.8
     growth = 0 if age >= 18 else (18 - age) * 2.5
-    height = int(round(max(150, min(205, r.gauss(mean_h - growth, sd)))))
-    bmi = max(17.5, r.gauss(bmi_mean, 1.0))
+    height = int(round(max(148, min(205, r.gauss(mean_h - growth, sd)))))
+    bmi = max(17.0, r.gauss(bmi_mean, 1.0))
     weight = int(round(bmi * (height / 100) ** 2))
     return height, weight
 
@@ -114,16 +126,19 @@ def generate_athlete(
     youth_prospect: bool = False,
     age_range: Optional[tuple[int, int]] = None,
     base_offset: int = 0,
+    gender: Optional[str] = None,
 ) -> Athlete:
     """Procedurally generate an athlete with discipline age curve, resilience, and personality."""
     r = rng or random.Random()
     used = existing_names or set()
+    chosen_gender = gender if gender in ("M", "F") else r.choice(("M", "F"))
+    first_pool = FEMALE_NAME_LIST if chosen_gender == "F" else MALE_FIRST_NAMES
 
-    name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
+    name = f"{r.choice(first_pool)} {r.choice(LAST_NAMES)}"
     for _ in range(15):
         if name not in used:
             break
-        name = f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}"
+        name = f"{r.choice(first_pool)} {r.choice(LAST_NAMES)}"
 
     chosen_specialty = specialty or r.choice(list(Specialty))
     if age_range is not None:
@@ -166,7 +181,7 @@ def generate_athlete(
     nutrition = r.randint(65, 90)
     form = clamp_stat(70 - fatigue * 0.35 + r.randint(-4, 7))
 
-    height_cm, weight_kg = generate_body(chosen_specialty, r, age)
+    height_cm, weight_kg = generate_body(chosen_specialty, r, age, chosen_gender)
     athlete = Athlete(
         id=None,
         name=name,
@@ -195,6 +210,7 @@ def generate_athlete(
         nationality=generate_nationality(r),
         height_cm=height_cm,
         weight_kg=weight_kg,
+        gender=chosen_gender,
     )
     athlete.weekly_wage = senior_wage(athlete)
     return athlete
@@ -218,7 +234,7 @@ def generate_vertical_slice_roster(rng: Optional[random.Random] = None) -> List[
     roster: List[Athlete] = []
     used_names: set[str] = set()
     for idx, spec in enumerate(specialties, start=1):
-        # Include 2 promising youth prospects from school meets
+        # Include 2 promising youth prospects from school meets; balance M & F in each discipline
         is_youth = idx in (4, 10)
         athlete = generate_athlete(
             tier=CompetitionTier.PROVINCIALE,
@@ -226,6 +242,7 @@ def generate_vertical_slice_roster(rng: Optional[random.Random] = None) -> List[
             rng=r,
             existing_names=used_names,
             youth_prospect=is_youth,
+            gender="M" if idx % 2 == 1 else "F",
         )
         athlete.id = idx
         if idx == 1:
@@ -236,7 +253,7 @@ def generate_vertical_slice_roster(rng: Optional[random.Random] = None) -> List[
 
 
 def generate_initial_roster(rng: Optional[random.Random] = None) -> List[Athlete]:
-    """Generate a balanced 8-athlete starting career roster covering all 4 specialties."""
+    """Generate a balanced 8-athlete starting career roster covering all 4 specialties (M & F)."""
     r = rng or random.Random()
     specialties = [
         Specialty.SPRINTS,
@@ -257,6 +274,7 @@ def generate_initial_roster(rng: Optional[random.Random] = None) -> List[Athlete
             rng=r,
             existing_names=used_names,
             youth_prospect=(idx == 2),
+            gender="M" if idx % 2 == 1 else "F",
         )
         athlete.id = idx
         if idx == 1:
@@ -444,15 +462,21 @@ def create_season_objectives(game_mode: str, tier: CompetitionTier) -> List[Seas
 def build_default_lineup(
     athletes: List[Athlete],
     event_names: Optional[List[str]] = None,
+    gender: Optional[str] = None,
 ) -> Dict[str, Optional[int]]:
-    """Auto-assign the strongest available athlete to each active event."""
+    """Auto-assign the strongest available athlete (optionally filtered by gender) to each active event."""
     targets = event_names or list(EVENTS.keys())
     lineup: Dict[str, Optional[int]] = {}
     used_ids: set[int] = set()
     for event_name in targets:
         event_def = EVENTS[event_name]
         candidates = [
-            a for a in athletes if not a.is_injured and not a.in_youth_squad and a.id is not None
+            a
+            for a in athletes
+            if not a.is_injured
+            and not a.in_youth_squad
+            and a.id is not None
+            and (gender is None or a.gender == gender)
         ]
         if not candidates:
             lineup[event_name] = None
@@ -494,20 +518,23 @@ def generate_rival_athlete(
     season: int = 1,
     rng: Optional[random.Random] = None,
     age_range: tuple[int, int] = (19, 32),
+    gender: str = "M",
 ) -> RivalAthlete:
     """A rival club athlete; later seasons produce slightly stronger recruits."""
     r = rng or random.Random()
     base = TIER_CONFIG[tier]["opponent_skill"] + club_offset + RIVAL_SEASON_INFLATION * (season - 1)
+    first_pool = FEMALE_NAME_LIST if gender == "F" else MALE_FIRST_NAMES
     return RivalAthlete(
-        name=f"{r.choice(FIRST_NAMES)} {r.choice(LAST_NAMES)}",
+        name=f"{r.choice(first_pool)} {r.choice(LAST_NAMES)}",
         event=event,
         age=r.randint(*age_range),
         skill=round(r.gauss(base, 5.5), 2),
+        gender=gender,
     )
 
 
 def create_rival_clubs(rng: Optional[random.Random] = None) -> List[RivalClub]:
-    """Seven persistent rival clubs per category, each with one athlete per discipline."""
+    """Seven persistent rival clubs per category, each with one male and one female athlete per discipline."""
     r = rng or random.Random()
     clubs: List[RivalClub] = []
     for tier, names in RIVAL_TEAMS.items():
@@ -519,7 +546,12 @@ def create_rival_clubs(rng: Optional[random.Random] = None) -> List[RivalClub]:
                 offset=round(r.gauss(0.0, 3.0), 2),
             )
             for event in EVENTS:
-                club.athletes[event] = generate_rival_athlete(event, tier, club.offset, rng=r)
+                club.athletes[event] = generate_rival_athlete(
+                    event, tier, club.offset, rng=r, gender="M"
+                )
+                club.female_athletes[event] = generate_rival_athlete(
+                    event, tier, club.offset, rng=r, gender="F"
+                )
             club.history.append(round(club.level(), 2))
             clubs.append(club)
     return clubs

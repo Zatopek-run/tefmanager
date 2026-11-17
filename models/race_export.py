@@ -84,7 +84,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     lanes[s.athlete_name],
                     s.athlete_name,
                     s.team_name,
-                    infer_gender(s.athlete_name),
+                    result.gender if result.gender in ("M", "F") else infer_gender(s.athlete_name),
                     int(s.is_player),
                     round(reaction_time(seed, s.athlete_name), 3),
                     reference_time if _withdrew(result, s) else s.mark_value,

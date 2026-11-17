@@ -277,6 +277,8 @@ class EventDefinition:
     historic_mark: float
     historic_label: str
     weights: Dict[str, float]
+    historic_mark_f: Optional[float] = None
+    historic_label_f: str = ""
 
 
 EVENTS: Dict[str, EventDefinition] = {
@@ -289,6 +291,8 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark=11.00,
         historic_label="sub-11.00s nei 100m",
         weights={"speed": 0.55, "technique": 0.25, "strength": 0.15, "stamina": 0.05},
+        historic_mark_f=11.80,
+        historic_label_f="sub-11.80s nei 100m",
     ),
     "400m": EventDefinition(
         name="400m",
@@ -299,6 +303,8 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark=48.00,
         historic_label="sub-48.00s nei 400m",
         weights={"speed": 0.45, "stamina": 0.30, "technique": 0.15, "strength": 0.10},
+        historic_mark_f=52.00,
+        historic_label_f="sub-52.00s nei 400m",
     ),
     "1500m": EventDefinition(
         name="1500m",
@@ -309,6 +315,8 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark=235.0,  # 3:55.00
         historic_label="sub-3:55.00 nei 1500m",
         weights={"stamina": 0.55, "speed": 0.25, "technique": 0.15, "strength": 0.05},
+        historic_mark_f=260.0,  # 4:20.00
+        historic_label_f="sub-4:20.00 nei 1500m",
     ),
     "Salto in Lungo": EventDefinition(
         name="Salto in Lungo",
@@ -319,6 +327,8 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark=7.50,
         historic_label="oltre 7.50m nel Lungo",
         weights={"speed": 0.40, "technique": 0.35, "strength": 0.20, "stamina": 0.05},
+        historic_mark_f=6.60,
+        historic_label_f="oltre 6.60m nel Lungo",
     ),
     "Getto del Peso": EventDefinition(
         name="Getto del Peso",
@@ -329,6 +339,8 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark=18.00,
         historic_label="oltre 18.00m nel Peso",
         weights={"strength": 0.55, "technique": 0.35, "speed": 0.05, "stamina": 0.05},
+        historic_mark_f=16.50,
+        historic_label_f="oltre 16.50m nel Peso",
     ),
 }
 
@@ -387,6 +399,11 @@ class Athlete:
     nationality: str = "Italia"
     height_cm: int = 0  # 0 = not yet generated (old saves)
     weight_kg: int = 0
+    gender: str = "M"
+
+    @property
+    def gender_label(self) -> str:
+        return "Donna" if self.gender == "F" else "Uomo"
 
     @property
     def flag(self) -> str:
@@ -532,6 +549,7 @@ class RivalAthlete:
     skill: float
     pb: Optional[float] = None
     pb_display: Optional[str] = None
+    gender: str = "M"
 
 
 @dataclass
@@ -547,11 +565,24 @@ class RivalClub:
     ambition: float
     offset: float = 0.0  # club quality vs the category average (drives its recruits)
     athletes: Dict[str, RivalAthlete] = field(default_factory=dict)
+    female_athletes: Dict[str, RivalAthlete] = field(default_factory=dict)
     history: List[float] = field(default_factory=list)  # average level, one snapshot every 4 weeks
 
-    def level(self, events: Optional[List[str]] = None) -> float:
-        pool = [a.skill for e, a in self.athletes.items() if events is None or e in events]
-        return sum(pool) / len(pool) if pool else 0.0
+    def athletes_for(self, gender: str = "M") -> Dict[str, RivalAthlete]:
+        return self.female_athletes if gender == "F" else self.athletes
+
+    def athlete_for(self, event: str, gender: str = "M") -> Optional[RivalAthlete]:
+        pool = self.female_athletes if gender == "F" else self.athletes
+        return pool.get(event) or self.athletes.get(event)
+
+    def level(self, events: Optional[List[str]] = None, gender: Optional[str] = None) -> float:
+        pools: List[Dict[str, RivalAthlete]] = []
+        if gender in (None, "M"):
+            pools.append(self.athletes)
+        if gender in (None, "F") and self.female_athletes:
+            pools.append(self.female_athletes)
+        vals = [a.skill for p in pools for e, a in p.items() if events is None or e in events]
+        return sum(vals) / len(vals) if vals else 0.0
 
     @property
     def trend(self) -> float:
@@ -568,8 +599,13 @@ class RivalClub:
             return "Appagata"
         return "Stabile"
 
-    def star(self, events: Optional[List[str]] = None) -> Optional[RivalAthlete]:
-        pool = [a for e, a in self.athletes.items() if events is None or e in events]
+    def star(self, events: Optional[List[str]] = None, gender: Optional[str] = None) -> Optional[RivalAthlete]:
+        pools: List[Dict[str, RivalAthlete]] = []
+        if gender in (None, "M"):
+            pools.append(self.athletes)
+        if gender in (None, "F") and self.female_athletes:
+            pools.append(self.female_athletes)
+        pool = [a for p in pools for e, a in p.items() if events is None or e in events]
         return max(pool, key=lambda a: a.skill) if pool else None
 
 
@@ -675,6 +711,13 @@ class EventResult:
     attitude: str = RaceAttitude.NORMALE.value
     withdrew_injured: bool = False
     disqualified: bool = False
+    gender: str = ""
+
+    @property
+    def display_event_name(self) -> str:
+        if self.gender in ("M", "F"):
+            return f"{self.event_name} ({self.gender})"
+        return self.event_name
 
 
 @dataclass
@@ -744,6 +787,14 @@ class GameState:
     coach_hired_week: int = 0  # one new coach per week
     rival_clubs: List[RivalClub] = field(default_factory=list)
     season_history: List[SeasonEndResult] = field(default_factory=list)  # newest first
+    event_lineup_f: Dict[str, Optional[int]] = field(default_factory=dict)
+    club_records_f: Dict[str, Tuple[float, str, str]] = field(default_factory=dict)
+
+    def lineup_for(self, gender: str = "M") -> Dict[str, Optional[int]]:
+        return self.event_lineup_f if gender == "F" else self.event_lineup
+
+    def records_for(self, gender: str = "M") -> Dict[str, Tuple[float, str, str]]:
+        return self.club_records_f if gender == "F" else self.club_records
 
     def league_standings(self) -> List[Tuple[str, int]]:
         """Current league table with every club of the category (0 points if not scored yet).
