@@ -1629,6 +1629,64 @@ class TestGenderDivisions(unittest.TestCase):
         self.assertGreater(m_prov, m_naz)
         self.assertGreater(m_naz, m_int)
 
+    def test_400m_regional_senior_curve_matches_fidal_ranges(self) -> None:
+        from models.entities import EVENTS
+        from models.simulation import _score_to_mark
+
+        ev = EVENTS["400m"]
+        # Provinciale avg (42): M ~53.21s (FIDAL SM median ~53.6s), F ~59.85s
+        m_prov, _ = _score_to_mark(ev, 42.0, gender="M")
+        f_prov, _ = _score_to_mark(ev, 42.0, gender="F")
+        self.assertTrue(52.5 <= m_prov <= 54.0)
+        self.assertTrue(58.5 <= f_prov <= 61.0)
+
+        # Regionale avg (56) & top (66): M ~50.74s / ~48.98s; F ~56.96s / ~54.90s
+        m_reg, _ = _score_to_mark(ev, 56.0, gender="M")
+        m_reg_top, _ = _score_to_mark(ev, 66.0, gender="M")
+        f_reg, _ = _score_to_mark(ev, 56.0, gender="F")
+        f_reg_top, _ = _score_to_mark(ev, 66.0, gender="F")
+        self.assertTrue(49.8 <= m_reg <= 51.6)
+        self.assertTrue(48.3 <= m_reg_top <= 49.6)
+        self.assertTrue(56.0 <= f_reg <= 58.0)
+        self.assertTrue(54.2 <= f_reg_top <= 56.0)
+
+        # Internazionale avg (84): M ~45.82s, F ~51.20s
+        m_int, _ = _score_to_mark(ev, 84.0, gender="M")
+        f_int, _ = _score_to_mark(ev, 84.0, gender="F")
+        self.assertTrue(45.0 <= m_int <= 46.6)
+        self.assertTrue(50.2 <= f_int <= 52.0)
+
+    def test_1500m_regional_senior_curve_matches_fidal_ranges(self) -> None:
+        from models.entities import EVENTS
+        from models.simulation import _score_to_mark
+
+        ev = EVENTS["1500m"]
+        # Provinciale avg (42): M ~4:24.12 (264.1s), F ~5:02.36 (302.4s)
+        m_prov, _ = _score_to_mark(ev, 42.0, gender="M")
+        f_prov, _ = _score_to_mark(ev, 42.0, gender="F")
+        self.assertTrue(258.0 <= m_prov <= 270.0)
+        self.assertTrue(295.0 <= f_prov <= 310.0)
+
+        # Regionale avg (56) & top (66): M ~4:08.16 / ~3:56.76; F ~4:42.48 / ~4:28.28
+        m_reg, _ = _score_to_mark(ev, 56.0, gender="M")
+        m_reg_top, _ = _score_to_mark(ev, 66.0, gender="M")
+        f_reg, _ = _score_to_mark(ev, 56.0, gender="F")
+        f_reg_top, _ = _score_to_mark(ev, 66.0, gender="F")
+        self.assertTrue(244.0 <= m_reg <= 252.0)
+        self.assertTrue(234.0 <= m_reg_top <= 240.0)
+        self.assertTrue(278.0 <= f_reg <= 288.0)
+        self.assertTrue(265.0 <= f_reg_top <= 272.0)
+
+        # Nazionale avg (70) & Internazionale avg (84)
+        m_naz, _ = _score_to_mark(ev, 70.0, gender="M")
+        m_int, _ = _score_to_mark(ev, 84.0, gender="M")
+        f_naz, _ = _score_to_mark(ev, 70.0, gender="F")
+        f_int, _ = _score_to_mark(ev, 84.0, gender="F")
+        self.assertTrue(228.0 <= m_naz <= 236.0)
+        self.assertTrue(212.0 <= m_int <= 220.0)
+        self.assertTrue(258.0 <= f_naz <= 268.0)
+        self.assertTrue(238.0 <= f_int <= 248.0)
+
 
 if __name__ == "__main__":
     unittest.main()

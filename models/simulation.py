@@ -486,17 +486,17 @@ def _score_to_mark(
 
     if event_def.name == "400m":
         seconds = (
-            max(47.60, 62.50 - norm * 13.40)
+            max(47.60, 68.50 - norm * 20.60)
             if gender == "F"
-            else max(43.10, 57.40 - norm * 12.90)
+            else max(43.10, 60.60 - norm * 17.60)
         )
         return seconds, f"{seconds:.2f}s"
 
     if event_def.name == "1500m":
         total_seconds = (
-            max(229.0, 312.0 - norm * 74.0)
+            max(229.0, 362.0 - norm * 142.0)
             if gender == "F"
-            else max(206.0, 282.0 - norm * 68.0)
+            else max(206.0, 312.0 - norm * 114.0)
         )
         mins = int(total_seconds // 60)
         secs = total_seconds % 60
