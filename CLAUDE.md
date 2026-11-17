@@ -99,7 +99,8 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `race_viewer.py`: se cambi la curva dei 100m in Python, cambiala anche lì.
 - **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
   controlla arrivo esatto a 100 m, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
-  `--headless`) salva immagini della scena reale. Testato con Godot 4.7.2 + godot-sqlite 4.9.
+  `--headless`) salva immagini della scena reale (`-- cartella [close] --race=2`); `tests/verify_input.gd -- --autoquit`
+  prova tasti e chiusura automatica. Testato con Godot 4.7.2 + godot-sqlite 4.9.
 - **Personaggi.** `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
   (`assets/athlete/`, vedi `CREDITS.md`); abiti ricavati dalla mesh con uno shader. Il modello originale guarda +Z
   e viene ruotato (`FACING_Y`) per correre verso +X.
@@ -108,7 +109,11 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `QProcess`, mostra una pagina segnaposto e prosegue quando Godot si chiude. **Ripiego sulla vista PyQt
   interna** se manca Godot (`TEF_GODOT`, scoop o PATH), il progetto o `addons/godot-sqlite/`, se l'export fallisce
   o se Godot esce subito con errore. `TEF_NO_GODOT=1` lo disattiva (impostato in `tests/test_game.py`).
-- Solo 100m completati: niente ritirati/squalificati, staffette, 400m, 1500m né concorsi.
+- **Ritirati (DNF).** `race_results.status = 'DNF'`: il corridore corre sulla stessa curva fino a 42 m
+  (`RaceMotion.DNF_STOP_DISTANCE`), rallenta, si ferma (HUD «RIT.») ed è ultimo; `final_time` è solo un tempo di
+  riferimento (mediana degli altri). Più corridori delle 8 corsie → `export_race` solleva `ValueError` e il gioco
+  usa la vista interna (mai scarti silenziosi).
+- Il visualizzatore Godot copre solo i **100m** (niente 400m, 1500m, staffette, concorsi né squalificati).
 
 ## Test: cosa verificano e cosa no
 

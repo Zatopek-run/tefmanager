@@ -41,7 +41,7 @@ godot_viewer/
 
 `race_results.final_time` è il tempo ufficiale dallo sparo e **include** `reaction_time`
 (vincolo `final_time > reaction_time`). Corsie 1–9, una riga per corsia. Righe incoerenti vengono scartate
-con un warning. L'esportatore è `models/race_export.py`: `python -m models.race_export [salvataggio.db] [race_results.db]` (esporta i 100m dell'ultimo meeting).
+con un warning. `status` = `OK` o `DNF` (ritirato: corre fino a 42 m e si ferma). L'esportatore è `models/race_export.py`: `python -m models.race_export [salvataggio.db] [race_results.db]` (esporta i 100m dell'ultimo meeting).
 
 ## Configurazione manuale in editor (equivalente a quanto fa il codice)
 
@@ -66,8 +66,11 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: mai provato con input da tastiera/mouse; il pubblico è una texture a rumore; nessun pettorale.
-La partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le mani a terra.
+Limiti noti: solo i 100m; la partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le
+mani a terra (la libreria di animazioni non ne ha una); la finestra Godot è separata dal gioco; nessun pettorale
+(dalla camera laterale non si vedrebbe); il pubblico è una texture procedurale a blocchetti, non persone modellate.
+Provati: tasti Spazio/1/2/4/Esc e `--autoquit` (`tests/verify_input.gd`), ritiro per infortunio (gara 2 del DB
+demo), fotofinish (la camera fissa stacca quando il leader supera i 90 m).
 
 ## Uso dal gioco PyQt
 

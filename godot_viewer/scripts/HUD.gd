@@ -66,7 +66,9 @@ func _update_ranking() -> void:
 		var r: RunnerData = order[i]
 		var row: Dictionary = _rows[i]
 		var value: String
-		if r.finished:
+		if r.dnf and r.distance > 1.0 and r.speed < 0.3:
+			value = "RIT."
+		elif r.finished:
 			value = RaceController.format_time(r.final_time)
 		elif i == 0 or RaceController.state == RaceController.State.COUNTDOWN:
 			value = "L%d" % r.lane

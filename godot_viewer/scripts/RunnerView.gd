@@ -87,6 +87,8 @@ func _update_animation() -> void:
 	var want: StringName
 	if s < 0.01 and data.distance < 0.01:
 		want = &"Crouch_Idle"
+	elif s < 0.3 and data.distance > 1.0:
+		want = &"Idle"  # fermo dopo il traguardo o dopo il ritiro
 	elif s >= SPRINT_FROM or (_current_anim == &"Sprint" and s >= SPRINT_BACK_TO_JOG):
 		want = &"Sprint"
 	elif s < WALK_BELOW:
@@ -100,7 +102,7 @@ func _update_animation() -> void:
 		&"Sprint": stride = STRIDE_SPRINT
 		&"Jog_Fwd": stride = STRIDE_JOG
 		&"Walk": stride = STRIDE_WALK
-	if _current_anim == &"Crouch_Idle":
+	if _current_anim == &"Crouch_Idle" or _current_anim == &"Idle":
 		_player.speed_scale = RaceController.time_scale
 	else:
 		var length: float = _player.get_animation(_current_anim).length

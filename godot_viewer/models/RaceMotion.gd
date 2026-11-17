@@ -10,6 +10,8 @@ extends RefCounted
 const RACE_DISTANCE: float = 100.0
 const STEPS: int = 600
 const RUNOUT_TAU: float = 1.1  # costante di tempo della decelerazione dopo il traguardo (s)
+const DNF_STOP_DISTANCE: float = 42.0  # un ritirato smette di correre qui (come DNF_PROGRESS = 0,42 in Python)
+const DNF_TAU: float = 0.7     # ...e rallenta con questa costante di tempo (s)
 
 static var _table: PackedFloat64Array = PackedFloat64Array()
 
@@ -65,3 +67,28 @@ static func state_at(race_t: float, reaction: float, final_time: float) -> Vecto
 	var dt: float = race_t - final_time
 	var decay: float = exp(-dt / RUNOUT_TAU)
 	return Vector2(RACE_DISTANCE + finish_speed * RUNOUT_TAU * (1.0 - decay), finish_speed * decay)
+
+
+## Tempo di gara (s dallo sparo) a cui un corridore ha percorso `distance` m, sulla stessa curva di state_at().
+static func time_at_distance(distance: float, reaction: float, final_time: float) -> float:
+	var target: float = clampf(distance / RACE_DISTANCE, 0.0, 1.0)
+	var lo: float = 0.0
+	var hi: float = 1.0
+	for i in range(40):
+		var mid: float = (lo + hi) * 0.5
+		if progress(mid) < target:
+			lo = mid
+		else:
+			hi = mid
+	return reaction + hi * (final_time - reaction)
+
+
+## Come state_at(), ma per un ritirato: corre sulla stessa curva fino a DNF_STOP_DISTANCE, poi rallenta e si ferma.
+static func state_at_dnf(race_t: float, reaction: float, final_time: float) -> Vector2:
+	var t_stop: float = time_at_distance(DNF_STOP_DISTANCE, reaction, final_time)
+	if race_t < t_stop:
+		return state_at(race_t, reaction, final_time)
+	var at_stop: Vector2 = state_at(t_stop, reaction, final_time)
+	var dt: float = race_t - t_stop
+	var decay: float = exp(-dt / DNF_TAU)
+	return Vector2(at_stop.x + at_stop.y * DNF_TAU * (1.0 - decay), at_stop.y * decay)

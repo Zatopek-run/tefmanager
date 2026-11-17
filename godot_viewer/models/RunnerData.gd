@@ -10,7 +10,8 @@ var lane: int = 1
 var is_player: bool = false
 var reaction_time: float = 0.0  # secondi, incluso nel tempo ufficiale
 var final_time: float = 0.0     # tempo ufficiale dallo sparo
-var place: int = 0              # 1 = vincitore, deciso da final_time
+var place: int = 0              # 1 = vincitore, deciso da final_time (i ritirati vengono dopo i classificati)
+var dnf: bool = false           # ritirato: si ferma a DNF_STOP_DISTANCE e non taglia il traguardo
 
 # --- runtime ---
 var distance: float = 0.0       # metri dalla linea di partenza (oltre 100 = lancio dopo il traguardo)
@@ -26,6 +27,7 @@ static func from_row(row: Dictionary) -> RunnerData:
 	r.is_player = int(row.get("is_player", 0)) != 0
 	r.reaction_time = float(row.get("reaction_time", 0.0))
 	r.final_time = float(row.get("final_time", 0.0))
+	r.dnf = str(row.get("status", "OK")) == "DNF"
 	return r
 
 

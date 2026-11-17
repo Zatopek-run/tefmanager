@@ -11,6 +11,7 @@ const TRACK_X_MIN: float = -15.0
 const TRACK_X_MAX: float = 125.0
 const FINISH_X: float = 100.0
 const AUTO_START_DELAY: float = 1.5
+const CROWD_TILE_METERS: float = 32.0  # lato in metri di una ripetizione della texture della folla
 const AUTOQUIT_DELAY: float = 3.0  # con --autoquit: pausa sul risultato prima di chiudere
 
 const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
@@ -142,16 +143,12 @@ func _build_track() -> void:
 
 
 func _build_stands() -> void:
-	var crowd_noise: FastNoiseLite = FastNoiseLite.new()
-	crowd_noise.frequency = 0.35
-	var crowd_tex: NoiseTexture2D = NoiseTexture2D.new()
-	crowd_tex.noise = crowd_noise
-	crowd_tex.width = 256
-	crowd_tex.height = 128
-	crowd_tex.color_ramp = _crowd_gradient()
 	var crowd: StandardMaterial3D = StandardMaterial3D.new()
-	crowd.albedo_texture = crowd_tex
-	crowd.uv1_scale = Vector3(14.0, 1.0, 1.0)
+	crowd.albedo_texture = _crowd_texture()
+	crowd.uv1_triplanar = true
+	crowd.uv1_world_triplanar = true                   # mappatura in metri: gli spettatori restano ~0,5 m
+	crowd.uv1_scale = Vector3.ONE / CROWD_TILE_METERS
+	crowd.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	crowd.roughness = 1.0
 
 	var back_z: float = -6.0  # tribune sul lato prato, dietro i corridori visti dalla camera
@@ -171,12 +168,29 @@ func _build_stands() -> void:
 		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, back_z - 13.6), lamp)
 
 
-func _crowd_gradient() -> Gradient:
-	var g: Gradient = Gradient.new()
-	g.colors = PackedColorArray([
-		Color(0.55, 0.2, 0.18), Color(0.2, 0.3, 0.6), Color(0.85, 0.8, 0.7), Color(0.25, 0.25, 0.28)])
-	g.offsets = PackedFloat32Array([0.0, 0.35, 0.7, 1.0])
-	return g
+## Folla procedurale: file di spettatori (testa tonda + busto colorato) su fondo scuro, deterministica.
+func _crowd_texture() -> ImageTexture:
+	var size: int = 512
+	var img: Image = Image.create(size, size, false, Image.FORMAT_RGB8)
+	img.fill(Color(0.06, 0.06, 0.08))
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 2010
+	var shirts: Array[Color] = [
+		Color(0.75, 0.15, 0.15), Color(0.15, 0.3, 0.7), Color(0.9, 0.9, 0.88), Color(0.95, 0.75, 0.15),
+		Color(0.2, 0.55, 0.3), Color(0.12, 0.12, 0.15), Color(0.85, 0.4, 0.1), Color(0.55, 0.25, 0.6)]
+	var skins: Array[Color] = [
+		Color(0.94, 0.76, 0.64), Color(0.82, 0.6, 0.45), Color(0.62, 0.42, 0.3), Color(0.38, 0.25, 0.17)]
+	var row_h: int = 9
+	var col_w: int = 8
+	for row in range(0, size, row_h):
+		for col in range(0, size, col_w):
+			var x: int = col + rng.randi_range(0, 1)
+			var y: int = row + rng.randi_range(0, 1)
+			var shirt: Color = shirts[rng.randi() % shirts.size()].darkened(rng.randf_range(0.0, 0.35))
+			img.fill_rect(Rect2i(x, y + 4, 6, 5), shirt)                                # busto
+			img.fill_rect(Rect2i(x + 1, y + 1, 4, 3), skins[rng.randi() % skins.size()])  # testa
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func _flat(color: Color, roughness: float) -> StandardMaterial3D:

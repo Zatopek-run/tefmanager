@@ -63,7 +63,7 @@ func get_race_info(race_id: int) -> Dictionary:
 func get_race_runners(race_id: int) -> Array[RunnerData]:
 	var result: Array[RunnerData] = []
 	var rows: Array[Dictionary] = _select(
-		"SELECT lane, athlete_name, team_name, is_player, reaction_time, final_time "
+		"SELECT lane, athlete_name, team_name, is_player, reaction_time, final_time, status "
 		+ "FROM race_results WHERE race_id = ? ORDER BY lane;", [race_id])
 	for row: Dictionary in rows:
 		var runner: RunnerData = RunnerData.from_row(row)

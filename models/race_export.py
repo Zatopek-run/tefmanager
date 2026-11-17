@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import random
 import sqlite3
+import statistics
 import zlib
 from contextlib import closing
 from pathlib import Path
@@ -33,21 +34,32 @@ def draw_lanes(seed: object, athlete_names: List[str]) -> dict:
     return dict(zip(sorted(athlete_names), lanes))
 
 
+def _withdrew(result: EventResult, standing: EventStanding) -> bool:
+    return standing.is_player and result.withdrew_injured
+
+
 def _runnable(result: EventResult, standing: EventStanding, seed: str) -> bool:
-    withdrew = standing.is_player and result.withdrew_injured
-    return not withdrew and standing.mark_value > reaction_time(seed, standing.athlete_name)
+    """Chi finisce la gara deve avere un tempo ufficiale coerente (maggiore del tempo di reazione)."""
+    return _withdrew(result, standing) or standing.mark_value > reaction_time(seed, standing.athlete_name)
 
 
 def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path) -> int:
     """Scrive la gara in `db_path` (creandolo se serve) e ritorna il `race_id`.
 
-    Prende i primi MAX_LANES classificati; ritirati e tempi incoerenti sono esclusi.
+    Il ritirato per infortunio entra con status 'DNF' (corre un po' e si ferma): come tempo di riferimento
+    per la sua velocità usa la mediana dei tempi degli altri. Se ci sono più corridori delle corsie, o tempi
+    incoerenti, solleva ValueError (il chiamante ripiega sulla vista interna): niente scarti silenziosi.
     """
     seed = race_seed(summary)
-    standings = [s for s in sorted(result.standings, key=lambda s: s.placement) if _runnable(result, s, seed)]
-    standings = standings[:MAX_LANES]
-    if not standings:
-        raise ValueError(f"Nessun corridore esportabile per {result.event_name}.")
+    standings = sorted(result.standings, key=lambda s: s.placement)
+    if len(standings) > MAX_LANES:
+        raise ValueError(f"{len(standings)} corridori: più delle {MAX_LANES} corsie.")
+    if not all(_runnable(result, s, seed) for s in standings):
+        raise ValueError("Tempo ufficiale incoerente con il tempo di reazione.")
+    finishers = [s.mark_value for s in standings if not _withdrew(result, s)]
+    if not finishers:
+        raise ValueError(f"Nessun classificato per {result.event_name}.")
+    reference_time = statistics.median(finishers)
     lanes = draw_lanes(seed, [s.athlete_name for s in standings])
 
     db_path = Path(db_path)
@@ -60,8 +72,8 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
             (race_id, result.event_name, summary.meet_name, 100, result.wind_ms or 0.0),
         )
         conn.executemany(
-            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, is_player, reaction_time, final_time, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     race_id,
@@ -70,7 +82,8 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     s.team_name,
                     int(s.is_player),
                     round(reaction_time(seed, s.athlete_name), 3),
-                    s.mark_value,
+                    reference_time if _withdrew(result, s) else s.mark_value,
+                    "DNF" if _withdrew(result, s) else "OK",
                 )
                 for s in standings
             ],

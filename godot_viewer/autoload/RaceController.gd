@@ -27,6 +27,7 @@ var display_time: float = 0.0           # cronometro: si blocca sul tempo del vi
 var time_scale: float = 1.0
 
 var _finished_count: int = 0
+var _finisher_count: int = 0       # corridori che arrivano al traguardo (esclusi i ritirati)
 var _announced: bool = false
 var _winner_time: float = 0.0
 var _last_finish_time: float = 0.0
@@ -38,14 +39,20 @@ func load_race(race_id: int) -> bool:
 	if loaded.is_empty():
 		push_error("RaceController: nessun corridore per la gara %d." % race_id)
 		return false
+	if loaded.all(func(r: RunnerData) -> bool: return r.dnf):
+		push_error("RaceController: gara %d senza classificati (tutti ritirati)." % race_id)
+		return false
 	runners = loaded
 	info = DatabaseManager.get_race_info(race_id)
 	_assign_places()
-	_winner_time = runners[0].final_time
+	_finisher_count = 0
+	_winner_time = INF
 	_last_finish_time = 0.0
 	for r: RunnerData in runners:
-		_winner_time = minf(_winner_time, r.final_time)
-		_last_finish_time = maxf(_last_finish_time, r.final_time)
+		if not r.dnf:
+			_finisher_count += 1
+			_winner_time = minf(_winner_time, r.final_time)
+			_last_finish_time = maxf(_last_finish_time, r.final_time)
 		r.distance = 0.0
 		r.speed = 0.0
 		r.finished = false
@@ -94,14 +101,14 @@ func _process(delta: float) -> void:
 
 func _update_runners() -> void:
 	for r: RunnerData in runners:
-		var s: Vector2 = RaceMotion.state_at(race_time, r.reaction_time, r.final_time)
+		var s: Vector2 = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time) if r.dnf 			else RaceMotion.state_at(race_time, r.reaction_time, r.final_time)
 		r.distance = s.x
 		r.speed = s.y
-		if not r.finished and race_time >= r.final_time:
+		if not r.dnf and not r.finished and race_time >= r.final_time:
 			r.finished = true
 			_finished_count += 1
 			runner_finished.emit(r)
-	if not _announced and _finished_count == runners.size():
+	if not _announced and _finished_count == _finisher_count:
 		_announced = true
 		race_finished.emit(_sorted_by_place())
 
@@ -116,10 +123,12 @@ func _update_order() -> void:
 		return a.distance > b.distance)
 
 
-## Assegna l'ordine d'arrivo dal solo `final_time` (parita': corsia piu' bassa).
+## Assegna l'ordine d'arrivo dal solo `final_time` (parita': corsia piu' bassa). I ritirati vengono dopo i classificati.
 func _assign_places() -> void:
 	var ordered: Array[RunnerData] = runners.duplicate()
 	ordered.sort_custom(func(a: RunnerData, b: RunnerData) -> bool:
+		if a.dnf != b.dnf:
+			return b.dnf
 		if is_equal_approx(a.final_time, b.final_time):
 			return a.lane < b.lane
 		return a.final_time < b.final_time)

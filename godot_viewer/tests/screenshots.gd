@@ -3,7 +3,7 @@ extends SceneTree
 ##   godot --path godot_viewer -s res://tests/screenshots.gd -- out_dir [close]
 ## Scatta ai tempi di gara in SHOTS (secondi dallo sparo; -1 = ai blocchi prima dello sparo).
 
-const SHOTS: Array[float] = [-1.0, 1.0, 4.0, 8.5, 11.0]
+const SHOTS: Array[float] = [-1.0, 4.0, 9.5, 9.85, 10.4]
 
 var _out_dir: String = "user://shots"
 var _stage: int = 0

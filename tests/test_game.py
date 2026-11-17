@@ -1253,6 +1253,29 @@ class TestRaceExport(unittest.TestCase):
         self.assertTrue(all(0 < r[2] < r[3] for r in rows))                       # reazione inclusa nel tempo
         self.assertEqual(sorted(rows), sorted(again))                             # stesso sorteggio
 
+    def test_export_marks_injured_player_as_dnf_and_refuses_overfull_races(self):
+        import sqlite3
+        from models.race_export import export_race
+
+        summary, result = self._summary()
+        result.withdrew_injured = True  # il giocatore (Atleta 1) si ritira
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "race_results.db"
+            race_id = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            rows = {r[0]: r[1:] for r in conn.execute(
+                "SELECT athlete_name, status, final_time FROM race_results WHERE race_id = ?", (race_id,))}
+            conn.close()
+            self.assertEqual(rows["Atleta 1"][0], "DNF")
+            self.assertTrue(all(v[0] == "OK" for k, v in rows.items() if k != "Atleta 1"))
+            others = sorted(v[1] for k, v in rows.items() if k != "Atleta 1")
+            self.assertEqual(others, [9.87, 10.05, 10.2])            # i classificati mantengono il tempo
+            self.assertTrue(9.87 < rows["Atleta 1"][1] < 10.2)        # riferimento = mediana, nessun tempo inventato fuori scala
+
+            result.standings = result.standings * 3                    # 12 corridori: troppi per 8 corsie
+            with self.assertRaises(ValueError):
+                export_race(summary, result, path)
+
     def test_godot_viewer_is_skipped_when_disabled_and_only_for_100m(self):
         import views.godot_launcher as gl
 
