@@ -1,0 +1,137 @@
+extends Node
+## CONTROLLER - orchestra la gara. Legge dal Model (DatabaseManager) e aggiorna lo stato dei corridori;
+## le View (Stadium, HUD) leggono questo stato e si collegano ai segnali. Non decide mai un risultato.
+##
+## Tempo: `clock` e' il tempo di animazione (include il conto alla rovescia, lo sparo e' a GUN_AT);
+## `race_time` e' il tempo di gara dallo sparo. Ogni corridore corre per (final_time - reaction_time)
+## secondi dopo la reazione, quindi taglia i 100 m esattamente a `final_time` (vedi RaceMotion).
+
+signal race_loaded(runners: Array[RunnerData], info: Dictionary)
+signal countdown_started()
+signal gun_fired()
+signal runner_finished(runner: RunnerData)
+signal race_finished(results: Array[RunnerData])
+
+enum State { IDLE, LOADED, COUNTDOWN, RUNNING, FINISHED }
+
+const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo
+const AFTER_FINISH_SECONDS: float = 4.0  # quanto resta in RUNNING dopo l'ultimo arrivo (lancio oltre il traguardo)
+
+var state: State = State.IDLE
+var info: Dictionary = {}
+var runners: Array[RunnerData] = []
+var live_order: Array[RunnerData] = []  # ordine di classifica aggiornato a ogni fotogramma
+var clock: float = 0.0
+var race_time: float = 0.0
+var display_time: float = 0.0           # cronometro: si blocca sul tempo del vincitore
+var time_scale: float = 1.0
+
+var _finished_count: int = 0
+var _announced: bool = false
+var _winner_time: float = 0.0
+var _last_finish_time: float = 0.0
+
+
+## Carica la gara dal DB. Ritorna false se non ci sono corridori validi.
+func load_race(race_id: int) -> bool:
+	var loaded: Array[RunnerData] = DatabaseManager.get_race_runners(race_id)
+	if loaded.is_empty():
+		push_error("RaceController: nessun corridore per la gara %d." % race_id)
+		return false
+	runners = loaded
+	info = DatabaseManager.get_race_info(race_id)
+	_assign_places()
+	_winner_time = runners[0].final_time
+	_last_finish_time = 0.0
+	for r: RunnerData in runners:
+		_winner_time = minf(_winner_time, r.final_time)
+		_last_finish_time = maxf(_last_finish_time, r.final_time)
+		r.distance = 0.0
+		r.speed = 0.0
+		r.finished = false
+	live_order = runners.duplicate()
+	clock = 0.0
+	race_time = 0.0
+	display_time = 0.0
+	_finished_count = 0
+	_announced = false
+	state = State.LOADED
+	race_loaded.emit(runners, info)
+	return true
+
+
+func start() -> void:
+	if state != State.LOADED:
+		return
+	state = State.COUNTDOWN
+	countdown_started.emit()
+
+
+## Salta alla fine: porta il tempo oltre l'ultimo arrivo (i risultati non cambiano).
+func skip_to_end() -> void:
+	if state == State.COUNTDOWN or state == State.RUNNING:
+		clock = GUN_AT + _last_finish_time + AFTER_FINISH_SECONDS
+
+
+func leader_distance() -> float:
+	return live_order[0].distance if not live_order.is_empty() else 0.0
+
+
+func _process(delta: float) -> void:
+	if state != State.COUNTDOWN and state != State.RUNNING:
+		return
+	clock += delta * time_scale
+	race_time = maxf(0.0, clock - GUN_AT)
+	if state == State.COUNTDOWN and clock >= GUN_AT:
+		state = State.RUNNING
+		gun_fired.emit()
+	_update_runners()
+	_update_order()
+	display_time = minf(race_time, _winner_time) if _finished_count > 0 else race_time
+	if state == State.RUNNING and race_time >= _last_finish_time + AFTER_FINISH_SECONDS:
+		state = State.FINISHED
+
+
+func _update_runners() -> void:
+	for r: RunnerData in runners:
+		var s: Vector2 = RaceMotion.state_at(race_time, r.reaction_time, r.final_time)
+		r.distance = s.x
+		r.speed = s.y
+		if not r.finished and race_time >= r.final_time:
+			r.finished = true
+			_finished_count += 1
+			runner_finished.emit(r)
+	if not _announced and _finished_count == runners.size():
+		_announced = true
+		race_finished.emit(_sorted_by_place())
+
+
+## Classifica live: chi ha gia' tagliato il traguardo per ordine di arrivo, poi gli altri per distanza.
+func _update_order() -> void:
+	live_order.sort_custom(func(a: RunnerData, b: RunnerData) -> bool:
+		if a.finished != b.finished:
+			return a.finished
+		if a.finished:
+			return a.place < b.place
+		return a.distance > b.distance)
+
+
+## Assegna l'ordine d'arrivo dal solo `final_time` (parita': corsia piu' bassa).
+func _assign_places() -> void:
+	var ordered: Array[RunnerData] = runners.duplicate()
+	ordered.sort_custom(func(a: RunnerData, b: RunnerData) -> bool:
+		if is_equal_approx(a.final_time, b.final_time):
+			return a.lane < b.lane
+		return a.final_time < b.final_time)
+	for i in range(ordered.size()):
+		ordered[i].place = i + 1
+
+
+func _sorted_by_place() -> Array[RunnerData]:
+	var ordered: Array[RunnerData] = runners.duplicate()
+	ordered.sort_custom(func(a: RunnerData, b: RunnerData) -> bool: return a.place < b.place)
+	return ordered
+
+
+static func format_time(seconds: float) -> String:
+	return "%.2f" % seconds

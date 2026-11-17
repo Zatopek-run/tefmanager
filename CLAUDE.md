@@ -82,6 +82,26 @@ container di sviluppo e non sarebbero testabili).
 - Costanti di camera in cima al file: `CAM_BACK`, `CAM_SIDE`, `CAM_HEIGHT`, `FOV_DEG`.
 - Il 3D copre solo le corse in pista; lungo e peso restano nelle scene 2D.
 
+## Visualizzatore Godot (`godot_viewer/`)
+
+Modulo **separato** in Godot 4.3+ / GDScript (non fa parte dell'app PyQt): mette in scena i 100m in stile
+"diretta TV" 2010 leggendo risultati già calcolati da SQLite (plugin godot-sqlite, in `addons/`, ignorato da git).
+Dettagli e valori di luce/camere in `godot_viewer/README.md`.
+
+- **MVC.** Model = `autoload/DatabaseManager.gd` (sola lettura), Controller = `autoload/RaceController.gd`
+  (tempo, classifica, segnali), View 3D = `Stadium.tscn` + `scripts/` (`BroadcastCameras`, `RunnerView`),
+  View 2D = `HUD.tscn`. Anche qui **le viste non cambiano tempi o ordine**.
+- **Contratto con Python.** `godot_viewer/data/schema.sql` è l'unica fonte dello schema (`races`,
+  `race_results`); `models/race_export.py` lo riusa per esportare (`python -m models.race_export [save.db] [out.db]`).
+  `final_time` = `mark_value` e **include** `reaction_time`. Corsie sorteggiate in modo deterministico,
+  reazione dalla stessa `reaction_time` della vista PyQt.
+- **`godot_viewer/models/RaceMotion.gd` è la copia GDScript** di `_velocity`/`curve_progress` di
+  `race_viewer.py`: se cambi la curva dei 100m in Python, cambiala anche lì.
+- **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
+  controlla arrivo esatto a 100 m, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
+  `--headless`) salva immagini della scena reale. Testato con Godot 4.7.2 + godot-sqlite 4.9.
+- Solo 100m completati: niente ritirati/squalificati, staffette, 400m, 1500m né concorsi.
+
 ## Test: cosa verificano e cosa no
 
 - Curve monotone e arrivo esatto al tempo ufficiale; sequenza di partenza e salto durante il conto alla

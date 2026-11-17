@@ -1206,5 +1206,52 @@ class TestPyQtViewsV2(unittest.TestCase):
             win.close()
 
 
+class TestRaceExport(unittest.TestCase):
+    """Esportazione dei 100m verso il visualizzatore Godot (godot_viewer/)."""
+
+    def _summary(self):
+        from models.entities import CompetitionSummary, EventResult, EventStanding
+
+        marks = [9.87, 9.93, 10.05, 10.2]
+        standings = [
+            EventStanding(f"Atleta {i}", f"Club {i}", i == 1, m, f"{m:.2f}s", placement=i + 1)
+            for i, m in enumerate(marks)
+        ]
+        result = EventResult(
+            event_name="100m", player_athlete_name="Atleta 1", placement=2, total_competitors=4,
+            player_mark="9.93s", prize_money=0, prestige_gained=0, standings=standings,
+        )
+        summary = CompetitionSummary(
+            week=3, tier=list(CompetitionTier)[0], season_phase=list(SeasonPhase)[0], meet_name="Meeting di prova",
+            weather=list(WeatherCondition)[0], track_surface="Tartan", event_results=[result],
+            total_prize_money=0, total_prestige_gained=0,
+        )
+        return summary, result
+
+    def test_export_copies_official_times_and_is_deterministic(self):
+        import sqlite3
+        from models.race_export import export_race
+
+        summary, result = self._summary()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "race_results.db"
+            race_id = export_race(summary, result, path)
+            self.assertEqual(export_race(summary, result, path), race_id + 1)
+            conn = sqlite3.connect(str(path))
+            rows = conn.execute(
+                "SELECT lane, athlete_name, reaction_time, final_time FROM race_results WHERE race_id = ?",
+                (race_id,),
+            ).fetchall()
+            again = conn.execute(
+                "SELECT lane, athlete_name, reaction_time, final_time FROM race_results WHERE race_id = ?",
+                (race_id + 1,),
+            ).fetchall()
+            conn.close()
+        self.assertEqual(sorted(r[3] for r in rows), [9.87, 9.93, 10.05, 10.2])  # tempi invariati
+        self.assertEqual(sorted(r[0] for r in rows), [1, 2, 3, 4])              # corsie uniche
+        self.assertTrue(all(0 < r[2] < r[3] for r in rows))                       # reazione inclusa nel tempo
+        self.assertEqual(sorted(rows), sorted(again))                             # stesso sorteggio
+
+
 if __name__ == "__main__":
     unittest.main()
