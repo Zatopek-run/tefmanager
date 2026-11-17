@@ -74,9 +74,9 @@ func setup(model: Node3D, skel: Skeleton3D) -> void:
 
 
 func set_enabled(on: bool) -> void:
-	if on and not enabled and skeleton != null:
-		# Le ossa che la posa non comanda (clavicole, dita, rotazioni residue) tornano a riposo: altrimenti restano
-		# nell'ultimo fotogramma dell'animazione fermata e le due braccia partono da basi diverse.
+	if on != enabled and skeleton != null:
+		# Le ossa che la posa o l'animazione successiva non comandano (es. spine_01 mancante in Sprint,
+		# clavicole, dita) tornano a riposo sia all'ingresso che all'uscita dai blocchi.
 		skeleton.reset_bone_poses()
 		_solved_a = -1.0
 	enabled = on

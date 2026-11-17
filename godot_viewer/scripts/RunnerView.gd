@@ -33,7 +33,7 @@ const SPRINT_BACK_TO_JOG: float = 6.0  # isteresi per evitare lo sfarfallio tra 
 const WALK_BELOW: float = 2.5
 const BLEND_TIME: float = 0.25
 const BLOCK_START_BLEND: float = 0.06
-const DRIVE_LEAN_MAX: float = deg_to_rad(30.0)   # inclinazione in avanti in uscita dai blocchi
+const DRIVE_LEAN_MAX: float = deg_to_rad(26.0)   # inclinazione in avanti in uscita dai blocchi
 const DRIVE_RISE_METERS: float = 16.0            # metri su cui il busto si raddrizza gradualmente
 
 static var _animation_library: AnimationLibrary = null
@@ -46,6 +46,7 @@ var _skeleton: Skeleton3D
 var _player: AnimationPlayer
 var _current_anim: StringName = &""
 var _rig: SetPoseRig = null           # posizione ai blocchi (pronti/set), attiva prima della partenza
+var _posture_mod: SprintPostureModifier = null
 var set_amount_override: float = -1.0  # solo per prove: forza pronti(0)..set(1); -1 = la decide RaceController
 
 
@@ -65,6 +66,8 @@ func setup(runner: RunnerData) -> void:
 	_model.scale = Vector3.ONE * (target_height / height)
 
 	_setup_animation()
+	_posture_mod = SprintPostureModifier.new()
+	_skeleton.add_child(_posture_mod)
 	_rig = SetPoseRig.new()
 	add_child(_rig)
 	_rig.setup(_model, _skeleton)
@@ -113,6 +116,8 @@ func _update_animation() -> void:
 	if at_blocks:
 		_model.rotation.x = 0.0
 		_model.position = Vector3.ZERO
+		if _posture_mod != null:
+			_posture_mod.active_weight = 0.0
 		_rig.update(set_amount_override if set_amount_override >= 0.0 else RaceController.set_amount())
 		return
 
@@ -134,6 +139,8 @@ func _update_animation() -> void:
 	else:
 		want = &"Jog_Fwd"
 	_play(want, BLOCK_START_BLEND if just_left_blocks else BLEND_TIME)
+	if _posture_mod != null:
+		_posture_mod.active_weight = 1.0 if _current_anim == &"Sprint" else 0.0
 
 	var stride: float = 1.0
 	match _current_anim:
@@ -264,3 +271,32 @@ func _attach_hair() -> void:
 ## Colori deterministici dal nome: la stessa gara si rivede sempre uguale.
 func _team_color(team: String) -> Color:
 	return Color.from_hsv(float(absi(hash(team)) % 360) / 360.0, 0.75, 0.9)
+
+
+## Raddrizza la parte alta della schiena nell'animazione Sprint (che altrimenti curva spine_02/03 a ~49°).
+class SprintPostureModifier:
+	extends SkeletonModifier3D
+
+	var active_weight: float = 0.0
+
+	func _process_modification() -> void:
+		if active_weight <= 0.001:
+			return
+		var skel: Skeleton3D = get_skeleton()
+		if skel == null:
+			return
+		_pitch_bone(skel, "spine_01", deg_to_rad(-6.0) * active_weight)
+		_pitch_bone(skel, "spine_02", deg_to_rad(-9.0) * active_weight)
+		_pitch_bone(skel, "spine_03", deg_to_rad(-10.0) * active_weight)
+		_pitch_bone(skel, "neck_01", deg_to_rad(-4.0) * active_weight)
+		_pitch_bone(skel, "Head", deg_to_rad(12.0) * active_weight)
+
+	static func _pitch_bone(skel: Skeleton3D, bone_name: String, delta_rad: float) -> void:
+		var idx: int = skel.find_bone(bone_name)
+		if idx < 0:
+			return
+		var parent: int = skel.get_bone_parent(idx)
+		var parent_basis: Basis = skel.get_bone_global_pose(parent).basis if parent >= 0 else Basis.IDENTITY
+		var desired_basis: Basis = Basis(Vector3.RIGHT, delta_rad) * skel.get_bone_global_pose(idx).basis
+		var local_basis: Basis = parent_basis.inverse() * desired_basis
+		skel.set_bone_pose_rotation(idx, local_basis.get_rotation_quaternion())
