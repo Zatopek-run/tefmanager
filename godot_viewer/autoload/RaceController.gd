@@ -18,11 +18,15 @@ enum State { IDLE, LOADED, COUNTDOWN, RUNNING, FINISHED }
 
 const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo (default)
 ## Preparazione piu' lunga per i 100m, come nella diretta TV: apertura larga, lungo primo piano sui blocchi, sparo.
-const GUN_AT_BY_KIND: Dictionary = {"100m": 9.0, "400m": 7.0, "1500m": 4.2}
+const GUN_AT_BY_KIND: Dictionary = {"100m": 9.0, "400m": 7.0, "1500m": 4.2, "4x100m": 6.5, "4x400m": 5.0}
+
+
+static func is_relay(kind: String) -> bool:
+	return kind == "4x100m" or kind == "4x400m"
 
 
 static func uses_blocks(kind: String) -> bool:
-	return kind == "100m" or kind == "400m"
+	return kind != "1500m"
 const SET_CALL_AT: float = 1.5          # "set": questi secondi prima dello sparo il corridore comincia a salire
 const SET_RISE_TIME: float = 0.75
 const AFTER_FINISH_SECONDS: float = 4.0  # quanto resta in RUNNING dopo l'ultimo arrivo (lancio oltre il traguardo)

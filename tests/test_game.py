@@ -1312,6 +1312,17 @@ class TestRaceExport(unittest.TestCase):
             conn.close()
             self.assertEqual((ev1500, dist1500), ("1500m", 1500))
             result.event_name = "4x100m"
+            for st, t in zip(result.standings, [40.2, 40.9, 41.4, 42.1]):
+                st.mark_value = t
+            race_4x1 = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            ev4x1, dist4x1 = conn.execute(
+                "SELECT event_name, distance_m FROM races WHERE race_id = ?", (race_4x1,)
+            ).fetchone()
+            conn.close()
+            self.assertEqual((ev4x1, dist4x1), ("4x100m", 400))
+
+            result.event_name = "Salto in Lungo"
             with self.assertRaises(ValueError):
                 export_race(summary, result, path)
 
@@ -1322,10 +1333,12 @@ class TestRaceExport(unittest.TestCase):
         self.assertIsNone(gl.viewer_available("100m"))
         self.assertIsNone(gl.viewer_available("400m"))
         self.assertIsNone(gl.viewer_available("1500m"))
-        self.assertIsNone(gl.viewer_available("4x100m"))   # staffette: mai nel visualizzatore Godot
+        self.assertIsNone(gl.viewer_available("4x100m"))
         self.assertIn("400m", gl.GODOT_EVENTS)
         self.assertIn("1500m", gl.GODOT_EVENTS)
-        self.assertNotIn("4x100m", gl.GODOT_EVENTS)
+        self.assertIn("4x100m", gl.GODOT_EVENTS)
+        self.assertIn("4x400m", gl.GODOT_EVENTS)
+        self.assertNotIn("Salto in Lungo", gl.GODOT_EVENTS)
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 

@@ -77,3 +77,28 @@ INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gen
 (6, 6, 'Sofia Carvalho',   'Clube Atlantico',   'F', 0, 0.168, 254.60, 'OK'),
 (6, 7, 'Yuki Tanaka',      'Sakura AC',         'F', 0, 0.140, 253.05, 'OK'),
 (6, 8, 'Amara Diallo',     'Highveld Harriers', 'F', 0, 0.192, 257.40, 'OK');
+
+-- Gara 7: Staffetta 4x100m Maschile.
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (7, '4x100m', 'Meeting Internazionale di Prova', 400, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(7, 1, 'Staffetta Atletica Brera',    'Atletica Brera',    'M', 0, 0.160, 40.95, 'OK'),
+(7, 2, 'Staffetta Polisportiva Nord', 'Polisportiva Nord', 'M', 0, 0.172, 40.42, 'OK'),
+(7, 3, 'M. Valenti / L. Conti / P. Neri / G. Ferri', 'Club Aurora', 'M', 1, 0.148, 39.88, 'OK'),
+(7, 4, 'Staffetta Vis Milanese',      'Vis Milanese',      'M', 0, 0.178, 41.15, 'OK'),
+(7, 5, 'Staffetta Nordic Track',      'Nordic Track',      'M', 0, 0.144, 39.55, 'OK'),
+(7, 6, 'Staffetta Clube Atlantico',   'Clube Atlantico',   'M', 0, 0.165, 40.18, 'OK'),
+(7, 7, 'Staffetta Sakura AC',         'Sakura AC',         'M', 0, 0.139, 39.72, 'OK'),
+(7, 8, 'Staffetta Highveld Harriers', 'Highveld Harriers', 'M', 0, 0.190, 41.60, 'OK');
+
+-- Gara 8: Staffetta 4x400m Femminile (con squalifica cambio fuori zona del club).
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (8, '4x400m', 'Meeting Internazionale di Prova', 1600, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(8, 2, 'Staffetta Polisportiva Nord', 'Polisportiva Nord', 'F', 0, 0.170, 212.40, 'OK'),
+(8, 3, 'V. Ferri / N. Moretti / S. Rossi / C. Galli', 'Club Aurora', 'F', 1, 0.150, 211.00, 'DQ'),
+(8, 4, 'Staffetta Atletica Brera',    'Atletica Brera',    'F', 0, 0.182, 213.80, 'OK'),
+(8, 5, 'Staffetta Nordic Track',      'Nordic Track',      'F', 0, 0.146, 209.15, 'OK'),
+(8, 6, 'Staffetta Clube Atlantico',   'Clube Atlantico',   'F', 0, 0.167, 210.90, 'OK');

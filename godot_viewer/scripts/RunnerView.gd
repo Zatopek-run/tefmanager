@@ -54,11 +54,18 @@ var _player: AnimationPlayer
 var _current_anim: StringName = &""
 var _rig: SetPoseRig = null           # posizione ai blocchi (pronti/set), attiva prima della partenza
 var _posture_mod: SprintPostureModifier = null
+var _baton: MeshInstance3D = null
+var _relay_leg: int = -1               # -1 = gara individuale; 0..3 = frazione della staffetta
+var _relay_leg_len: float = 100.0
+var _visual_key: String = ""
 var set_amount_override: float = -1.0  # solo per prove: forza pronti(0)..set(1); -1 = la decide RaceController
 
 
-func setup(runner: RunnerData) -> void:
+func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visual_name: String = "") -> void:
 	data = runner
+	_relay_leg = relay_leg
+	_relay_leg_len = leg_len
+	_visual_key = visual_name if not visual_name.is_empty() else runner.athlete_name
 	_apply_transform()
 
 	var is_female: bool = runner.gender == "F"
@@ -71,8 +78,10 @@ func setup(runner: RunnerData) -> void:
 	var body: MeshInstance3D = _find_body_mesh()
 	var height: float = _dress(body)
 	_attach_hair()
+	if _relay_leg >= 0:
+		_attach_baton()
 	var base_h: float = 1.63 if is_female else 1.72
-	var target_height: float = base_h + float(absi(hash(runner.athlete_name + "height")) % 15) / 100.0
+	var target_height: float = base_h + float(absi(hash(_visual_key + "height")) % 15) / 100.0
 	_model.scale = Vector3.ONE * (target_height / height)
 
 	_setup_animation()
@@ -81,19 +90,47 @@ func setup(runner: RunnerData) -> void:
 	_rig = SetPoseRig.new()
 	add_child(_rig)
 	_rig.setup(_model, _skeleton)
-	_play(&"Crouch_Idle")
+	_play(&"Idle" if (_relay_leg > 0 or not RaceController.uses_blocks(RaceController.event_kind)) else &"Crouch_Idle")
 
 
 func _process(_delta: float) -> void:
 	if data == null:
 		return
-	_apply_transform()
-	_update_animation()
+	var st: Vector2 = _leg_state()
+	_apply_transform(st.x)
+	_update_animation(st.x, st.y)
+
+
+func _leg_state() -> Vector2:
+	if _relay_leg < 0:
+		return Vector2(data.distance, data.speed)
+	var td: float = data.distance
+	var ts: float = data.speed
+	var leg_start: float = float(_relay_leg) * _relay_leg_len
+	var leg_end: float = leg_start + _relay_leg_len
+	var accel_zone: float = minf(8.0, _relay_leg_len * 0.08)
+	var has_baton: bool = (_relay_leg == 0 or td >= leg_start) and (_relay_leg == 3 or td < leg_end)
+	if data.dq and td >= RaceMotion.dnf_stop_distance(RaceController.event_kind):
+		has_baton = false
+	if _baton != null:
+		_baton.visible = has_baton
+	if _relay_leg > 0 and td < leg_start - accel_zone:
+		return Vector2(leg_start - accel_zone, 0.0)
+	if _relay_leg > 0 and td < leg_start:
+		var p: float = (td - (leg_start - accel_zone)) / accel_zone
+		var dist: float = lerpf(leg_start - accel_zone, leg_start, smoothstep(0.0, 1.0, p))
+		return Vector2(dist, ts * (0.35 + 0.65 * p))
+	if _relay_leg < 3 and td > leg_end:
+		var over: float = td - leg_end
+		var dec: float = exp(-over / 5.0)
+		return Vector2(leg_end + 8.0 * (1.0 - dec), 7.5 * dec)
+	return Vector2(td, ts)
 
 
 ## Posizione e orientamento in pista: rettilineo dei 100m, oppure anello da 400 m con partenza sfalsata.
-func _apply_transform() -> void:
-	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, data.distance)
+func _apply_transform(leg_dist: float = -1.0) -> void:
+	var d: float = data.distance if leg_dist < 0.0 else leg_dist
+	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, d)
 	position = pose["position"]
 	rotation.y = pose["yaw"]
 
@@ -111,11 +148,12 @@ func _setup_animation() -> void:
 	_player.add_animation_library(&"", _animation_library)
 
 
-func _update_animation() -> void:
-	var s: float = data.speed
+func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
+	var d: float = data.distance if leg_dist < 0.0 else leg_dist
+	var s: float = data.speed if leg_speed < 0.0 else leg_speed
 	var want: StringName
-	var standing: bool = not RaceController.uses_blocks(RaceController.event_kind)
-	var at_blocks: bool = (not standing) and s < 0.01 and data.distance < 0.01
+	var standing: bool = (not RaceController.uses_blocks(RaceController.event_kind)) or _relay_leg > 0
+	var at_blocks: bool = (not standing) and s < 0.01 and d < 0.01
 	var just_left_blocks: bool = false
 	if at_blocks != _rig.enabled:
 		_rig.set_enabled(at_blocks)
@@ -131,7 +169,7 @@ func _update_animation() -> void:
 			_posture_mod.active_weight = 0.0
 		_rig.update(set_amount_override if set_amount_override >= 0.0 else RaceController.set_amount())
 		return
-	if standing and s < 0.01 and data.distance < 0.01:
+	if standing and s < 0.05:
 		_model.rotation.x = 0.0
 		_model.position = Vector3.ZERO
 		if _posture_mod != null:
@@ -141,15 +179,16 @@ func _update_animation() -> void:
 		return
 
 	# Inclinazione in avanti nella fase di spinta fuori dai blocchi: si raddrizza gradualmente sui primi ~16 m.
-	var drive: float = 0.0 if (standing or data.finished) else (1.0 - smoothstep(0.0, DRIVE_RISE_METERS, data.distance))
+	var drive: float = 0.0 if (standing or data.finished) else (1.0 - smoothstep(0.0, DRIVE_RISE_METERS, d))
 	if data.dnf and s < SPRINT_FROM:
 		drive *= clampf(s / SPRINT_FROM, 0.0, 1.0)
 	_model.rotation.x = DRIVE_LEAN_MAX * drive
 	_model.position = Vector3(0.0, 0.08 * drive, 0.0)
 
 	# In uscita dai blocchi si parte direttamente in Sprint (mai Walk/Jog); Walk/Jog restano solo in rallentamento.
-	var slowing: bool = data.finished or (data.dnf and data.distance > 10.0)
-	if slowing and s < 0.3 and data.distance > 1.0:
+	var handed_off: bool = _relay_leg >= 0 and _relay_leg < 3 and data.distance > float(_relay_leg + 1) * _relay_leg_len
+	var slowing: bool = data.finished or handed_off or (data.dnf and d > 10.0)
+	if slowing and s < 0.3 and d > 1.0:
 		want = &"Idle"  # fermo dopo il traguardo o dopo il ritiro
 	elif not slowing or s >= SPRINT_FROM or (_current_anim == &"Sprint" and s >= SPRINT_BACK_TO_JOG):
 		want = &"Sprint"
@@ -163,7 +202,7 @@ func _update_animation() -> void:
 
 	var stride: float = 1.0
 	match _current_anim:
-		&"Sprint": stride = lerpf(STRIDE_DRIVE, STRIDE_SPRINT, smoothstep(0.0, 20.0, data.distance))
+		&"Sprint": stride = lerpf(STRIDE_DRIVE, STRIDE_SPRINT, smoothstep(0.0, 20.0, d))
 		&"Jog_Fwd": stride = STRIDE_JOG
 		&"Walk": stride = STRIDE_WALK
 	if _current_anim == &"Crouch_Idle" or _current_anim == &"Idle":
@@ -196,7 +235,7 @@ func _find_body_mesh() -> MeshInstance3D:
 ## Colora la pelle, aggiunge canotta/pantaloncini/scarpette. Ritorna l'altezza del modello a riposo (m).
 func _dress(body: MeshInstance3D) -> float:
 	var skin: StandardMaterial3D = body.get_active_material(0).duplicate() as StandardMaterial3D
-	var tone: int = absi(hash(data.athlete_name)) % 4
+	var tone: int = absi(hash(_visual_key)) % 4
 	var light_tex: String = SKIN_LIGHT_PATH_F if data.gender == "F" else SKIN_LIGHT_PATH
 	var dark_tex: String = SKIN_DARK_PATH_F if data.gender == "F" else SKIN_DARK_PATH
 	skin.albedo_texture = load(light_tex if tone < 2 else dark_tex) as Texture2D
@@ -290,7 +329,7 @@ void fragment() {
 
 func _attach_hair() -> void:
 	var pool: Array[String] = HAIR_PATHS_F if data.gender == "F" else HAIR_PATHS
-	var path: String = pool[absi(hash(data.athlete_name + "hair")) % pool.size()]
+	var path: String = pool[absi(hash(_visual_key + "hair")) % pool.size()]
 	var scene: Node = (load(path) as PackedScene).instantiate()
 	var hair: MeshInstance3D = scene.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
 	hair.get_parent().remove_child(hair)
@@ -299,8 +338,28 @@ func _attach_hair() -> void:
 	var mat: StandardMaterial3D = hair.get_active_material(0).duplicate() as StandardMaterial3D
 	var tones: Array[Color] = [
 		Color(0.05, 0.04, 0.035), Color(0.2, 0.11, 0.06), Color(0.42, 0.27, 0.12), Color(0.8, 0.62, 0.3)]
-	mat.albedo_color = tones[absi(hash(data.athlete_name + "shade")) % tones.size()]
+	mat.albedo_color = tones[absi(hash(_visual_key + "shade")) % tones.size()]
 	hair.set_surface_override_material(0, mat)
+
+
+func _attach_baton() -> void:
+	var attach: BoneAttachment3D = BoneAttachment3D.new()
+	attach.bone_name = &"hand_r"
+	_skeleton.add_child(attach)
+	var mesh: CylinderMesh = CylinderMesh.new()
+	mesh.top_radius = 0.018
+	mesh.bottom_radius = 0.018
+	mesh.height = 0.30
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.98, 0.80, 0.15)
+	mat.metallic = 0.7
+	mat.roughness = 0.25
+	mesh.material = mat
+	_baton = MeshInstance3D.new()
+	_baton.mesh = mesh
+	_baton.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	_baton.visible = (_relay_leg == 0)
+	attach.add_child(_baton)
 
 
 ## Colori deterministici dal nome: la stessa gara si rivede sempre uguale.

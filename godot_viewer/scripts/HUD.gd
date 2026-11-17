@@ -363,15 +363,16 @@ func _update_ranking() -> void:
 		var row: Dictionary = _rows[i]
 		var value: String
 		if r.dnf and r.distance > 1.0 and r.speed < 0.3:
-			value = "RIT."
+			value = "SQ." if r.dq else "RIT."
 		elif r.finished:
 			value = RaceController.format_time(r.final_time)
 		elif i == 0 or RaceController.state == RaceController.State.COUNTDOWN:
 			value = "C%d" % r.lane
 		else:
 			value = "-%.1fm" % (leader_d - r.distance)
+		var label_name: String = r.team_name.to_upper() if RaceController.is_relay(RaceController.event_kind) else r.surname()
 		_set_text(row["place"], str(i + 1))
-		_set_text(row["name"], "%s  (%d)" % [r.surname(), r.lane])
+		_set_text(row["name"], "%s  (%d)" % [label_name, r.lane])
 		_set_text(row["value"], value)
 		(row["stripe"] as ColorRect).color = _team_color(r.team_name)
 		var is_first: bool = i == 0 and RaceController.state != RaceController.State.COUNTDOWN
@@ -546,8 +547,9 @@ func _update_tv_graphics() -> void:
 			if not r.finished or shown >= _result_rows.size():
 				continue
 			var row: Dictionary = _result_rows[shown]
+			var rname: String = r.team_name.to_upper() if rc.is_relay(rc.event_kind) else r.athlete_name.to_upper()
 			_set_text(row["place"], str(r.place))
-			_set_text(row["name"], r.athlete_name.to_upper())
+			_set_text(row["name"], rname)
 			_set_text(row["value"], rc.format_time(r.final_time))
 			(row["stripe"] as ColorRect).color = _team_color(r.team_name)
 			var is_first: bool = r.place == 1

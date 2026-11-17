@@ -34,7 +34,7 @@ func _ready() -> void:
 	_race_id = _race_id_from_args()
 	_autoquit = OS.get_cmdline_user_args().has("--autoquit")
 	if RaceController.load_race(_race_id):
-		if RaceController.event_kind == "1500m":
+		if RaceController.event_kind == "1500m" or RaceController.event_kind == "4x400m":
 			RaceController.time_scale = 4.0
 		get_tree().create_timer(AUTO_START_DELAY).timeout.connect(RaceController.start)
 	elif _autoquit:
@@ -78,11 +78,22 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 	_rebuild_world(RaceController.event_kind)
 	for child: Node in _runners_root.get_children():
 		child.queue_free()
+	var relay: bool = RaceController.is_relay(RaceController.event_kind)
+	var leg_len: float = RaceMotion.race_distance(RaceController.event_kind) * 0.25
 	for r: RunnerData in runners:
-		var view: RunnerView = RunnerView.new()
-		view.name = "Runner_L%d" % r.lane
-		_runners_root.add_child(view)
-		view.setup(r)
+		if relay:
+			var parts: PackedStringArray = r.athlete_name.split(" / ", false)
+			for leg in range(4):
+				var vname: String = parts[leg].strip_edges() if parts.size() == 4 else "%s #%d" % [r.team_name, leg + 1]
+				var view: RunnerView = RunnerView.new()
+				view.name = "Runner_L%d_Leg%d" % [r.lane, leg + 1]
+				_runners_root.add_child(view)
+				view.setup(r, leg, leg_len, vname)
+		else:
+			var view: RunnerView = RunnerView.new()
+			view.name = "Runner_L%d" % r.lane
+			_runners_root.add_child(view)
+			view.setup(r)
 
 
 # --- luce e ambiente ----------------------------------------------------------------------------

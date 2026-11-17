@@ -21,7 +21,7 @@ from views.race_viewer import reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
-DISTANCES_M = {"100m": 100, "400m": 400, "1500m": 1500}  # distanze supportate dal visualizzatore
+DISTANCES_M = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}  # distanze supportate dal visualizzatore
 
 
 def race_seed(summary: CompetitionSummary) -> str:
@@ -36,20 +36,24 @@ def draw_lanes(seed: object, athlete_names: List[str]) -> dict:
     return dict(zip(sorted(athlete_names), lanes))
 
 
-def _withdrew(result: EventResult, standing: EventStanding) -> bool:
-    return standing.is_player and result.withdrew_injured
+def _stop_status(result: EventResult, standing: EventStanding) -> Optional[str]:
+    if standing.is_player and result.withdrew_injured:
+        return "DNF"
+    if standing.is_player and result.disqualified:
+        return "DQ"
+    return None
 
 
 def _runnable(result: EventResult, standing: EventStanding, seed: str) -> bool:
     """Chi finisce la gara deve avere un tempo ufficiale coerente (maggiore del tempo di reazione)."""
-    return _withdrew(result, standing) or standing.mark_value > reaction_time(seed, standing.athlete_name)
+    return _stop_status(result, standing) is not None or standing.mark_value > reaction_time(seed, standing.athlete_name)
 
 
 def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path) -> int:
     """Scrive la gara in `db_path` (creandolo se serve) e ritorna il `race_id`.
 
-    Il ritirato per infortunio entra con status 'DNF' (corre un po' e si ferma): come tempo di riferimento
-    per la sua velocità usa la mediana dei tempi degli altri. Se ci sono più corridori delle corsie, o tempi
+    Il ritirato per infortunio ('DNF') e la staffetta squalificata ('DQ') entrano con un tempo di riferimento
+    per la velocità di corsa fino al punto d'arresto. Se ci sono più corridori delle corsie, o tempi
     incoerenti, solleva ValueError (il chiamante ripiega sulla vista interna): niente scarti silenziosi.
     """
     if result.event_name not in DISTANCES_M:
@@ -60,7 +64,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
         raise ValueError(f"{len(standings)} corridori: più delle {MAX_LANES} corsie.")
     if not all(_runnable(result, s, seed) for s in standings):
         raise ValueError("Tempo ufficiale incoerente con il tempo di reazione.")
-    finishers = [s.mark_value for s in standings if not _withdrew(result, s)]
+    finishers = [s.mark_value for s in standings if _stop_status(result, s) is None]
     if not finishers:
         raise ValueError(f"Nessun classificato per {result.event_name}.")
     reference_time = statistics.median(finishers)
@@ -87,8 +91,8 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     result.gender if result.gender in ("M", "F") else infer_gender(s.athlete_name),
                     int(s.is_player),
                     round(reaction_time(seed, s.athlete_name), 3),
-                    reference_time if _withdrew(result, s) else s.mark_value,
-                    "DNF" if _withdrew(result, s) else "OK",
+                    reference_time if _stop_status(result, s) is not None else s.mark_value,
+                    _stop_status(result, s) or "OK",
                 )
                 for s in standings
             ],

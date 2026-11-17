@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or _demo_race_count() < 6):
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or _demo_race_count() < 8):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()

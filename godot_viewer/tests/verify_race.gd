@@ -4,7 +4,7 @@ extends SceneTree
 ## Gara 1: tutti arrivano; gara 2: un ritirato (DNF) che si ferma e non entra nell'ordine d'arrivo.
 ## Esce con codice 0 se tutto torna, 1 altrimenti.
 
-const LAST_RACE: int = 6          # 1-2 = 100m, 3-4 = 400m, 5 = 1500m M, 6 = 1500m F
+const LAST_RACE: int = 8          # 1-2 = 100m, 3-4 = 400m, 5-6 = 1500m, 7 = 4x100m, 8 = 4x400m DQ
 
 var _failures: int = 0
 var _race_id: int = 1

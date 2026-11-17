@@ -21,6 +21,6 @@ CREATE TABLE IF NOT EXISTS race_results (
     is_player INTEGER NOT NULL DEFAULT 0,
     reaction_time REAL NOT NULL CHECK (reaction_time > 0),
     final_time REAL NOT NULL CHECK (final_time > reaction_time),
-    status TEXT NOT NULL DEFAULT 'OK' CHECK (status IN ('OK', 'DNF')),
+    status TEXT NOT NULL DEFAULT 'OK' CHECK (status IN ('OK', 'DNF', 'DQ')),
     PRIMARY KEY (race_id, lane)
 );

@@ -8,7 +8,7 @@ extends RefCounted
 ## qualunque sia la curva. `kind` e' il nome dell'evento ("100m", "400m"): se cambi una curva in Python,
 ## cambiala anche qui.
 
-const DISTANCES: Dictionary = {"100m": 100.0, "400m": 400.0, "1500m": 1500.0}
+const DISTANCES: Dictionary = {"100m": 100.0, "400m": 400.0, "1500m": 1500.0, "4x100m": 400.0, "4x400m": 1600.0}
 const STEPS: int = 600
 const RUNOUT_TAU: float = 1.1   # costante di tempo della decelerazione dopo il traguardo (s)
 const DNF_FRACTION: float = 0.42  # un ritirato smette di correre a questa frazione di gara (DNF_PROGRESS in Python)
@@ -35,6 +35,9 @@ static func _velocity(kind: String, u: float) -> float:
 		return (1.0 - exp(-u / 0.05)) * (1.0 - 0.16 * u) + 0.02
 	if kind == "1500m":  # gruppo compatto, poi volata finale
 		return (1.0 - exp(-u / 0.02)) * (0.92 + 0.05 * u + 1.3 * pow(maxf(0.0, u - 0.88), 1.4)) + 0.02
+	if kind == "4x100m" or kind == "4x400m":  # 4 frazioni: ogni cambio accelera, leggero calo a fine frazione
+		var s: float = fposmod(u * 4.0, 1.0)
+		return 0.72 + 0.28 * (1.0 - exp(-s / 0.2)) - 0.06 * s
 	# 100m: spinta esplosiva dai blocchi, accelerazione fino a ~60 m, poi leggero calo
 	return (0.22 + 0.78 * (1.0 - exp(-u / 0.10))) * (1.0 - 0.07 * maxf(0.0, (u - 0.6) / 0.4))
 

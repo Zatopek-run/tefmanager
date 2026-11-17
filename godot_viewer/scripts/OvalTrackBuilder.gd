@@ -69,6 +69,14 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 			var mark: MeshInstance3D = _box(parent, Vector3(0.1, 0.014, w), pose["position"] + Vector3(0.0, 0.008, 0.0), line)
 			mark.rotation.y = pose["yaw"]
 			_blocks_and_placard(parent, pose["position"], pose["yaw"], lane)
+		if kind == "4x100m":
+			var zone_mat: StandardMaterial3D = _material(Color(0.95, 0.78, 0.16), 0.7)
+			for ex_dist: float in [100.0, 200.0, 300.0]:
+				for lane in range(1, lanes + 1):
+					for edge: float in [-10.0, 10.0]:
+						var zp: Dictionary = TrackGeometry.pose(lane, ex_dist + edge)
+						var tick: MeshInstance3D = _box(parent, Vector3(0.08, 0.014, w * 0.9), zp["position"] + Vector3(0.0, 0.009, 0.0), zone_mat)
+						tick.rotation.y = zp["yaw"]
 	# Traguardo: linea larga sul rettilineo d'arrivo.
 	_box(parent, Vector3(0.25, 0.014, width), Vector3(TrackGeometry.FINISH_X, 0.008, (lanes - 1) * w * 0.5), line)
 
