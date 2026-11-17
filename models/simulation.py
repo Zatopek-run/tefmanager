@@ -472,12 +472,12 @@ def _score_to_mark(
 
     if event_def.name == "100m":
         if gender == "F":
-            seconds = 13.75 - norm * 2.85
+            seconds = 14.15 - norm * 3.25
             if wind_ms is not None:
                 seconds -= wind_ms * 0.055
             seconds = max(10.49, seconds)
         else:
-            seconds = 12.60 - norm * 2.75
+            seconds = 12.95 - norm * 3.16
             if wind_ms is not None:
                 # Tailwind helps (~0.05s per 1.0 m/s), headwind slows
                 seconds -= wind_ms * 0.055

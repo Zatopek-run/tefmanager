@@ -1605,6 +1605,30 @@ class TestGenderDivisions(unittest.TestCase):
             self.assertEqual(set(migrated.relays_f), {"4x100m", "4x400m"})
             self.assertTrue(all(r.is_complete for r in migrated.relays_f.values()))
 
+    def test_100m_senior_curve_matches_fidal_ranges(self) -> None:
+        from models.entities import EVENTS
+        from models.simulation import _score_to_mark
+
+        ev = EVENTS["100m"]
+        # Provinciale senior rival avg (~42): M ~11.62s, F ~12.79s (wind=0.0)
+        m_prov, _ = _score_to_mark(ev, 42.0, wind_ms=0.0, gender="M")
+        f_prov, _ = _score_to_mark(ev, 42.0, wind_ms=0.0, gender="F")
+        self.assertGreater(m_prov, 11.45)
+        self.assertLess(m_prov, 11.80)
+        self.assertGreater(f_prov, 12.60)
+        self.assertLess(f_prov, 13.00)
+
+        # Tail provincial M (~33): ~11.91s; Nazionale (~70): ~10.74s; Internazionale (~84): ~10.30s
+        m_tail, _ = _score_to_mark(ev, 33.0, wind_ms=0.0, gender="M")
+        m_naz, _ = _score_to_mark(ev, 70.0, wind_ms=0.0, gender="M")
+        m_int, _ = _score_to_mark(ev, 84.0, wind_ms=0.0, gender="M")
+        self.assertTrue(11.80 <= m_tail <= 12.05)
+        self.assertTrue(10.60 <= m_naz <= 10.85)
+        self.assertTrue(10.15 <= m_int <= 10.45)
+        self.assertGreater(m_tail, m_prov)
+        self.assertGreater(m_prov, m_naz)
+        self.assertGreater(m_naz, m_int)
+
 
 if __name__ == "__main__":
     unittest.main()
