@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or _demo_race_count() < 8):
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_field_attempts_table() or _demo_race_count() < 10):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()
@@ -34,6 +34,11 @@ func _has_gender_column() -> bool:
 		if str(c.get("name", "")) == "gender":
 			return true
 	return false
+
+
+func _has_field_attempts_table() -> bool:
+	var rows: Array[Dictionary] = _select("SELECT name FROM sqlite_master WHERE type='table' AND name='field_attempts';", [])
+	return not rows.is_empty()
 
 
 func _demo_race_count() -> int:
@@ -90,6 +95,26 @@ func get_race_runners(race_id: int) -> Array[RunnerData]:
 		else:
 			push_warning("DatabaseManager: riga scartata (corsia %s): tempi incoerenti." % str(row.get("lane")))
 	return result
+
+
+## Tentativi di concorso per corsia (1..4). Dizionario {lane: [{"round": 1, "mark": float, "foul": bool}, ...]}.
+func get_field_attempts(race_id: int) -> Dictionary:
+	var out: Dictionary = {}
+	if not _has_field_attempts_table():
+		return out
+	var rows: Array[Dictionary] = _select(
+		"SELECT lane, round_num, mark_m, is_foul FROM field_attempts WHERE race_id = ? ORDER BY lane, round_num;",
+		[race_id])
+	for row: Dictionary in rows:
+		var lane: int = int(row.get("lane", 1))
+		if not out.has(lane):
+			out[lane] = []
+		(out[lane] as Array).append({
+			"round": int(row.get("round_num", 1)),
+			"mark": float(row.get("mark_m", 0.0)),
+			"foul": int(row.get("is_foul", 0)) != 0,
+		})
+	return out
 
 
 func _select(sql: String, bindings: Array) -> Array[Dictionary]:

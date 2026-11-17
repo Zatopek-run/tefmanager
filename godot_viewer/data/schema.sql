@@ -24,3 +24,12 @@ CREATE TABLE IF NOT EXISTS race_results (
     status TEXT NOT NULL DEFAULT 'OK' CHECK (status IN ('OK', 'DNF', 'DQ')),
     PRIMARY KEY (race_id, lane)
 );
+
+CREATE TABLE IF NOT EXISTS field_attempts (
+    race_id INTEGER NOT NULL REFERENCES races(race_id),
+    lane INTEGER NOT NULL,
+    round_num INTEGER NOT NULL,
+    mark_m REAL NOT NULL,
+    is_foul INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (race_id, lane, round_num)
+);

@@ -22,6 +22,7 @@ var _autoquit: bool = false      # --autoquit: chiude l'app a fine gara (usato d
 var _quit_scheduled: bool = false
 var _world_kind: String = ""       # "100m" (rettilineo) oppure "oval": quale scena e' costruita
 var _crowd_material: StandardMaterial3D = null
+var _field_marker: MeshInstance3D = null
 
 
 func _ready() -> void:
@@ -43,6 +44,14 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _field_marker != null:
+		var m_x: float = RaceController.field_landed_mark
+		_field_marker.visible = RaceController.is_field(RaceController.event_kind) and m_x > -9.9
+		if _field_marker.visible:
+			_field_marker.position = Vector3(m_x, 0.25, -14.0)
+			var mat: StandardMaterial3D = _field_marker.material_override as StandardMaterial3D
+			if mat != null:
+				mat.albedo_color = Color(0.92, 0.22, 0.22) if RaceController.field_landed_foul else Color(0.18, 0.88, 0.56)
 	if _autoquit and not _quit_scheduled and RaceController.state == RaceController.State.FINISHED:
 		_quit_scheduled = true
 		get_tree().create_timer(AUTOQUIT_DELAY).timeout.connect(get_tree().quit)
@@ -78,6 +87,19 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 	_rebuild_world(RaceController.event_kind)
 	for child: Node in _runners_root.get_children():
 		child.queue_free()
+	if _field_marker != null:
+		_field_marker.queue_free()
+		_field_marker = null
+	if RaceController.is_field(RaceController.event_kind):
+		var marker_mesh: CylinderMesh = CylinderMesh.new()
+		marker_mesh.top_radius = 0.06
+		marker_mesh.bottom_radius = 0.06
+		marker_mesh.height = 0.50
+		_field_marker = MeshInstance3D.new()
+		_field_marker.mesh = marker_mesh
+		_field_marker.material_override = _flat(Color(0.18, 0.88, 0.56), 0.5)
+		_field_marker.visible = false
+		_runners_root.add_child(_field_marker)
 	var relay: bool = RaceController.is_relay(RaceController.event_kind)
 	var leg_len: float = RaceMotion.race_distance(RaceController.event_kind) * 0.25
 	for r: RunnerData in runners:

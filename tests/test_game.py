@@ -1323,6 +1323,21 @@ class TestRaceExport(unittest.TestCase):
             self.assertEqual((ev4x1, dist4x1), ("4x100m", 400))
 
             result.event_name = "Salto in Lungo"
+            for st, m in zip(result.standings, [7.72, 7.56, 7.45, 7.28]):
+                st.mark_value = m
+            race_lj = export_race(summary, result, path)
+            conn = sqlite3.connect(str(path))
+            ev_lj, dist_lj = conn.execute(
+                "SELECT event_name, distance_m FROM races WHERE race_id = ?", (race_lj,)
+            ).fetchone()
+            attempts_cnt = conn.execute(
+                "SELECT COUNT(*) FROM field_attempts WHERE race_id = ?", (race_lj,)
+            ).fetchone()[0]
+            conn.close()
+            self.assertEqual((ev_lj, dist_lj), ("Salto in Lungo", 0))
+            self.assertEqual(attempts_cnt, 16)
+
+            result.event_name = "Getto del Peso"
             with self.assertRaises(ValueError):
                 export_race(summary, result, path)
 
@@ -1334,11 +1349,13 @@ class TestRaceExport(unittest.TestCase):
         self.assertIsNone(gl.viewer_available("400m"))
         self.assertIsNone(gl.viewer_available("1500m"))
         self.assertIsNone(gl.viewer_available("4x100m"))
+        self.assertIsNone(gl.viewer_available("Salto in Lungo"))
         self.assertIn("400m", gl.GODOT_EVENTS)
         self.assertIn("1500m", gl.GODOT_EVENTS)
         self.assertIn("4x100m", gl.GODOT_EVENTS)
         self.assertIn("4x400m", gl.GODOT_EVENTS)
-        self.assertNotIn("Salto in Lungo", gl.GODOT_EVENTS)
+        self.assertIn("Salto in Lungo", gl.GODOT_EVENTS)
+        self.assertNotIn("Getto del Peso", gl.GODOT_EVENTS)
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 

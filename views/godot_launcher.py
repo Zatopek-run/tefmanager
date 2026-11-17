@@ -25,7 +25,7 @@ from models.race_export import export_race
 
 GODOT_PROJECT = Path(__file__).resolve().parent.parent / "godot_viewer"
 SQLITE_PLUGIN = GODOT_PROJECT / "addons" / "godot-sqlite" / "gdsqlite.gdextension"
-GODOT_EVENTS = ("100m", "400m", "1500m", "4x100m", "4x400m")  # tutte le gare in pista in Godot 3D
+GODOT_EVENTS = ("100m", "400m", "1500m", "4x100m", "4x400m", "Salto in Lungo")  # gare supportate in Godot 3D
 
 
 def find_godot() -> Optional[Path]:

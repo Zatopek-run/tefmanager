@@ -96,6 +96,20 @@ func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visu
 func _process(_delta: float) -> void:
 	if data == null:
 		return
+	if RaceController.is_field(RaceController.event_kind):
+		visible = (data == RaceController.active_jumper)
+		if visible:
+			_rig.set_enabled(false)
+			position = RaceController.jumper_pos
+			rotation.y = 0.0
+			_model.rotation.x = 0.0
+			_model.position = Vector3.ZERO
+			_play(RaceController.jumper_anim, 0.12)
+			if _posture_mod != null:
+				_posture_mod.active_weight = 1.0 if _current_anim == &"Sprint" else 0.0
+			_player.speed_scale = RaceController.jumper_speed_scale * RaceController.time_scale
+		return
+	visible = true
 	var st: Vector2 = _leg_state()
 	_apply_transform(st.x)
 	_update_animation(st.x, st.y)

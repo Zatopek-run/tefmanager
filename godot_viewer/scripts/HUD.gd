@@ -229,18 +229,22 @@ func _build_banner_pill() -> void:
 func _update_banner() -> void:
 	var text: String = ""
 	var accent: Color = AMBER
-	match RaceController.state:
-		RaceController.State.COUNTDOWN:
-			if not RaceController.uses_blocks(RaceController.event_kind) or RaceController.set_amount() <= 0.0:
-				text = "AI VOSTRI POSTI"
-				accent = CYAN
-			else:
-				text = "PRONTI"
-				accent = AMBER
-		RaceController.State.RUNNING, RaceController.State.FINISHED:
-			if RaceController.race_time < 0.9:
-				text = "VIA!"
-				accent = MAGENTA
+	if RaceController.is_field(RaceController.event_kind):
+		text = "SALTO NULLO!" if RaceController.field_landed_foul else ""
+		accent = MAGENTA if RaceController.field_landed_foul else AMBER
+	else:
+		match RaceController.state:
+			RaceController.State.COUNTDOWN:
+				if not RaceController.uses_blocks(RaceController.event_kind) or RaceController.set_amount() <= 0.0:
+					text = "AI VOSTRI POSTI"
+					accent = CYAN
+				else:
+					text = "PRONTI"
+					accent = AMBER
+			RaceController.State.RUNNING, RaceController.State.FINISHED:
+				if RaceController.race_time < 0.9:
+					text = "VIA!"
+					accent = MAGENTA
 	if text != _last_banner_text:
 		_last_banner_text = text
 		_banner_text.text = text
@@ -358,11 +362,19 @@ func _make_row() -> Dictionary:
 func _update_ranking() -> void:
 	var order: Array[RunnerData] = RaceController.live_order
 	var leader_d: float = RaceController.leader_distance()
+	var field: bool = RaceController.is_field(RaceController.event_kind)
 	for i in range(mini(order.size(), _rows.size())):
 		var r: RunnerData = order[i]
 		var row: Dictionary = _rows[i]
 		var value: String
-		if r.dnf and r.distance > 1.0 and r.speed < 0.3:
+		if field:
+			if r.dnf:
+				value = "RIT."
+			elif r.best_mark > 0.0:
+				value = "%.2f m" % r.best_mark
+			else:
+				value = "NM"
+		elif r.dnf and r.distance > 1.0 and r.speed < 0.3:
 			value = "SQ." if r.dq else "RIT."
 		elif r.finished:
 			value = RaceController.format_time(r.final_time)
@@ -508,38 +520,49 @@ func _update_tv_graphics() -> void:
 	var rc: Node = RaceController
 	var running: bool = rc.state == rc.State.RUNNING or rc.state == rc.State.FINISHED
 	_clock_panel.visible = running
-	_set_text(_clock_caption, "%s%s" % [_bug_category_prefix, str(rc.info.get("event_name", "")).to_upper()])
-	if running:
-		var winner_in: bool = not rc.live_order.is_empty() and rc.live_order[0].finished
-		if winner_in != _last_clock_official:
-			_last_clock_official = winner_in
-			_set_clock_plate_style(winner_in)
-		_set_text(_clock_status, "ARRIVO" if winner_in else "TEMPO")
-		# In gara i decimi (troncati: non superano mai il tempo del vincitore), all'arrivo i centesimi.
-		var truncated: float = floorf(rc.display_time * 10.0) / 10.0
-		var text: String
-		if winner_in:
-			text = rc.format_time(rc.display_time)
-		elif truncated >= 60.0:
-			var mins: int = int(truncated / 60.0)
-			var rem: float = truncated - float(mins) * 60.0
-			text = "%d:%04.1f" % [mins, rem]
-		else:
-			text = "%.1f" % truncated
-		if text != _last_clock_text:
-			_last_clock_text = text
-			_clock_label.text = text
+	if rc.is_field(rc.event_kind):
+		var done_field: bool = rc.state == rc.State.FINISHED
+		if done_field != _last_clock_official:
+			_last_clock_official = done_field
+			_set_clock_plate_style(done_field)
+		_set_text(_clock_caption, "%s%s" % [_bug_category_prefix, str(rc.info.get("event_name", "")).to_upper()])
+		_set_text(_clock_status, rc.field_caption)
+		if rc.field_value_text != _last_clock_text:
+			_last_clock_text = rc.field_value_text
+			_clock_label.text = rc.field_value_text
+	else:
+		_set_text(_clock_caption, "%s%s" % [_bug_category_prefix, str(rc.info.get("event_name", "")).to_upper()])
+		if running:
+			var winner_in: bool = not rc.live_order.is_empty() and rc.live_order[0].finished
+			if winner_in != _last_clock_official:
+				_last_clock_official = winner_in
+				_set_clock_plate_style(winner_in)
+			_set_text(_clock_status, "ARRIVO" if winner_in else "TEMPO")
+			# In gara i decimi (troncati: non superano mai il tempo del vincitore), all'arrivo i centesimi.
+			var truncated: float = floorf(rc.display_time * 10.0) / 10.0
+			var text: String
+			if winner_in:
+				text = rc.format_time(rc.display_time)
+			elif truncated >= 60.0:
+				var mins: int = int(truncated / 60.0)
+				var rem: float = truncated - float(mins) * 60.0
+				text = "%d:%04.1f" % [mins, rem]
+			else:
+				text = "%.1f" % truncated
+			if text != _last_clock_text:
+				_last_clock_text = text
+				_clock_label.text = text
 
 	var leader_done: bool = running and not rc.live_order.is_empty() and rc.live_order[0].finished
 	var wind: Variant = rc.info.get("wind_ms", null)
-	_wind_panel.visible = leader_done and rc.event_kind == "100m" and wind != null
+	_wind_panel.visible = (running if rc.is_field(rc.event_kind) else leader_done) and (rc.event_kind == "100m" or rc.event_kind == "Salto in Lungo") and wind != null
 	if _wind_panel.visible:
 		var w: float = float(wind)
 		var wind_note: String = "  (N.O.)" if w > 2.0 else ""
 		_set_text(_wind_label, "VENTO  %+.1f m/s%s" % [w, wind_note])
 		_wind_label.add_theme_color_override("font_color", AMBER if w > 2.0 else Color.WHITE)
 
-	_result_panel.visible = leader_done and rc.race_time > rc.live_order[0].final_time + 1.0
+	_result_panel.visible = (rc.state == rc.State.FINISHED) if rc.is_field(rc.event_kind) else (leader_done and rc.race_time > rc.live_order[0].final_time + 1.0)
 	if _result_panel.visible:
 		_set_text(_result_title, "RISULTATO NON UFFICIALE" if rc.state == rc.State.RUNNING else "ORDINE D'ARRIVO")
 		var shown: int = 0
@@ -550,7 +573,7 @@ func _update_tv_graphics() -> void:
 			var rname: String = r.team_name.to_upper() if rc.is_relay(rc.event_kind) else r.athlete_name.to_upper()
 			_set_text(row["place"], str(r.place))
 			_set_text(row["name"], rname)
-			_set_text(row["value"], rc.format_time(r.final_time))
+			_set_text(row["value"], ("%.2f m" % r.final_time) if rc.is_field(rc.event_kind) else rc.format_time(r.final_time))
 			(row["stripe"] as ColorRect).color = _team_color(r.team_name)
 			var is_first: bool = r.place == 1
 			(row["place_bg"] as PanelContainer).add_theme_stylebox_override(

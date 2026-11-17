@@ -1205,18 +1205,21 @@ class RaceViewerDialog(QDialog):
         self.podium.setText("")
         self.clock.setText("")
         self._race_done = False
-        if is_field_event(res.event_name):
-            self.field.set_environment(self.summary.weather, self.summary.track_surface, self.summary.tier)
-            self.field.set_race(res.event_name, res, self._seed())
-            self.stack.setCurrentWidget(self.field)
-        elif self._start_godot(res):
+        if self._start_godot(res):
             pass  # la gara si vede nel visualizzatore Godot; si prosegue quando si chiude
+        elif is_field_event(res.event_name):
+            self._show_internal_field(res)
         else:
             self._show_internal_race(res)
         self.btn_next.setEnabled(False)
         self.btn_skip.setEnabled(True)
         self._clock.start()
         self._timer.start()
+
+    def _show_internal_field(self, res: EventResult) -> None:
+        self.field.set_environment(self.summary.weather, self.summary.track_surface, self.summary.tier)
+        self.field.set_race(res.event_name, res, self._seed())
+        self.stack.setCurrentWidget(self.field)
 
     def _show_internal_race(self, res: EventResult) -> None:
         self.track.set_environment(
@@ -1293,7 +1296,11 @@ class RaceViewerDialog(QDialog):
         self.btn_speed.setEnabled(True)
         self.btn_view.setEnabled(True)
         if crashed and 0 <= self._index < len(self.summary.event_results):
-            self._show_internal_race(self.summary.event_results[self._index])  # Godot non è partito: vista interna
+            res = self.summary.event_results[self._index]
+            if is_field_event(res.event_name):
+                self._show_internal_field(res)
+            else:
+                self._show_internal_race(res)
             self._clock.start()
             return
         self._on_race_finished()

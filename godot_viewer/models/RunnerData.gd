@@ -19,6 +19,9 @@ var dq: bool = false            # squalificato (staffetta: cambio fuori zona)
 var distance: float = 0.0       # metri dalla linea di partenza (oltre 100 = lancio dopo il traguardo)
 var speed: float = 0.0          # m/s
 var finished: bool = false
+var attempts: Array = []        # concorsi: [{"round": 1..4, "mark": float, "foul": bool}, ...]
+var best_mark: float = 0.0
+var revealed_rounds: int = 0
 
 
 static func from_row(row: Dictionary) -> RunnerData:

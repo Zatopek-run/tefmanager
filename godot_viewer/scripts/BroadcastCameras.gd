@@ -45,6 +45,7 @@ const FRAME_FOV_MAX: float = 50.0
 @onready var _finish_cam: Camera3D = $FinishCam
 
 var _oval: bool = false
+var _field: bool = false
 var _race_distance: float = 100.0
 var _current_cam: Camera3D = null
 var _frame_scale: float = 1.0             # allontanamento attuale del carrello alto
@@ -60,6 +61,8 @@ var _o_close: Camera3D
 var _o_start: Camera3D
 var _o_far: Camera3D
 var _o_curve: Camera3D
+# concorsi (Salto in Lungo)
+var _field_cam: Camera3D
 
 
 func _ready() -> void:
@@ -87,6 +90,7 @@ func _ready() -> void:
 	_o_start = _make_static_cam(Vector3(-14.0, 12.0, -26.0), Vector3(15.0, 0.0, -8.0), 42.0, 120.0)   # inquadra tutte le 8 corsie sfalsate
 	_o_far = _make_static_cam(Vector3(-s * 0.5, 5.0, 34.0), Vector3(-s * 0.5, 0.8, -78.0), 9.0, 600.0)   # teleobiettivo dall'altro lato
 	_o_curve = _make_static_cam(Vector3(-s - 72.0, 18.0, -36.8), Vector3(-s - 30.0, 0.8, -36.8), 30.0, 150.0)
+	_field_cam = _make_static_cam(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), 34.0, 80.0)
 
 	RaceController.race_loaded.connect(func(_r: Array[RunnerData], _i: Dictionary) -> void: reset())
 	reset()
@@ -112,10 +116,13 @@ func _make_lens(far_distance: float) -> CameraAttributesPractical:
 
 ## Riconfigura per la gara caricata (100m oppure ovale) e riporta le camere alla preparazione.
 func reset() -> void:
-	_oval = RaceController.event_kind != "100m"
+	_field = RaceController.is_field(RaceController.event_kind)
+	_oval = (not _field) and RaceController.event_kind != "100m"
 	_race_distance = RaceMotion.race_distance(RaceController.event_kind)
 	var fx: float = TrackGeometry.FINISH_X
-	if _oval:
+	if _field:
+		_field_cam.look_at_from_position(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), Vector3.UP)
+	elif _oval:
 		var s: float = TrackGeometry.STRAIGHT
 		# Traguardo ovale: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo).
 		_finish_cam.fov = 38.0
@@ -154,10 +161,16 @@ func _process(_delta: float) -> void:
 
 
 func _direct() -> void:
-	if _oval:
+	if _field:
+		_direct_field()
+	elif _oval:
 		_direct_oval()
 	else:
 		_direct_100m()
+
+
+func _direct_field() -> void:
+	_apply(_field_cam)
 
 
 ## Regia dei 100m, scelta in base allo stato della gara.
@@ -224,6 +237,10 @@ func _apply(cam: Camera3D) -> void:
 	# Mira esatta sul primo in classifica per le camere che seguono la gara (nessun ritardo di inseguimento).
 	if cam == _side_cam:
 		_update_side_cam()
+	elif cam == _field_cam:
+		var jp: Vector3 = RaceController.jumper_pos
+		_field_cam.position = Vector3(clampf(jp.x + 6.0, -34.0, 2.0), 3.4, -3.5)
+		_field_cam.look_at(jp + Vector3(1.5, 0.9, 0.0), Vector3.UP)
 	elif cam == _o_start or cam == _o_far or cam == _o_curve:
 		if RaceController.state == RaceController.State.RUNNING or RaceController.state == RaceController.State.FINISHED:
 			cam.look_at(_leader_world_position() + Vector3(0.0, 0.9, 0.0), Vector3.UP)

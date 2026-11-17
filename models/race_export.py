@@ -17,11 +17,18 @@ from typing import List, Optional
 
 from models.entities import CompetitionSummary, EventResult, EventStanding
 from models.generator import infer_gender
-from views.race_viewer import reaction_time
+from views.race_viewer import _rng, generate_attempts, reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
-DISTANCES_M = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}  # distanze supportate dal visualizzatore
+DISTANCES_M = {
+    "100m": 100,
+    "400m": 400,
+    "1500m": 1500,
+    "4x100m": 400,
+    "4x400m": 1600,
+    "Salto in Lungo": 0,
+}  # gare supportate dal visualizzatore Godot
 
 
 def race_seed(summary: CompetitionSummary) -> str:
@@ -45,8 +52,12 @@ def _stop_status(result: EventResult, standing: EventStanding) -> Optional[str]:
 
 
 def _runnable(result: EventResult, standing: EventStanding, seed: str) -> bool:
-    """Chi finisce la gara deve avere un tempo ufficiale coerente (maggiore del tempo di reazione)."""
-    return _stop_status(result, standing) is not None or standing.mark_value > reaction_time(seed, standing.athlete_name)
+    """Chi finisce la gara deve avere un risultato coerente."""
+    if _stop_status(result, standing) is not None:
+        return True
+    if result.event_name == "Salto in Lungo":
+        return standing.mark_value > 0.2
+    return standing.mark_value > reaction_time(seed, standing.athlete_name)
 
 
 def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path) -> int:
@@ -97,6 +108,23 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                 for s in standings
             ],
         )
+        if result.event_name == "Salto in Lungo":
+            attempt_rows = []
+            for s in standings:
+                lane = lanes[s.athlete_name]
+                if _stop_status(result, s) is not None:
+                    continue
+                for rnd, val in enumerate(
+                    generate_attempts(s.mark_value, _rng("lj", seed, s.athlete_name)),
+                    start=1,
+                ):
+                    is_foul = 1 if val is None else 0
+                    mark = round(s.mark_value * 0.96, 2) if val is None else float(val)
+                    attempt_rows.append((race_id, lane, rnd, mark, is_foul))
+            conn.executemany(
+                "INSERT INTO field_attempts (race_id, lane, round_num, mark_m, is_foul) VALUES (?, ?, ?, ?, ?)",
+                attempt_rows,
+            )
         conn.commit()
     return race_id
 

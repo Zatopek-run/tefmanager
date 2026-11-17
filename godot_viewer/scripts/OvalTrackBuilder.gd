@@ -62,6 +62,31 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 			var h: Vector2 = TrackGeometry.heading_at(1, c0)
 			var mark: MeshInstance3D = _box(parent, Vector3(0.1, 0.014, w), Vector3(p.x, 0.008, p.y), line)
 			mark.rotation.y = atan2(-h.y, h.x)
+	elif kind == "Salto in Lungo":
+		# Pedana di rincorsa + asse di battuta + fossa di sabbia nel prato interno (z = -14).
+		var pit_z: float = -14.0
+		var runway_col: StandardMaterial3D = _material(Color(0.68, 0.27, 0.22), 0.85)
+		var sand_mat: StandardMaterial3D = _material(Color(0.86, 0.76, 0.56), 0.95)
+		var curb_mat: StandardMaterial3D = _material(Color(0.75, 0.77, 0.80), 0.8)
+		var foul_mat: StandardMaterial3D = _material(Color(0.82, 0.14, 0.14), 0.7)
+		_box(parent, Vector3(46.0, 0.04, 1.28), Vector3(-33.0, 0.01, pit_z), runway_col)
+		_box(parent, Vector3(46.0, 0.015, 0.05), Vector3(-33.0, 0.03, pit_z - 0.64), line)
+		_box(parent, Vector3(46.0, 0.015, 0.05), Vector3(-33.0, 0.03, pit_z + 0.64), line)
+		_box(parent, Vector3(0.22, 0.042, 1.28), Vector3(-10.0, 0.012, pit_z), line)      # asse di battuta
+		_box(parent, Vector3(0.10, 0.044, 1.28), Vector3(-9.84, 0.012, pit_z), foul_mat) # plastilina
+		_box(parent, Vector3(10.4, 0.05, 3.0), Vector3(-3.3, 0.01, pit_z), curb_mat)
+		_box(parent, Vector3(10.0, 0.06, 2.75), Vector3(-3.5, 0.012, pit_z), sand_mat)   # fossa: -8.5 .. +1.5
+		for m in range(4, 10):
+			var mx: float = -10.0 + float(m)
+			_box(parent, Vector3(0.05, 0.062, 0.25), Vector3(mx, 0.014, pit_z + 1.48), line)
+			var ml: Label3D = Label3D.new()
+			ml.text = "%dm" % m
+			ml.font_size = 64
+			ml.pixel_size = 0.004
+			ml.modulate = Color(0.96, 0.96, 0.96)
+			ml.position = Vector3(mx, 0.06, pit_z + 1.78)
+			ml.rotation_degrees.x = -90.0
+			parent.add_child(ml)
 	else:
 		# Linee di partenza: una per corsia, sfalsate; orientate di traverso alla corsia.
 		for lane in range(1, lanes + 1):
