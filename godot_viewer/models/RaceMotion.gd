@@ -33,8 +33,8 @@ static func dnf_stop_distance(kind: String) -> float:
 static func _velocity(kind: String, u: float) -> float:
 	if kind == "400m":  # partenza veloce, calo nella seconda meta'
 		return (1.0 - exp(-u / 0.05)) * (1.0 - 0.16 * u) + 0.02
-	# 100m: forte accelerazione fino a ~60 m, poi leggero calo
-	return (1.0 - exp(-u / 0.14)) * (1.0 - 0.07 * maxf(0.0, (u - 0.6) / 0.4)) + 0.02
+	# 100m: spinta esplosiva dai blocchi, accelerazione fino a ~60 m, poi leggero calo
+	return (0.22 + 0.78 * (1.0 - exp(-u / 0.10))) * (1.0 - 0.07 * maxf(0.0, (u - 0.6) / 0.4))
 
 
 ## Tabella dello spazio normalizzato 0..1 a passi uniformi di tempo, per tipo di gara.

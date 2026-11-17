@@ -31,7 +31,7 @@ const RUNOUT_CUT_DELAY: float = 1.2       # dopo l'arrivo del primo si torna al 
 const OPEN_WIDE_TIME: float = 0.8         # apertura larga
 const WIDE_CUT_BEFORE_GUN_100M: float = 0.4
 const WIDE_CUT_BEFORE_GUN_OVAL: float = 2.2   # nei 400m lo start largo si vede piu' a lungo
-const START_WIDE_HOLD: float = 2.2        # 100m: la ripresa larga resta fino a questo tempo di gara
+const START_WIDE_HOLD: float = 1.7        # 100m: la ripresa larga resta fino a questo tempo di gara
 const FINISH_CAM_Z: float = 16.0
 # Inquadratura adattiva del carrello alto:
 const FRAME_WIDTH_BASE: float = 14.4      # larghezza (m) inquadrata dal carrello con fov TRACK_FOV a distanza base

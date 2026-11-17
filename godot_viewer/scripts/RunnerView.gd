@@ -25,12 +25,16 @@ const FACING_Y: float = PI * 0.5
 
 ## Metri percorsi per ciclo completo (2 passi) di ogni animazione: ricava la cadenza dalla velocita'.
 const STRIDE_SPRINT: float = 4.6
+const STRIDE_DRIVE: float = 2.1       # primi passi fuori dai blocchi: falcata piu' corta e frequenza alta
 const STRIDE_JOG: float = 3.2
 const STRIDE_WALK: float = 1.5
 const SPRINT_FROM: float = 7.0   # m/s: da qui in su "Sprint"
 const SPRINT_BACK_TO_JOG: float = 6.0  # isteresi per evitare lo sfarfallio tra due animazioni
 const WALK_BELOW: float = 2.5
 const BLEND_TIME: float = 0.25
+const BLOCK_START_BLEND: float = 0.06
+const DRIVE_LEAN_MAX: float = deg_to_rad(30.0)   # inclinazione in avanti in uscita dai blocchi
+const DRIVE_RISE_METERS: float = 16.0            # metri su cui il busto si raddrizza gradualmente
 
 static var _animation_library: AnimationLibrary = null
 static var _cloth_shader_cache: Shader = null
@@ -98,30 +102,42 @@ func _update_animation() -> void:
 	var s: float = data.speed
 	var want: StringName
 	var at_blocks: bool = s < 0.01 and data.distance < 0.01
+	var just_left_blocks: bool = false
 	if at_blocks != _rig.enabled:
 		_rig.set_enabled(at_blocks)
 		if at_blocks:
 			_player.stop()         # le ossa le comanda SetPoseRig finche' si e' ai blocchi
 		else:
-			_current_anim = &""    # alla partenza riparte l'animazione di corsa (con dissolvenza)
+			_current_anim = &""    # alla partenza riparte subito la corsa in spinta
+			just_left_blocks = true
 	if at_blocks:
+		_model.rotation.x = 0.0
+		_model.position = Vector3.ZERO
 		_rig.update(set_amount_override if set_amount_override >= 0.0 else RaceController.set_amount())
 		return
-	if false:
-		want = &"Crouch_Idle"
-	elif s < 0.3 and data.distance > 1.0:
+
+	# Inclinazione in avanti nella fase di spinta fuori dai blocchi: si raddrizza gradualmente sui primi ~16 m.
+	var drive: float = 0.0 if data.finished else (1.0 - smoothstep(0.0, DRIVE_RISE_METERS, data.distance))
+	if data.dnf and s < SPRINT_FROM:
+		drive *= clampf(s / SPRINT_FROM, 0.0, 1.0)
+	_model.rotation.x = DRIVE_LEAN_MAX * drive
+	_model.position = Vector3(0.0, 0.08 * drive, 0.0)
+
+	# In uscita dai blocchi si parte direttamente in Sprint (mai Walk/Jog); Walk/Jog restano solo in rallentamento.
+	var slowing: bool = data.finished or (data.dnf and data.distance > 10.0)
+	if slowing and s < 0.3 and data.distance > 1.0:
 		want = &"Idle"  # fermo dopo il traguardo o dopo il ritiro
-	elif s >= SPRINT_FROM or (_current_anim == &"Sprint" and s >= SPRINT_BACK_TO_JOG):
+	elif not slowing or s >= SPRINT_FROM or (_current_anim == &"Sprint" and s >= SPRINT_BACK_TO_JOG):
 		want = &"Sprint"
 	elif s < WALK_BELOW:
 		want = &"Walk"
 	else:
 		want = &"Jog_Fwd"
-	_play(want)
+	_play(want, BLOCK_START_BLEND if just_left_blocks else BLEND_TIME)
 
 	var stride: float = 1.0
 	match _current_anim:
-		&"Sprint": stride = STRIDE_SPRINT
+		&"Sprint": stride = lerpf(STRIDE_DRIVE, STRIDE_SPRINT, smoothstep(0.0, 20.0, data.distance))
 		&"Jog_Fwd": stride = STRIDE_JOG
 		&"Walk": stride = STRIDE_WALK
 	if _current_anim == &"Crouch_Idle" or _current_anim == &"Idle":
@@ -131,11 +147,11 @@ func _update_animation() -> void:
 		_player.speed_scale = clampf(s / stride * length * RaceController.time_scale, 0.25, 8.0)
 
 
-func _play(anim: StringName) -> void:
+func _play(anim: StringName, blend: float = BLEND_TIME) -> void:
 	if anim == _current_anim:
 		return
 	_current_anim = anim
-	_player.play(anim, BLEND_TIME)
+	_player.play(anim, blend)
 
 
 # --- vestiti e capelli --------------------------------------------------------------------------

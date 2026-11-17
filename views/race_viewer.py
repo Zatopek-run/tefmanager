@@ -57,8 +57,8 @@ def _rng(*parts: object) -> random.Random:
 
 def _velocity(kind: str, u: float) -> float:
     """Velocità relativa (sempre > 0) al tempo normalizzato u in [0, 1] per tipo di gara."""
-    if kind == "100m":  # forte accelerazione fino a ~60 m, poi leggero calo
-        return (1.0 - math.exp(-u / 0.14)) * (1.0 - 0.07 * max(0.0, (u - 0.6) / 0.4)) + 0.02
+    if kind == "100m":  # spinta esplosiva dai blocchi, accelerazione fino a ~60 m, poi leggero calo
+        return (0.22 + 0.78 * (1.0 - math.exp(-u / 0.10))) * (1.0 - 0.07 * max(0.0, (u - 0.6) / 0.4))
     if kind == "400m":  # partenza veloce, calo nella seconda metà
         return (1.0 - math.exp(-u / 0.05)) * (1.0 - 0.16 * u) + 0.02
     if kind == "1500m":  # gruppo compatto, poi volata finale
