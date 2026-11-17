@@ -1,0 +1,3 @@
+.godot/
+*.db
+addons/godot-sqlite/

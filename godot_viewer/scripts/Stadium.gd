@@ -1,0 +1,185 @@
+extends Node3D
+## VIEW 3D - scena principale: luce, ambiente, pista, tribune, corridori. Il HUD e' una scena separata.
+##
+## Avvio: la gara 1 del DB (o `--race=N` dopo `--` sulla riga di comando) parte da sola dopo 1.5 s.
+## Tasti: Spazio = (ri)parti, 1/2/4 = velocita' 1x/2x/4x, Esc = salta alla fine.
+
+const LANE_WIDTH: float = 1.22
+const LANES: int = 8
+const TRACK_X_MIN: float = -15.0
+const TRACK_X_MAX: float = 125.0
+const FINISH_X: float = 100.0
+const AUTO_START_DELAY: float = 1.5
+
+const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
+
+@onready var _sun: DirectionalLight3D = $Sun
+@onready var _track_root: Node3D = $Track
+@onready var _runners_root: Node3D = $Runners
+
+var _race_id: int = 1
+
+
+func _ready() -> void:
+	Engine.max_fps = 60
+	_configure_sun()
+	_configure_environment()
+	_build_track()
+	_build_stands()
+	add_child(HUD_SCENE.instantiate())
+
+	RaceController.race_loaded.connect(_on_race_loaded)
+	_race_id = _race_id_from_args()
+	if RaceController.load_race(_race_id):
+		get_tree().create_timer(AUTO_START_DELAY).timeout.connect(RaceController.start)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key: InputEventKey = event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	match key.keycode:
+		KEY_SPACE:
+			if RaceController.load_race(_race_id):
+				RaceController.start()
+		KEY_1: RaceController.time_scale = 1.0
+		KEY_2: RaceController.time_scale = 2.0
+		KEY_4: RaceController.time_scale = 4.0
+		KEY_ESCAPE: RaceController.skip_to_end()
+
+
+func _race_id_from_args() -> int:
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--race="):
+			return int(arg.get_slice("=", 1))
+	return 1
+
+
+func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
+	for child: Node in _runners_root.get_children():
+		child.queue_free()
+	for r: RunnerData in runners:
+		var view: RunnerView = RunnerView.new()
+		view.name = "Runner_L%d" % r.lane
+		_runners_root.add_child(view)
+		view.setup(r)
+
+
+# --- luce e ambiente ----------------------------------------------------------------------------
+
+func _configure_sun() -> void:
+	# Sole basso di fine pomeriggio: ombre lunghe e leggibili sulle corsie.
+	_sun.rotation_degrees = Vector3(-38.0, -50.0, 0.0)
+	_sun.light_color = Color(1.0, 0.93, 0.82)
+	_sun.light_energy = 1.35
+	_sun.shadow_enabled = true
+	_sun.shadow_bias = 0.03
+	_sun.shadow_blur = 1.5
+	_sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	_sun.directional_shadow_max_distance = 90.0  # basta a coprire lo scorrimento della telecamera
+
+
+func _configure_environment() -> void:
+	var sky_material: ProceduralSkyMaterial = ProceduralSkyMaterial.new()
+	sky_material.sky_top_color = Color(0.16, 0.3, 0.55)
+	sky_material.sky_horizon_color = Color(0.82, 0.74, 0.66)
+	sky_material.ground_horizon_color = Color(0.35, 0.36, 0.33)
+	var sky: Sky = Sky.new()
+	sky.sky_material = sky_material
+
+	var env: Environment = Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = sky
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = 0.8
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.ssao_enabled = true        # solo Forward+/Mobile; ignorato da Compatibility
+	env.glow_enabled = true        # "bloom" da diretta TV 2010
+	env.glow_intensity = 0.7
+	env.glow_bloom = 0.08
+	env.glow_hdr_threshold = 1.0
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.12
+
+	var world: WorldEnvironment = WorldEnvironment.new()
+	world.environment = env
+	add_child(world)
+
+
+# --- geometria ----------------------------------------------------------------------------------
+
+func _build_track() -> void:
+	var length: float = TRACK_X_MAX - TRACK_X_MIN
+	var center_x: float = (TRACK_X_MIN + TRACK_X_MAX) * 0.5
+	var width: float = LANES * LANE_WIDTH
+	var center_z: float = (LANES - 1) * LANE_WIDTH * 0.5
+
+	_add_box(_track_root, Vector3(length, 0.1, width), Vector3(center_x, -0.05, center_z),
+		_flat(Color(0.7, 0.27, 0.2), 0.9))                                    # tartan
+	_add_box(_track_root, Vector3(length + 80.0, 0.1, 60.0), Vector3(center_x, -0.1, -width * 0.5 - 30.0),
+		_flat(Color(0.18, 0.45, 0.2), 1.0))                                   # prato interno
+	_add_box(_track_root, Vector3(length + 80.0, 0.1, 40.0), Vector3(center_x, -0.1, center_z + width * 0.5 + 20.0),
+		_flat(Color(0.22, 0.24, 0.26), 1.0))                                  # area esterna
+
+	var line: StandardMaterial3D = _flat(Color(0.95, 0.95, 0.95), 0.7)
+	for i in range(LANES + 1):
+		var z: float = (i - 0.5) * LANE_WIDTH
+		_add_box(_track_root, Vector3(length, 0.01, 0.05), Vector3(center_x, 0.006, z), line)
+	_add_box(_track_root, Vector3(0.1, 0.012, width), Vector3(0.0, 0.007, center_z), line)           # linea di partenza
+	_add_box(_track_root, Vector3(0.25, 0.012, width), Vector3(FINISH_X, 0.007, center_z), line)     # traguardo
+
+
+func _build_stands() -> void:
+	var crowd_noise: FastNoiseLite = FastNoiseLite.new()
+	crowd_noise.frequency = 0.35
+	var crowd_tex: NoiseTexture2D = NoiseTexture2D.new()
+	crowd_tex.noise = crowd_noise
+	crowd_tex.width = 256
+	crowd_tex.height = 128
+	crowd_tex.color_ramp = _crowd_gradient()
+	var crowd: StandardMaterial3D = StandardMaterial3D.new()
+	crowd.albedo_texture = crowd_tex
+	crowd.uv1_scale = Vector3(14.0, 1.0, 1.0)
+	crowd.roughness = 1.0
+
+	var back_z: float = LANES * LANE_WIDTH + 6.0
+	for step in range(6):  # gradinata a gradoni: tribuna principale sul lato esterno
+		var rise: float = 0.7 * (step + 1)
+		_add_box(_track_root, Vector3(TRACK_X_MAX - TRACK_X_MIN + 20.0, rise, 1.8),
+			Vector3((TRACK_X_MIN + TRACK_X_MAX) * 0.5, rise * 0.5, back_z + step * 1.8), crowd)
+
+	# Torri faro con testa emissiva: alimentano il bloom (glow_hdr_threshold = 1.0).
+	var lamp: StandardMaterial3D = StandardMaterial3D.new()
+	lamp.albedo_color = Color(1.0, 0.97, 0.88)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.95, 0.8)
+	lamp.emission_energy_multiplier = 6.0
+	for x: float in [-10.0, 40.0, 100.0, 140.0]:
+		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, back_z + 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
+		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, back_z + 13.6), lamp)
+
+
+func _crowd_gradient() -> Gradient:
+	var g: Gradient = Gradient.new()
+	g.colors = PackedColorArray([
+		Color(0.55, 0.2, 0.18), Color(0.2, 0.3, 0.6), Color(0.85, 0.8, 0.7), Color(0.25, 0.25, 0.28)])
+	g.offsets = PackedFloat32Array([0.0, 0.35, 0.7, 1.0])
+	return g
+
+
+func _flat(color: Color, roughness: float) -> StandardMaterial3D:
+	var m: StandardMaterial3D = StandardMaterial3D.new()
+	m.albedo_color = color
+	m.roughness = roughness
+	return m
+
+
+func _add_box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
+	var mesh: BoxMesh = BoxMesh.new()
+	mesh.size = size
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)

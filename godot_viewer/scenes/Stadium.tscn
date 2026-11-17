@@ -1,0 +1,24 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/Stadium.gd" id="1_stadium"]
+[ext_resource type="Script" path="res://scripts/BroadcastCameras.gd" id="2_cameras"]
+
+[node name="Stadium" type="Node3D"]
+script = ExtResource("1_stadium")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+
+[node name="Track" type="Node3D" parent="."]
+
+[node name="Runners" type="Node3D" parent="."]
+
+[node name="Cameras" type="Node3D" parent="."]
+script = ExtResource("2_cameras")
+
+[node name="BroadcastPath" type="Path3D" parent="Cameras"]
+
+[node name="CameraDolly" type="PathFollow3D" parent="Cameras/BroadcastPath"]
+
+[node name="SideCam" type="Camera3D" parent="Cameras/BroadcastPath/CameraDolly"]
+
+[node name="FinishCam" type="Camera3D" parent="Cameras"]
