@@ -1,6 +1,6 @@
 extends SceneTree
 ## Salva screenshot della scena reale (serve una finestra, NON --headless):
-##   godot --path godot_viewer -s res://tests/screenshots.gd -- out_dir
+##   godot --path godot_viewer -s res://tests/screenshots.gd -- out_dir [close]
 ## Scatta ai tempi di gara in SHOTS (secondi dallo sparo; -1 = ai blocchi prima dello sparo).
 
 const SHOTS: Array[float] = [-1.0, 1.0, 4.0, 8.5, 11.0]
@@ -19,6 +19,8 @@ func _process(_delta: float) -> bool:
 		DirAccess.make_dir_recursive_absolute(_out_dir)
 		_scene = (load("res://scenes/Stadium.tscn") as PackedScene).instantiate()
 		root.add_child(_scene)
+		if args.size() > 1 and args[1] == "close":  # primo piano per giudicare il modello dei corridori
+			(_scene.get_node("Cameras/BroadcastPath/CameraDolly/SideCam") as Camera3D).fov = 9.0
 		return false
 	if rc.state == rc.State.LOADED:
 		rc.start()  # la scena parte da sola dopo 1.5 s: qui forziamo l'avvio subito
