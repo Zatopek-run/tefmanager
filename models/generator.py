@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 import random
+import re
 from typing import Dict, List, Optional
 
 from models.entities import (
@@ -64,22 +67,76 @@ LAST_NAMES: List[str] = [
 
 RIVAL_TEAMS: Dict[CompetitionTier, List[str]] = {
     CompetitionTier.PROVINCIALE: [
-        "GS Val d'Arno", "Polisportiva Nord", "Atletica Borgo", "CUS Collina",
-        "Virtus Piana", "Runners San Marco", "Olympia Distretto",
+        "Atletica Frascati", "Atletica Tivoli", "Tirreno Atl. Civitavecchia", "CUS Cassino",
+        "Atletica Viterbo", "Atletica Sora", "Olimpia Terracina",
     ],
     CompetitionTier.REGIONALE: [
-        "Atletica Lombardia", "CUS Emilia", "Fiamme del Tirreno", "Pro Sport Veneto",
-        "Libertas Piemonte", "Veloce Liguria", "Sport Club Toscana",
+        "Atl. Stud. Rieti A. Milardi", "Nissolino Intesatletica Latina", "S.S. Lazio Atletica",
+        "Atl. Roma Acquacetosa", "ACSI Atl. Campidoglio", "Atl. Villa Gordiani", "Atl. Villa Guglielmi",
     ],
     CompetitionTier.NAZIONALE: [
-        "Aeronautica Club", "Fiamme Azzurre Pro", "CUS Milano Elite", "Atletica Capitale",
-        "Pro Patria Nazionale", "Gruppo Sportivo Nord", "Team Tricolore",
+        "G.A. Fiamme Gialle", "C.S. Esercito", "G.S. Fiamme Azzurre", "C.S. Aeronautica Militare",
+        "Nissolino Sport Roma", "Circolo Canottieri Aniene", "Fiamme Gialle G. Simoni",
     ],
     CompetitionTier.INTERNAZIONALE: [
         "London Track Club", "Berlin Adler AC", "Paris Stade 92", "Madrid Atletismo",
         "Zurich Lions TF", "Tokyo Striders", "Stockholm Nordic AC",
     ],
 }
+
+LAZIO_PROVINCES: Tuple[str, ...] = ("Roma", "Latina", "Frosinone", "Rieti", "Viterbo")
+LAZIO_CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "societa_atletica_lazio.csv"
+_LEGAL_PREFIX = re.compile(r"^(?:A\.?S\.?D\.?|S\.?S\.?D\.?|A\.?P\.?D\.?|U\.?S\.?)\s+", re.IGNORECASE)
+_LEGAL_SUFFIX = re.compile(
+    r"(?:\s+(?:S\.?S\.?D\.?|A\.?S\.?D\.?|S\.?R\.?L\.?|A\s*R\.?L\.?|A\.?P\.?S\.?|A\.?S\.?U\.?|S\.?P\.?A\.?|SSDRL|ARL))+$",
+    re.IGNORECASE,
+)
+_KEEP_UPPER = {"ASD", "CUS", "GS", "CS", "GA", "SS", "US", "GSBR", "LUISS", "LBM", "ACSI", "CBS", "EUR", "ASI", "AL.PA."}
+
+
+def _format_lazio_club_name(raw: str) -> str:
+    name = " ".join(raw.strip().split())
+    for _ in range(3):
+        cleaned = _LEGAL_PREFIX.sub("", name)
+        cleaned = _LEGAL_SUFFIX.sub("", cleaned).strip(" -.,")
+        if cleaned == name:
+            break
+        name = cleaned
+    name = re.sub(r"\bATL\.", "Atl. ", name, flags=re.IGNORECASE)
+    name = " ".join(name.split())
+    words: List[str] = []
+    for tok in name.split(" "):
+        up = tok.upper()
+        if up in _KEEP_UPPER or re.fullmatch(r"[A-Z]\.(?:[A-Z]\.)+", up):
+            words.append(up)
+        elif "'" in tok:
+            head, tail = tok.split("'", 1)
+            words.append(head.capitalize() + "'" + tail.capitalize())
+        else:
+            words.append(tok.capitalize())
+    return " ".join(words)
+
+
+def load_lazio_clubs(csv_path: Optional[Path] = None) -> Dict[str, List[str]]:
+    """Load real Lazio athletics clubs grouped by province from CSV."""
+    path = csv_path or LAZIO_CSV_PATH
+    grouped: Dict[str, List[str]] = {p: [] for p in LAZIO_PROVINCES}
+    if not path.is_file():
+        return grouped
+    seen: set[str] = set()
+    with path.open(encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            prov = (row.get("Provincia") or "").strip()
+            raw_name = (row.get("Denominazione_Societa") or "").strip()
+            if prov not in grouped or not raw_name:
+                continue
+            pretty = _format_lazio_club_name(raw_name)
+            key = pretty.casefold()
+            if not pretty or key in seen:
+                continue
+            seen.add(key)
+            grouped[prov].append(pretty)
+    return grouped
 
 
 def clamp_stat(value: float, low: int = 1, high: int = 100) -> int:
@@ -535,11 +592,48 @@ def generate_rival_athlete(
     )
 
 
-def create_rival_clubs(rng: Optional[random.Random] = None) -> List[RivalClub]:
+def _rival_tier_names(
+    r: random.Random,
+    province: Optional[str],
+    team_name: Optional[str],
+) -> Dict[CompetitionTier, List[str]]:
+    tier_names = {tier: list(names) for tier, names in RIVAL_TEAMS.items()}
+    if not province or province not in LAZIO_PROVINCES:
+        return tier_names
+    by_prov = load_lazio_clubs()
+    reserved = {n.casefold() for n in tier_names[CompetitionTier.NAZIONALE]}
+    if team_name:
+        reserved.add(team_name.strip().casefold())
+    prov_pool = [n for n in by_prov.get(province, []) if n.casefold() not in reserved]
+    all_lazio = [n for p in LAZIO_PROVINCES for n in by_prov.get(p, []) if n.casefold() not in reserved]
+    if not all_lazio:
+        return tier_names
+    r.shuffle(prov_pool)
+    prov_picked = prov_pool[:7]
+    if len(prov_picked) < 7:
+        used = {n.casefold() for n in prov_picked}
+        extra = [n for n in all_lazio if n.casefold() not in used]
+        r.shuffle(extra)
+        prov_picked.extend(extra[: 7 - len(prov_picked)])
+    used_all = reserved | {n.casefold() for n in prov_picked}
+    reg_pool = [n for n in all_lazio if n.casefold() not in used_all]
+    r.shuffle(reg_pool)
+    if len(prov_picked) == 7:
+        tier_names[CompetitionTier.PROVINCIALE] = prov_picked
+    if len(reg_pool) >= 7:
+        tier_names[CompetitionTier.REGIONALE] = reg_pool[:7]
+    return tier_names
+
+
+def create_rival_clubs(
+    rng: Optional[random.Random] = None,
+    province: Optional[str] = None,
+    team_name: Optional[str] = None,
+) -> List[RivalClub]:
     """Seven persistent rival clubs per category, each with one male and one female athlete per discipline."""
     r = rng or random.Random()
     clubs: List[RivalClub] = []
-    for tier, names in RIVAL_TEAMS.items():
+    for tier, names in _rival_tier_names(r, province, team_name).items():
         for name in names:
             club = RivalClub(
                 name=name,

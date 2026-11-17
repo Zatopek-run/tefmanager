@@ -194,4 +194,6 @@ class MainWindow(QMainWindow):
     def _on_new_game(self) -> None:
         dlg = NewGameDialog(self.controller.state.team_name, parent=self)
         if dlg.exec():
-            self.controller.start_new_game(dlg.club_name, game_mode=dlg.game_mode)
+            self.controller.start_new_game(
+                dlg.club_name, game_mode=dlg.game_mode, province=dlg.province
+            )

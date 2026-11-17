@@ -899,6 +899,31 @@ class TestRivalClubs(unittest.TestCase):
             naz = sum(c.level() for c in s.rivals_in(CompetitionTier.NAZIONALE))
             self.assertGreater(naz, prov)
 
+    def test_lazio_csv_and_province_rival_selection(self) -> None:
+        from models.generator import LAZIO_PROVINCES, RIVAL_TEAMS, load_lazio_clubs
+
+        by_prov = load_lazio_clubs()
+        self.assertEqual(set(by_prov), set(LAZIO_PROVINCES))
+        self.assertGreater(sum(len(v) for v in by_prov.values()), 200)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for prov in LAZIO_PROVINCES:
+                ctrl = self._ctrl(tmpdir, seed=31)
+                ctrl.start_new_game(team_name="Atletica Test", game_mode="career", province=prov)
+                s = ctrl.state
+                self.assertEqual(len(s.rival_clubs), 28)
+                prov_clubs = [c.name for c in s.rivals_in(CompetitionTier.PROVINCIALE)]
+                reg_clubs = [c.name for c in s.rivals_in(CompetitionTier.REGIONALE)]
+                self.assertEqual(len(prov_clubs), 7)
+                self.assertEqual(len(reg_clubs), 7)
+                self.assertTrue(set(prov_clubs).isdisjoint(set(reg_clubs)))
+                if len(by_prov[prov]) >= 7:
+                    self.assertTrue(all(name in by_prov[prov] for name in prov_clubs))
+                self.assertEqual(
+                    [c.name for c in s.rivals_in(CompetitionTier.INTERNAZIONALE)],
+                    RIVAL_TEAMS[CompetitionTier.INTERNAZIONALE],
+                )
+
     def test_meets_feature_the_same_named_rivals(self) -> None:
         from models import simulation as sim
 

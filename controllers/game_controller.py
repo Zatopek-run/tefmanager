@@ -106,6 +106,7 @@ class GameController(QObject):
         self,
         team_name: str = "Atletica Aurora",
         game_mode: str = "vertical_slice",
+        province: Optional[str] = None,
     ) -> GameState:
         if game_mode == "vertical_slice":
             roster = generate_vertical_slice_roster(rng=self.rng)
@@ -162,7 +163,7 @@ class GameController(QObject):
             milestones=[],
             news_log=[intro],
             coaches=coaches,
-            rival_clubs=create_rival_clubs(rng=self.rng),
+            rival_clubs=create_rival_clubs(rng=self.rng, province=province, team_name=team_name),
         )
         auto_build_all_relays(state)
         self.db.save_game(state)
@@ -172,9 +173,12 @@ class GameController(QObject):
         self,
         team_name: str = "Atletica Aurora",
         game_mode: str = "vertical_slice",
+        province: Optional[str] = None,
     ) -> None:
         """Reset to a fresh career or vertical-slice prototype and persist immediately."""
-        self.state = self._create_fresh_state(team_name=team_name, game_mode=game_mode)
+        self.state = self._create_fresh_state(
+            team_name=team_name, game_mode=game_mode, province=province
+        )
         self.scouting_results = []
         self.state_changed.emit(self.state)
         mode_label = "Prototipo Outdoor" if game_mode == "vertical_slice" else "Carriera Completa"

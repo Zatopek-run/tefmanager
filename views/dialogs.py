@@ -40,7 +40,7 @@ from models.entities import (
     coach_hire_skills,
     coach_weekly_wage,
 )
-from models.generator import get_recruitment_fee
+from models.generator import LAZIO_PROVINCES, get_recruitment_fee
 
 
 class CompetitionResultsDialog(QDialog):
@@ -398,12 +398,12 @@ class EthicalDilemmaDialog(QDialog):
 
 
 class NewGameDialog(QDialog):
-    """Dialog to choose club name and game mode (Vertical Slice Prototype vs Full Career)."""
+    """Dialog to choose club name, game mode, and Lazio province."""
 
     def __init__(self, default_name: str = "Atletica Aurora", parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Nuova Partita — Track & Field Manager")
-        self.resize(460, 220)
+        self.resize(460, 280)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
@@ -429,6 +429,16 @@ class NewGameDialog(QDialog):
         )
         layout.addWidget(self.mode_combo)
 
+        prov_label = QLabel("Provincia di Partenza (Lazio):")
+        prov_label.setObjectName("SectionHeader")
+        layout.addWidget(prov_label)
+
+        self.province_combo = QComboBox()
+        self.province_combo.addItem("Standard (Selezione Lazio)", None)
+        for prov in LAZIO_PROVINCES:
+            self.province_combo.addItem(f"{prov} (società reali dal CSV)", prov)
+        layout.addWidget(self.province_combo)
+
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel_btn = QPushButton("Annulla")
@@ -447,6 +457,11 @@ class NewGameDialog(QDialog):
     @property
     def game_mode(self) -> str:
         return str(self.mode_combo.currentData())
+
+    @property
+    def province(self) -> Optional[str]:
+        val = self.province_combo.currentData()
+        return str(val) if val else None
 
 
 class HireCoachDialog(QDialog):
