@@ -41,6 +41,8 @@ var _model: Node3D
 var _skeleton: Skeleton3D
 var _player: AnimationPlayer
 var _current_anim: StringName = &""
+var _rig: SetPoseRig = null           # posizione ai blocchi (pronti/set), attiva prima della partenza
+var set_amount_override: float = -1.0  # solo per prove: forza pronti(0)..set(1); -1 = la decide RaceController
 
 
 func setup(runner: RunnerData) -> void:
@@ -59,6 +61,9 @@ func setup(runner: RunnerData) -> void:
 	_model.scale = Vector3.ONE * (target_height / height)
 
 	_setup_animation()
+	_rig = SetPoseRig.new()
+	add_child(_rig)
+	_rig.setup(_model, _skeleton)
 	_play(&"Crouch_Idle")
 
 
@@ -71,13 +76,9 @@ func _process(_delta: float) -> void:
 
 ## Posizione e orientamento in pista: rettilineo dei 100m, oppure anello da 400 m con partenza sfalsata.
 func _apply_transform() -> void:
-	if RaceController.event_kind == "100m":
-		position = Vector3(data.distance, 0.0, (data.lane - 1) * LANE_WIDTH)
-		rotation.y = 0.0
-	else:
-		var pose: Dictionary = TrackGeometry.pose(data.lane, data.distance)
-		position = pose["position"]
-		rotation.y = pose["yaw"]
+	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, data.distance)
+	position = pose["position"]
+	rotation.y = pose["yaw"]
 
 
 # --- animazione ---------------------------------------------------------------------------------
@@ -96,7 +97,17 @@ func _setup_animation() -> void:
 func _update_animation() -> void:
 	var s: float = data.speed
 	var want: StringName
-	if s < 0.01 and data.distance < 0.01:
+	var at_blocks: bool = s < 0.01 and data.distance < 0.01
+	if at_blocks != _rig.enabled:
+		_rig.set_enabled(at_blocks)
+		if at_blocks:
+			_player.stop()         # le ossa le comanda SetPoseRig finche' si e' ai blocchi
+		else:
+			_current_anim = &""    # alla partenza riparte l'animazione di corsa (con dissolvenza)
+	if at_blocks:
+		_rig.update(set_amount_override if set_amount_override >= 0.0 else RaceController.set_amount())
+		return
+	if false:
 		want = &"Crouch_Idle"
 	elif s < 0.3 and data.distance > 1.0:
 		want = &"Idle"  # fermo dopo il traguardo o dopo il ritiro

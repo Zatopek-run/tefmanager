@@ -16,11 +16,16 @@ signal race_finished(results: Array[RunnerData])
 
 enum State { IDLE, LOADED, COUNTDOWN, RUNNING, FINISHED }
 
-const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo
+const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo (default)
+## Preparazione piu' lunga per i 100m, come nella diretta TV: apertura larga, lungo primo piano sui blocchi, sparo.
+const GUN_AT_BY_KIND: Dictionary = {"100m": 9.0, "400m": 7.0}
+const SET_CALL_AT: float = 1.5          # "set": questi secondi prima dello sparo il corridore comincia a salire
+const SET_RISE_TIME: float = 0.75
 const AFTER_FINISH_SECONDS: float = 4.0  # quanto resta in RUNNING dopo l'ultimo arrivo (lancio oltre il traguardo)
 
 var state: State = State.IDLE
 var info: Dictionary = {}
+var gun_at: float = GUN_AT            # secondi di preparazione prima dello sparo per l'evento caricato
 var event_kind: String = "100m"       # nome dell'evento: sceglie curva, distanza e geometria della pista
 var runners: Array[RunnerData] = []
 var live_order: Array[RunnerData] = []  # ordine di classifica aggiornato a ogni fotogramma
@@ -53,6 +58,7 @@ func load_race(race_id: int) -> bool:
 	runners = loaded
 	info = loaded_info
 	event_kind = kind
+	gun_at = float(GUN_AT_BY_KIND.get(kind, GUN_AT))
 	_assign_places()
 	_finisher_count = 0
 	_winner_time = INF
@@ -90,7 +96,17 @@ func skip_to_end() -> void:
 		gun_fired.emit()
 	if state == State.RUNNING:
 		race_time = _last_finish_time + AFTER_FINISH_SECONDS
-		clock = GUN_AT + race_time
+		clock = gun_at + race_time
+
+
+## Posizione ai blocchi prima dello sparo: 0 = "pronti" (ginocchio a terra), 1 = "set" (bacino alto).
+## "Pronti" fino a SET_CALL_AT secondi prima dello sparo, poi sale in SET_RISE_TIME e resta fermo fino al via.
+func set_amount() -> float:
+	if state == State.LOADED or state == State.IDLE:
+		return 0.0
+	if state == State.COUNTDOWN:
+		return clampf((clock - (gun_at - SET_CALL_AT)) / SET_RISE_TIME, 0.0, 1.0)
+	return 1.0
 
 
 func leader_distance() -> float:
@@ -102,12 +118,12 @@ func _process(delta: float) -> void:
 		return
 	if state == State.COUNTDOWN:
 		clock += delta * time_scale
-		if clock >= GUN_AT:
+		if clock >= gun_at:
 			state = State.RUNNING
 			gun_fired.emit()
 	else:
 		race_time += delta * time_scale
-		clock = GUN_AT + race_time
+		clock = gun_at + race_time
 	_update_runners()
 	_update_order()
 	display_time = minf(race_time, _winner_time) if _finished_count > 0 else race_time

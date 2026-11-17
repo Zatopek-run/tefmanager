@@ -3,7 +3,8 @@ extends SceneTree
 ##   godot --path godot_viewer -s res://tests/screenshots.gd -- out_dir [close]
 ## Scatta ai tempi di gara in SHOTS (secondi dallo sparo; -1 = ai blocchi prima dello sparo).
 
-const SHOTS_100M: Array[float] = [-1.0, 4.0, 9.5, 9.85, 10.4]
+## 100m: preparazione (apertura larga, primo piano blocchi, set, ripresa larga), start, carrello alto, arrivo, oltre il traguardo
+const SHOTS_100M: Array[float] = [-8.6, -5.0, -1.0, -0.2, 0.8, 4.0, 8.4, 9.5, 11.5]
 ## 400m: partenza, curva 1, rettilineo opposto, curva 2, rettilineo d'arrivo, fotofinish, dopo l'arrivo
 const SHOTS_400M: Array[float] = [-1.0, 6.0, 15.0, 25.0, 33.0, 40.0, 44.8, 46.5]
 
@@ -35,10 +36,11 @@ func _process(_delta: float) -> bool:
 		quit(0)
 		return true
 	var want: float = shots[_stage]
-	var ready: bool = (rc.state == rc.State.COUNTDOWN and rc.clock > 1.8) if want < 0.0 else rc.race_time >= want
+	# want < 0: secondi PRIMA dello sparo (clock); want >= 0: secondi di gara dopo lo sparo
+	var ready: bool = (rc.state == rc.State.COUNTDOWN and rc.clock >= rc.gun_at + want) if want < 0.0 else (rc.state == rc.State.RUNNING and rc.race_time >= want)
 	if ready:
 		var img: Image = root.get_texture().get_image()
-		var path: String = "%s/shot_%d_t%s.png" % [_out_dir, _stage, "pre" if want < 0.0 else str(want)]
+		var path: String = "%s/shot_%d_t%s.png" % [_out_dir, _stage, "pre%.1f" % absf(want) if want < 0.0 else str(want)]
 		img.save_png(path)
 		print("salvato ", path)
 		_stage += 1

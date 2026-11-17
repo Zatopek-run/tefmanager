@@ -21,6 +21,4 @@ script = ExtResource("2_cameras")
 
 [node name="SideCam" type="Camera3D" parent="Cameras/BroadcastPath/CameraDolly"]
 
-[node name="ChaseCam" type="Camera3D" parent="Cameras"]
-
 [node name="FinishCam" type="Camera3D" parent="Cameras"]

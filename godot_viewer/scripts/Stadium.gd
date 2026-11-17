@@ -7,10 +7,7 @@ extends Node3D
 
 const LANE_WIDTH: float = 1.22
 const LANES: int = 8
-const TRACK_X_MIN: float = -15.0
-const TRACK_X_MAX: float = 125.0
-const FINISH_X: float = 100.0
-const AUTO_START_DELAY: float = 1.5
+const AUTO_START_DELAY: float = 0.5
 const CROWD_TILE_METERS: float = 32.0  # lato in metri di una ripetizione della texture della folla
 const AUTOQUIT_DELAY: float = 3.0  # con --autoquit: pausa sul risultato prima di chiudere
 
@@ -62,6 +59,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_4: RaceController.time_scale = 4.0
 		KEY_8: RaceController.time_scale = 8.0
 		KEY_ESCAPE: RaceController.skip_to_end()
+		KEY_H:
+			var hud: Node = get_node_or_null("HUD")
+			if hud != null:
+				hud.set("ranking_visible", not bool(hud.get("ranking_visible")))
 
 
 func _race_id_from_args() -> int:
@@ -85,10 +86,10 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 # --- luce e ambiente ----------------------------------------------------------------------------
 
 func _configure_sun() -> void:
-	# Sole basso di fine pomeriggio: ombre lunghe e leggibili sulle corsie.
-	_sun.rotation_degrees = Vector3(-38.0, -50.0, 0.0)
-	_sun.light_color = Color(1.0, 0.93, 0.82)
-	_sun.light_energy = 1.35
+	# Serata con i fari accesi (come nelle dirette di riferimento): luce principale dall'alto, fredda, con ombre morbide.
+	_sun.rotation_degrees = Vector3(-62.0, -30.0, 0.0)
+	_sun.light_color = Color(0.82, 0.88, 1.0)
+	_sun.light_energy = 0.95
 	_sun.shadow_enabled = true
 	_sun.shadow_bias = 0.03
 	_sun.shadow_blur = 1.5
@@ -98,9 +99,9 @@ func _configure_sun() -> void:
 
 func _configure_environment() -> void:
 	var sky_material: ProceduralSkyMaterial = ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.16, 0.3, 0.55)
-	sky_material.sky_horizon_color = Color(0.82, 0.74, 0.66)
-	sky_material.ground_horizon_color = Color(0.35, 0.36, 0.33)
+	sky_material.sky_top_color = Color(0.015, 0.03, 0.09)
+	sky_material.sky_horizon_color = Color(0.09, 0.12, 0.26)
+	sky_material.ground_horizon_color = Color(0.05, 0.07, 0.14)
 	var sky: Sky = Sky.new()
 	sky.sky_material = sky_material
 
@@ -108,11 +109,11 @@ func _configure_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.8
+	env.ambient_light_energy = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.ssao_enabled = true        # solo Forward+/Mobile; ignorato da Compatibility
 	env.glow_enabled = true        # "bloom" da diretta TV 2010
-	env.glow_intensity = 0.7
+	env.glow_intensity = 0.95
 	env.glow_bloom = 0.08
 	env.glow_hdr_threshold = 1.0
 	env.adjustment_enabled = true
@@ -126,49 +127,37 @@ func _configure_environment() -> void:
 
 # --- geometria ----------------------------------------------------------------------------------
 
-## Costruisce la scena giusta per la gara: rettilineo dei 100m oppure ovale da 400 m. Se e' gia' quella, non fa nulla.
+## Costruisce la pista per la gara: sempre l'ovale; i 100m aggiungono il rettilineo prolungato con blocchi e cartellini.
+## Se e' gia' quella giusta, non fa nulla.
 func _rebuild_world(kind: String) -> void:
-	var wanted: String = "100m" if kind == "100m" else "oval"
-	if wanted == _world_kind:
+	if kind == _world_kind:
 		return
-	_world_kind = wanted
+	_world_kind = kind
 	for child: Node in _track_root.get_children():
 		_track_root.remove_child(child)
 		child.queue_free()
-	if wanted == "oval":
-		OvalTrackBuilder.build(_track_root)
-		# Tribune dietro il rettilineo d'arrivo (dietro la camera) e dietro quello opposto (sfondo): lontane dalla pista,
-		# cosi' la camera esterna che insegue il gruppo non ci finisce dentro.
-		var mid_x: float = -TrackGeometry.STRAIGHT * 0.5
-		_build_stand_block(mid_x, 200.0, 50.0, 1.0, [-130.0, -42.0, 45.0])
-		_build_stand_block(mid_x, 200.0, -125.0, -1.0, [-130.0, -42.0, 45.0])
-		_sun.directional_shadow_max_distance = 160.0  # la camera si allontana dal gruppo sparpagliato
-	else:
-		_build_track()
-		_build_stand_block((TRACK_X_MIN + TRACK_X_MAX) * 0.5, TRACK_X_MAX - TRACK_X_MIN + 20.0, -6.0, -1.0,
-			[-10.0, 40.0, 100.0, 140.0])
-		_sun.directional_shadow_max_distance = 90.0
+	OvalTrackBuilder.build(_track_root, kind)
+	# Tribune dietro il rettilineo d'arrivo (dietro la camera) e dietro quello opposto (sfondo). Nei 100m quella opposta e'
+	# vicina (fa da sfondo ai primi piani come nel riferimento); nei 400m resta lontana: le camere ci girano intorno.
+	var mid_x: float = -TrackGeometry.STRAIGHT * 0.5
+	var back_z: float = -92.0 if kind == "100m" else -125.0
+	_build_stand_block(mid_x, 220.0, 50.0, 1.0, [-130.0, -42.0, 45.0])
+	_build_stand_block(mid_x, 220.0, back_z, -1.0, [-130.0, -42.0, 45.0])
+	_build_track_lights()
+	_sun.directional_shadow_max_distance = 160.0
 
 
-func _build_track() -> void:
-	var length: float = TRACK_X_MAX - TRACK_X_MIN
-	var center_x: float = (TRACK_X_MIN + TRACK_X_MAX) * 0.5
-	var width: float = LANES * LANE_WIDTH
-	var center_z: float = (LANES - 1) * LANE_WIDTH * 0.5
-
-	_add_box(_track_root, Vector3(length, 0.1, width), Vector3(center_x, -0.05, center_z),
-		_flat(Color(0.7, 0.27, 0.2), 0.9))                                    # tartan
-	_add_box(_track_root, Vector3(length + 80.0, 0.1, 60.0), Vector3(center_x, -0.1, -width * 0.5 - 30.0),
-		_flat(Color(0.18, 0.45, 0.2), 1.0))                                   # prato interno
-	_add_box(_track_root, Vector3(length + 80.0, 0.1, 40.0), Vector3(center_x, -0.1, center_z + width * 0.5 + 20.0),
-		_flat(Color(0.16, 0.4, 0.18), 1.0))                                  # prato esterno
-
-	var line: StandardMaterial3D = _flat(Color(0.95, 0.95, 0.95), 0.7)
-	for i in range(LANES + 1):
-		var z: float = (i - 0.5) * LANE_WIDTH
-		_add_box(_track_root, Vector3(length, 0.01, 0.05), Vector3(center_x, 0.006, z), line)
-	_add_box(_track_root, Vector3(0.1, 0.012, width), Vector3(0.0, 0.007, center_z), line)           # linea di partenza
-	_add_box(_track_root, Vector3(0.25, 0.012, width), Vector3(FINISH_X, 0.007, center_z), line)     # traguardo
+## Fari sopra la pista (senza ombre: le ombre le fa la luce principale): illuminano il tartan come i fari dello stadio.
+func _build_track_lights() -> void:
+	for x: float in [-95.0, -48.0, 0.0]:
+		for z: float in [6.0, -70.0]:
+			var light: OmniLight3D = OmniLight3D.new()
+			light.position = Vector3(x, 26.0, z)
+			light.light_color = Color(1.0, 0.96, 0.88)
+			light.light_energy = 2.4
+			light.omni_range = 75.0
+			light.shadow_enabled = false
+			_track_root.add_child(light)
 
 
 ## Gradinata a gradoni che si allontana da z_start nella direzione `dir` (+1/-1), con torri faro dietro di essa.
@@ -201,7 +190,7 @@ func _build_stand_block(center_x: float, length: float, z_start: float, dir: flo
 func _crowd_texture() -> ImageTexture:
 	var size: int = 512
 	var img: Image = Image.create(size, size, false, Image.FORMAT_RGB8)
-	img.fill(Color(0.06, 0.06, 0.08))
+	img.fill(Color(0.08, 0.12, 0.32))   # seggiolini blu dello stadio
 	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = 2010
 	var shirts: Array[Color] = [

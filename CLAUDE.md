@@ -110,20 +110,35 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   interna** se manca Godot (`TEF_GODOT`, scoop o PATH), il progetto o `addons/godot-sqlite/`, se l'export fallisce
   o se Godot esce subito con errore. `TEF_NO_GODOT=1` lo disattiva (impostato in `tests/test_game.py`).
 - **Ritirati (DNF).** `race_results.status = 'DNF'`: il corridore corre sulla stessa curva fino a 42 m
-  (`RaceMotion.DNF_STOP_DISTANCE`), rallenta, si ferma (HUD «RIT.») ed è ultimo; `final_time` è solo un tempo di
+  (`RaceMotion.dnf_stop_distance(kind)`), rallenta, si ferma (HUD «RIT.») ed è ultimo; `final_time` è solo un tempo di
   riferimento (mediana degli altri). Più corridori delle 8 corsie → `export_race` solleva `ValueError` e il gioco
   usa la vista interna (mai scarti silenziosi).
 - **400m.** Pista ovale: `models/TrackGeometry.gd` (rettilinei 84,39 m, raggio corsia 1 = 36,8 m, corsie da 1,22 m;
   partenza sfalsata `start_offset`, traguardo a x = 0) è l'unica fonte sia per la posizione dei corridori sia per il
   disegno (`scripts/OvalTrackBuilder.gd`). `RaceMotion` ha una curva per evento (`kind`); la distanza è per corsia
-  dalla SUA partenza. Camera "chase" sul lato esterno. **La mira è sempre esattamente sul primo in classifica**
-  (`live_order[0]`), senza ritardo di inseguimento (nemmeno a 8x); solo quando il primo cambia (con la partenza
-  sfalsata due primi possono distare decine di metri) la mira scivola dal vecchio al nuovo (`_aim_offset` che decade).
-  Fino allo sparo si inquadra tutto il gruppo. `tests/verify_camera.gd` misura lo scarto del primo dal centro.
+  dalla SUA partenza. **In gara la mira delle camere è sempre esattamente sul primo in classifica**
+  (`live_order[0]`), senza ritardo di inseguimento (nemmeno a 8x). `tests/verify_camera.gd` misura lo scarto del primo
+  dal centro (a 1x/4x/8x, anche sul 100m).
   **Niente compressione del tempo**: si guarda in tempo reale e l'utente accelera con i tasti 1/2/4/8
   (indicatore in basso a destra). `GODOT_EVENTS` in `views/godot_launcher.py` è un elenco esatto: le staffette
   (`4x100m`…) restano sulla vista PyQt.
-- Il visualizzatore Godot copre solo **100m e 400m** (niente 1500m, staffette, concorsi né squalificati).
+- **Riferimenti video (lavoro guidato dall'utente).** Il 100m e il 400m sono modellati su due dirette TV scaricate in
+  `raw/` (cartella ignorata da git; non committare video): 100m di Roma (`lyles_100m_diamond_league.mp4`, pista blu) e
+  finale olimpica dei 400m di Parigi 2024 (`400m_reference_C05vAdxXXEI.mp4`, pista viola). Regola del progetto: niente
+  loghi, sponsor, emittenti o nomi reali (grafica originale). **Regia** (`BroadcastCameras.gd`) legata allo stato della
+  gara, non al tempo reale: 100m = apertura larga dietro i blocchi → primo piano basso sui blocchi → start largo →
+  carrello alto (primo a destra del centro) → traguardo dall'alto → corsa oltre il traguardo in curva; 400m = start
+  largo → teleobiettivo dall'altro lato dell'interno (rettilineo opposto) → alto sulla curva 2 → carrello alto →
+  traguardo. **Preparazione per evento** (`RaceController.GUN_AT_BY_KIND`: 100m 9 s, 400m 7 s; Esc/Spazio la
+  saltano). **100m sull'ovale** con rettilineo prolungato (`TrackGeometry.runner_pose`; dopo il traguardo i corridori
+  seguono la curva). **Posa ai blocchi** ("pronti" → "set") senza animazioni: `SetPoseRig.gd` (bacino e schiena a mano,
+  braccia e gambe con `TwoBoneIK3D`); blocchi e cartellini di corsia in `OvalTrackBuilder`. **HUD** in stile TV:
+  cronometro in basso a destra (decimi in gara, centesimi all'arrivo), vento e «risultato non ufficiale» dopo
+  l'arrivo; la classifica laterale è **nascosta di default** (tasto H). Piste e luci: notte, blu per i 100m, viola per
+  i 400m. `tests/pose_lab.gd` serve a tarare la posa.
+- Il visualizzatore Godot copre solo **100m e 400m** (niente 1500m, staffette, concorsi né squalificati). Il 1500m è
+  stato progettato (anello unico sulla corsia 1 + scostamento laterale solo visivo, andatura `Sprint`, tempi `m:ss.xx`)
+  ma NON scritto.
 
 ## Test: cosa verificano e cosa no
 

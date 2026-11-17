@@ -67,8 +67,8 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: solo 100m e 400m (niente 1500m, staffette, concorsi); la partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le
-mani a terra (la libreria di animazioni non ne ha una); la finestra Godot è separata dal gioco; nessun pettorale
+Limiti noti: solo 100m e 400m (niente 1500m, staffette, concorsi); la posizione ai blocchi è ottenuta con IK (`SetPoseRig`), non
+da un'animazione, e la spinta di uscita dai blocchi è l'animazione `Sprint` (non c'è una vera partenza); la finestra Godot è separata dal gioco; nessun pettorale
 (dalla camera laterale non si vedrebbe); il pubblico è una texture procedurale a blocchetti, non persone modellate.
 Provati: tasti Spazio/1/2/4/Esc e `--autoquit` (`tests/verify_input.gd`), ritiro per infortunio (gara 2 del DB
 demo), fotofinish (la camera fissa stacca quando il leader supera i 90 m).
@@ -82,6 +82,18 @@ La camera `ChaseCam` sta sul lato esterno e punta sempre sul primo in classifica
 anche a 8x; `tests/verify_camera.gd` lo misura: scarto massimo 42 px su 1152). Se il primo cambia la mira scivola
 dal vecchio al nuovo; fino allo sparo si vede tutto il gruppo. I corridori vanno sempre da sinistra a destra.
 Stacco sul fotofinish negli ultimi 10 m.
+
+## Riprese e grafica "da diretta TV"
+
+Le riprese, i tempi di preparazione, la posa ai blocchi, la pista (blu per i 100m, viola per i 400m) e la grafica sono
+ricavati da due dirette di riferimento (100m di Roma e finale 400m di Parigi 2024), tenute in `raw/` (non su git).
+Sequenza dei 100m: apertura larga dall'alto dietro i blocchi → primo piano basso sui blocchi ("pronti", poi "set") →
+start largo → carrello alto sul gruppo (il primo a destra del centro) → traguardo dall'alto → corsa oltre il traguardo,
+in curva. Sequenza dei 400m: start largo → teleobiettivo dall'altro lato dell'interno → alto sulla curva 2 → carrello alto →
+traguardo. In gara la mira è sempre esattamente sul primo. HUD: cronometro in basso a destra, vento e risultato non
+ufficiale dopo l'arrivo; **H** mostra/nasconde la classifica laterale (nascosta di default).
+Limiti: niente 9ª corsia (le corsie sono 8), niente audio, niente primi piani degli atleti, i marchi reali sono sostituiti
+da grafica originale.
 
 ## Uso dal gioco PyQt
 

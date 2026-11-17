@@ -74,3 +74,40 @@ static func pose(lane: int, distance_run: float) -> Dictionary:
 	var p: Vector2 = position_at(lane, c)
 	var h: Vector2 = heading_at(lane, c)
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
+
+
+## Linea di partenza dei 100m: sul rettilineo d'arrivo prolungato all'indietro ("chute") oltre l'inizio dell'arco.
+const START_100M_X: float = -100.0
+
+
+## Posizione 3D, direzione e angolo di un corridore in gara. Unica fonte per RunnerView, camere e test.
+## - 100m: corre dalla linea di partenza (x = -100) al traguardo (x = 0) sul rettilineo, poi prosegue nella curva
+##   della sua corsia (la "corsa dopo il traguardo" segue la pista, non la attraversa).
+## - altre gare sull'ovale: partenza sfalsata per corsia (vedi pose()).
+static func runner_pose(kind: String, lane: int, distance_run: float) -> Dictionary:
+	if kind != "100m":
+		return pose(lane, distance_run)
+	if distance_run <= 100.0:
+		return {"position": Vector3(START_100M_X + distance_run, 0.0, (lane - 1) * LANE_WIDTH),
+			"heading": Vector2(1.0, 0.0), "yaw": 0.0}
+	var c: float = distance_run - 100.0  # oltre il traguardo: arco 1 della propria corsia
+	var p: Vector2 = position_at(lane, c)
+	var h: Vector2 = heading_at(lane, c)
+	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
+
+
+enum Region { ARC1, BACK, ARC2, HOME }
+
+
+## In quale tratto dell'anello si trova un corridore (usato dalla regia dei 400m): curva 1, rettilineo opposto,
+## curva 2, rettilineo d'arrivo. Oltre il traguardo si riavvolge sulla curva 1.
+static func region(lane: int, distance_run: float) -> int:
+	var c: float = fposmod(start_offset(lane) + distance_run, loop_length(lane))
+	var arc: float = PI * radius(lane)
+	if c < arc:
+		return Region.ARC1
+	c -= arc
+	if c < STRAIGHT:
+		return Region.BACK
+	c -= STRAIGHT
+	return Region.ARC2 if c < arc else Region.HOME
