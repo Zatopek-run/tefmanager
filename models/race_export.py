@@ -28,6 +28,7 @@ DISTANCES_M = {
     "4x100m": 400,
     "4x400m": 1600,
     "Salto in Lungo": 0,
+    "Getto del Peso": 0,
 }  # gare supportate dal visualizzatore Godot
 
 
@@ -55,7 +56,7 @@ def _runnable(result: EventResult, standing: EventStanding, seed: str) -> bool:
     """Chi finisce la gara deve avere un risultato coerente."""
     if _stop_status(result, standing) is not None:
         return True
-    if result.event_name == "Salto in Lungo":
+    if result.event_name in ("Salto in Lungo", "Getto del Peso"):
         return standing.mark_value > 0.2
     return standing.mark_value > reaction_time(seed, standing.athlete_name)
 
@@ -108,14 +109,14 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                 for s in standings
             ],
         )
-        if result.event_name == "Salto in Lungo":
+        if result.event_name in ("Salto in Lungo", "Getto del Peso"):
             attempt_rows = []
             for s in standings:
                 lane = lanes[s.athlete_name]
                 if _stop_status(result, s) is not None:
                     continue
                 for rnd, val in enumerate(
-                    generate_attempts(s.mark_value, _rng("lj", seed, s.athlete_name)),
+                    generate_attempts(s.mark_value, _rng(seed, result.event_name, s.athlete_name)),
                     start=1,
                 ):
                     is_foul = 1 if val is None else 0

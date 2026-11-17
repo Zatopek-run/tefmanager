@@ -101,7 +101,7 @@ func _process(_delta: float) -> void:
 		if visible:
 			_rig.set_enabled(false)
 			position = RaceController.jumper_pos
-			rotation.y = 0.0
+			rotation.y = RaceController.jumper_yaw
 			_model.rotation.x = 0.0
 			_model.position = Vector3.ZERO
 			_play(RaceController.jumper_anim, 0.12)

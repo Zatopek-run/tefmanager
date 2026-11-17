@@ -230,8 +230,9 @@ func _update_banner() -> void:
 	var text: String = ""
 	var accent: Color = AMBER
 	if RaceController.is_field(RaceController.event_kind):
-		text = "SALTO NULLO!" if RaceController.field_landed_foul else ""
-		accent = MAGENTA if RaceController.field_landed_foul else AMBER
+		var foul_banner: bool = RaceController.field_landed_foul and RaceController.state == RaceController.State.RUNNING
+		text = "LANCIO NULLO!" if (foul_banner and RaceController.event_kind == "Getto del Peso") else ("SALTO NULLO!" if foul_banner else "")
+		accent = MAGENTA if foul_banner else AMBER
 	else:
 		match RaceController.state:
 			RaceController.State.COUNTDOWN:

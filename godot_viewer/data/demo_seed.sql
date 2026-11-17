@@ -138,3 +138,39 @@ INSERT OR REPLACE INTO field_attempts (race_id, lane, round_num, mark_m, is_foul
 (10, 2, 1, 6.32, 0), (10, 2, 2, 6.45, 0), (10, 2, 3, 6.38, 0), (10, 2, 4, 6.41, 0),
 (10, 3, 1, 6.40, 0), (10, 3, 2, 6.68, 0), (10, 3, 3, 6.50, 1), (10, 3, 4, 6.58, 0),
 (10, 4, 1, 6.62, 0), (10, 4, 2, 6.70, 0), (10, 4, 3, 6.74, 0), (10, 4, 4, 6.65, 0);
+
+-- Gara 11: Getto del Peso Maschile (4 prove in pedana).
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (11, 'Getto del Peso', 'Meeting Internazionale di Prova', 0, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(11, 1, 'Dario Conti',    'Atletica Brera',    'M', 0, 0.15, 17.85, 'OK'),
+(11, 2, 'Luca Ferrante',  'Polisportiva Nord', 'M', 0, 0.15, 18.60, 'OK'),
+(11, 3, 'Marco Valenti',  'Club Aurora',       'M', 1, 0.15, 19.42, 'OK'),
+(11, 4, 'Ivo Salvetti',   'Atletica Brera',    'M', 0, 0.15, 17.40, 'OK'),
+(11, 5, 'Tomas Reinholt', 'Nordic Track',      'M', 0, 0.15, 20.15, 'OK'),
+(11, 6, 'Paulo Mendes',   'Clube Atlantico',   'M', 0, 0.15, 18.95, 'OK');
+
+INSERT OR REPLACE INTO field_attempts (race_id, lane, round_num, mark_m, is_foul) VALUES
+(11, 1, 1, 17.20, 0), (11, 1, 2, 17.85, 0), (11, 1, 3, 17.45, 1), (11, 1, 4, 17.60, 0),
+(11, 2, 1, 18.10, 0), (11, 2, 2, 18.40, 1), (11, 2, 3, 18.60, 0), (11, 2, 4, 18.30, 0),
+(11, 3, 1, 18.85, 0), (11, 3, 2, 19.10, 1), (11, 3, 3, 19.42, 0), (11, 3, 4, 19.25, 0),
+(11, 4, 1, 16.95, 0), (11, 4, 2, 17.40, 0), (11, 4, 3, 17.12, 0), (11, 4, 4, 17.28, 1),
+(11, 5, 1, 19.60, 0), (11, 5, 2, 20.15, 0), (11, 5, 3, 19.85, 0), (11, 5, 4, 20.02, 0),
+(11, 6, 1, 18.45, 0), (11, 6, 2, 18.95, 0), (11, 6, 3, 18.70, 0), (11, 6, 4, 18.82, 0);
+
+-- Gara 12: Getto del Peso Femminile.
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (12, 'Getto del Peso', 'Meeting Internazionale di Prova', 0, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(12, 1, 'Giulia Conti',     'Atletica Brera',    'F', 0, 0.15, 16.20, 'OK'),
+(12, 2, 'Nadia Moretti',    'Polisportiva Nord', 'F', 0, 0.15, 16.85, 'OK'),
+(12, 3, 'Viola Ferri',      'Club Aurora',       'F', 1, 0.15, 17.64, 'OK'),
+(12, 4, 'Astrid Lindqvist', 'Nordic Track',      'F', 0, 0.15, 18.10, 'OK');
+
+INSERT OR REPLACE INTO field_attempts (race_id, lane, round_num, mark_m, is_foul) VALUES
+(12, 1, 1, 15.80, 0), (12, 1, 2, 16.20, 0), (12, 1, 3, 15.95, 0), (12, 1, 4, 16.05, 1),
+(12, 2, 1, 16.40, 0), (12, 2, 2, 16.85, 0), (12, 2, 3, 16.62, 0), (12, 2, 4, 16.70, 0),
+(12, 3, 1, 17.10, 0), (12, 3, 2, 17.64, 0), (12, 3, 3, 17.30, 1), (12, 3, 4, 17.50, 0),
+(12, 4, 1, 17.75, 0), (12, 4, 2, 17.90, 0), (12, 4, 3, 18.10, 0), (12, 4, 4, 17.85, 0);

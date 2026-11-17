@@ -15,7 +15,7 @@ const PAN_DY: float = 0.12
 const BAND_DX_MIN: float = 0.05     # carrello: il primo sta a destra del centro, fra queste frazioni della larghezza
 const BAND_DX_MAX: float = 0.32
 const MIN_OK_FRACTION: float = 0.95
-var CASES: Array[Vector2i] = [Vector2i(1, 1), Vector2i(1, 4), Vector2i(3, 1), Vector2i(3, 8), Vector2i(4, 4), Vector2i(5, 8), Vector2i(6, 8), Vector2i(7, 4), Vector2i(8, 8), Vector2i(9, 4), Vector2i(10, 4)]  # (gara, velocita'); --only=gara,velocita' per un caso solo
+var CASES: Array[Vector2i] = [Vector2i(1, 1), Vector2i(1, 4), Vector2i(3, 1), Vector2i(3, 8), Vector2i(4, 4), Vector2i(5, 8), Vector2i(6, 8), Vector2i(7, 4), Vector2i(8, 8), Vector2i(9, 4), Vector2i(10, 4), Vector2i(11, 4), Vector2i(12, 4)]  # (gara, velocita'); --only=gara,velocita' per un caso solo
 
 var _failures: int = 0
 var _case: int = -1
@@ -137,6 +137,8 @@ func _cam_kind(cam: Camera3D, cams: Node) -> String:
 func _world_of(r: RunnerData) -> Vector3:
 	var rc: Node = root.get_node("RaceController")
 	if rc.is_field(rc.event_kind):
+		if rc.event_kind == "Getto del Peso" and rc.shot_visible:
+			return rc.shot_pos
 		return rc.jumper_pos + Vector3(0.0, 0.9, 0.0)
 	return TrackGeometry.runner_pose(rc.event_kind, r.lane, r.distance)["position"] + Vector3(0.0, 0.9, 0.0)
 

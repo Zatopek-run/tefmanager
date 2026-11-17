@@ -121,7 +121,10 @@ func reset() -> void:
 	_race_distance = RaceMotion.race_distance(RaceController.event_kind)
 	var fx: float = TrackGeometry.FINISH_X
 	if _field:
-		_field_cam.look_at_from_position(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), Vector3.UP)
+		if RaceController.event_kind == "Getto del Peso":
+			_field_cam.look_at_from_position(Vector3(-34.0, 4.2, -22.0), Vector3(-36.0, 1.3, -36.0), Vector3.UP)
+		else:
+			_field_cam.look_at_from_position(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), Vector3.UP)
 	elif _oval:
 		var s: float = TrackGeometry.STRAIGHT
 		# Traguardo ovale: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo).
@@ -238,9 +241,16 @@ func _apply(cam: Camera3D) -> void:
 	if cam == _side_cam:
 		_update_side_cam()
 	elif cam == _field_cam:
-		var jp: Vector3 = RaceController.jumper_pos
-		_field_cam.position = Vector3(clampf(jp.x + 6.0, -34.0, 2.0), 3.4, -3.5)
-		_field_cam.look_at(jp + Vector3(1.5, 0.9, 0.0), Vector3.UP)
+		if RaceController.event_kind == "Getto del Peso":
+			var focus: Vector3 = RaceController.shot_pos if RaceController.shot_visible else RaceController.jumper_pos
+			_field_cam.fov = 38.0
+			_field_cam.position = Vector3(clampf(focus.x + 2.5, -44.0, -18.0), 4.8, -18.0)
+			_field_cam.look_at(Vector3(focus.x, clampf(focus.y * 0.65, 1.2, 3.0), focus.z), Vector3.UP)
+		else:
+			var jp: Vector3 = RaceController.jumper_pos
+			_field_cam.fov = 34.0
+			_field_cam.position = Vector3(clampf(jp.x + 6.0, -34.0, 2.0), 3.4, -3.5)
+			_field_cam.look_at(jp + Vector3(1.5, 0.9, 0.0), Vector3.UP)
 	elif cam == _o_start or cam == _o_far or cam == _o_curve:
 		if RaceController.state == RaceController.State.RUNNING or RaceController.state == RaceController.State.FINISHED:
 			cam.look_at(_leader_world_position() + Vector3(0.0, 0.9, 0.0), Vector3.UP)

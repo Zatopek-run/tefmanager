@@ -87,6 +87,45 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 			ml.position = Vector3(mx, 0.06, pit_z + 1.78)
 			ml.rotation_degrees.x = -90.0
 			parent.add_child(ml)
+	elif kind == "Getto del Peso":
+		# Pedana circolare in cemento (centro x = -42, z = -36), fermapiedi e settore 34.92° verso +X.
+		var sp_z: float = -36.0
+		var cx: float = -42.0
+		var concrete: StandardMaterial3D = _material(Color(0.68, 0.71, 0.76), 0.9)
+		var rim_mat: StandardMaterial3D = _material(Color(0.92, 0.93, 0.95), 0.7)
+		var circle_mesh: CylinderMesh = CylinderMesh.new()
+		circle_mesh.top_radius = 1.07
+		circle_mesh.bottom_radius = 1.07
+		circle_mesh.height = 0.04
+		var circle: MeshInstance3D = MeshInstance3D.new()
+		circle.mesh = circle_mesh
+		circle.material_override = concrete
+		circle.position = Vector3(cx, 0.01, sp_z)
+		parent.add_child(circle)
+		_box(parent, Vector3(0.14, 0.12, 1.22), Vector3(cx + 1.07, 0.06, sp_z), rim_mat)  # fermapiedi
+		# Linee del settore (34.92° -> +/-17.46°) lunghe 26 m
+		for sgn: float in [-1.0, 1.0]:
+			var ang: float = sgn * deg_to_rad(17.46)
+			var seg_len: float = 26.0
+			var sec_line: MeshInstance3D = _box(
+				parent,
+				Vector3(seg_len, 0.012, 0.06),
+				Vector3(cx + 1.07 + cos(ang) * seg_len * 0.5, 0.008, sp_z + sin(ang) * seg_len * 0.5),
+				line
+			)
+			sec_line.rotation.y = -ang
+		for dm: int in [12, 14, 16, 18, 20, 22]:
+			var mx: float = cx + 1.07 + float(dm)
+			var half_w: float = float(dm) * tan(deg_to_rad(17.46))
+			_box(parent, Vector3(0.05, 0.012, half_w * 2.0), Vector3(mx, 0.008, sp_z), line)
+			var ml: Label3D = Label3D.new()
+			ml.text = "%dm" % dm
+			ml.font_size = 64
+			ml.pixel_size = 0.0045
+			ml.modulate = Color(0.96, 0.96, 0.96)
+			ml.position = Vector3(mx, 0.05, sp_z + half_w + 0.55)
+			ml.rotation_degrees.x = -90.0
+			parent.add_child(ml)
 	else:
 		# Linee di partenza: una per corsia, sfalsate; orientate di traverso alla corsia.
 		for lane in range(1, lanes + 1):
