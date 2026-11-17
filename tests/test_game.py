@@ -1400,6 +1400,34 @@ class TestRaceExport(unittest.TestCase):
         summary, result = self._summary()
         self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 
+    def test_next_race_db_path_ignores_locked_stale_file(self) -> None:
+        from unittest import mock
+        import views.godot_launcher as gl
+
+        with tempfile.TemporaryDirectory() as td:
+            save_path = Path(td) / "savegame.db"
+            locked_db = Path(td) / "race_results.db"
+            stale_db = Path(td) / "race_results_old.db"
+            locked_db.write_bytes(b"locked")
+            stale_db.write_bytes(b"stale")
+            orig_unlink = Path.unlink
+
+            def fake_unlink(p: Path, missing_ok: bool = False) -> None:
+                if p.name == "race_results.db":
+                    raise PermissionError(32, "locked")
+                orig_unlink(p, missing_ok=missing_ok)
+
+            with (
+                mock.patch.object(gl, "get_default_save_path", return_value=save_path),
+                mock.patch.object(Path, "unlink", fake_unlink),
+            ):
+                fresh = gl._next_race_db_path()
+            self.assertEqual(fresh.parent, Path(td))
+            self.assertNotEqual(fresh.name, "race_results.db")
+            self.assertTrue(fresh.name.startswith("race_results_"))
+            self.assertFalse(stale_db.exists())
+            self.assertTrue(locked_db.exists())
+
     def test_export_race_includes_inferred_gender(self) -> None:
         import sqlite3
         from models.generator import infer_gender

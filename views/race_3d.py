@@ -1698,22 +1698,32 @@ class Track3DWidget(TrackRaceWidget):
         )
         if h_info is not None:
             hx, hy, r, depth = h_info
-            if is_player and depth < 85 and self._cam_label not in ("BLOCK-CAM", "BLOCCHI"):
-                font = QFont(self.font())
-                font.setPointSize(9)
-                font.setBold(True)
-                p.setFont(font)
-                label = _short(name, 16).upper()
-                tag_w = QFontMetrics(font).horizontalAdvance(label) + 16
-                rect = QRectF(hx - tag_w / 2, hy - r * 1.2 - 30, tag_w, 19)
-                p.setBrush(QColor(11, 18, 32, 225))
-                p.setPen(QPen(QColor("#fbbf24"), 1.2))
-                p.drawRoundedRect(rect, 5, 5)
-                p.setPen(QColor("#fbbf24"))
-                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+            if is_player:
+                tri_h = max(9.0, min(16.0, r * 1.45))
+                tri_w = tri_h * 0.9
+                tip_y = hy - r * 1.35 - 4.0
+                p.setPen(QPen(QColor("#0f172a"), 1.3))
+                p.setBrush(QColor("#facc15"))
+                p.drawPolygon(QPolygonF([
+                    QPointF(hx - tri_w, tip_y - tri_h),
+                    QPointF(hx + tri_w, tip_y - tri_h),
+                    QPointF(hx, tip_y),
+                ]))
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QColor("#fbbf24"))
-                p.drawPolygon(QPolygonF([QPointF(hx - 5, rect.bottom()), QPointF(hx + 5, rect.bottom()), QPointF(hx, rect.bottom() + 6)]))
+                if depth < 85 and self._cam_label not in ("BLOCK-CAM", "BLOCCHI"):
+                    font = QFont(self.font())
+                    font.setPointSize(9)
+                    font.setBold(True)
+                    p.setFont(font)
+                    label = _short(name, 16).upper()
+                    tag_w = QFontMetrics(font).horizontalAdvance(label) + 16
+                    rect = QRectF(hx - tag_w / 2, tip_y - tri_h - 24, tag_w, 19)
+                    p.setBrush(QColor(11, 18, 32, 225))
+                    p.setPen(QPen(QColor("#facc15"), 1.2))
+                    p.drawRoundedRect(rect, 5, 5)
+                    p.setPen(QColor("#facc15"))
+                    p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+                    p.setPen(Qt.PenStyle.NoPen)
 
     def _draw_rain_overlay(self, p: QPainter, w: int, h: int) -> None:
         if self._weather != WeatherCondition.PIOGGIA:

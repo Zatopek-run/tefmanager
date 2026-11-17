@@ -45,6 +45,7 @@ const DRIVE_RISE_METERS: float = 16.0            # metri su cui il busto si radd
 
 static var _animation_library: AnimationLibrary = null
 static var _cloth_shader_cache: Shader = null
+const PLAYER_MARKER_COLOR: Color = Color(1.0, 0.86, 0.12)
 
 var data: RunnerData = null
 
@@ -55,6 +56,8 @@ var _current_anim: StringName = &""
 var _rig: SetPoseRig = null           # posizione ai blocchi (pronti/set), attiva prima della partenza
 var _posture_mod: SprintPostureModifier = null
 var _baton: MeshInstance3D = null
+var _player_marker: MeshInstance3D = null
+var _head_bone_idx: int = -1
 var _relay_leg: int = -1               # -1 = gara individuale; 0..3 = frazione della staffetta
 var _relay_leg_len: float = 100.0
 var _visual_key: String = ""
@@ -78,6 +81,9 @@ func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visu
 	var body: MeshInstance3D = _find_body_mesh()
 	var height: float = _dress(body)
 	_attach_hair()
+	if runner.is_player:
+		_head_bone_idx = _skeleton.find_bone("Head")
+		_attach_player_marker()
 	if _relay_leg >= 0:
 		_attach_baton()
 	var base_h: float = 1.63 if is_female else 1.72
@@ -108,11 +114,13 @@ func _process(_delta: float) -> void:
 			if _posture_mod != null:
 				_posture_mod.active_weight = 1.0 if _current_anim == &"Sprint" else 0.0
 			_player.speed_scale = RaceController.jumper_speed_scale * RaceController.time_scale
+			_update_player_marker()
 		return
 	visible = true
 	var st: Vector2 = _leg_state()
 	_apply_transform(st.x)
 	_update_animation(st.x, st.y)
+	_update_player_marker()
 
 
 func _leg_state() -> Vector2:
@@ -339,6 +347,43 @@ void fragment() {
 }
 """
 	return _cloth_shader_cache
+
+
+func _update_player_marker() -> void:
+	if _player_marker == null or _skeleton == null or _head_bone_idx < 0:
+		return
+	var head_world: Vector3 = _skeleton.to_global(_skeleton.get_bone_global_pose(_head_bone_idx).origin)
+	_player_marker.global_position = head_world + Vector3(0.0, 0.45, 0.0)
+
+
+func _attach_player_marker() -> void:
+	var mesh: ArrayMesh = ArrayMesh.new()
+	var add_tri := func(half_w: float, half_h: float, z: float, col: Color) -> void:
+		var arr: Array = []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = PackedVector3Array([
+			Vector3(-half_w, half_h, z),
+			Vector3(half_w, half_h, z),
+			Vector3(0.0, -half_h, z),
+		])
+		arr[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2])
+		var surf_idx: int = mesh.get_surface_count()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var mat: StandardMaterial3D = StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.albedo_color = col
+		mesh.surface_set_material(surf_idx, mat)
+
+	add_tri.call(0.18, 0.16, -0.005, Color(0.06, 0.09, 0.16))
+	add_tri.call(0.15, 0.135, 0.005, PLAYER_MARKER_COLOR)
+
+	_player_marker = MeshInstance3D.new()
+	_player_marker.mesh = mesh
+	_player_marker.position = Vector3(0.0, 2.15, 0.0)
+	_player_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_player_marker)
 
 
 func _attach_hair() -> void:

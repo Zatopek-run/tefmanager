@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -60,6 +61,23 @@ def race_db_path() -> Path:
     return get_default_save_path().parent / "race_results.db"
 
 
+def _cleanup_stale_race_dbs(directory: Path) -> None:
+    """Rimuove vecchi file race_results*.db non più bloccati da Godot (best-effort)."""
+    for old in directory.glob("race_results*.db"):
+        try:
+            old.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _next_race_db_path() -> Path:
+    """Percorso DB univoco per ogni avvio: evita WinError 32 se un Godot precedente sta ancora chiudendo."""
+    base_dir = get_default_save_path().parent
+    base_dir.mkdir(parents=True, exist_ok=True)
+    _cleanup_stale_race_dbs(base_dir)
+    return base_dir / f"race_results_{os.getpid()}_{uuid.uuid4().hex[:8]}.db"
+
+
 def launch_race_viewer(
     summary: CompetitionSummary,
     result: EventResult,
@@ -72,9 +90,8 @@ def launch_race_viewer(
     godot = viewer_available(result.event_name)
     if godot is None:
         return None
-    db_path = race_db_path()
+    db_path = _next_race_db_path()
     try:
-        db_path.unlink(missing_ok=True)  # un file nuovo per ogni gara: Godot non è in esecuzione
         race_id = export_race(summary, result, db_path)
     except Exception:  # export fallito (dati incoerenti, disco, …): si ripiega sulla vista interna
         return None

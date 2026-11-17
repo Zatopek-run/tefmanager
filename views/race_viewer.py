@@ -461,6 +461,17 @@ class TrackRaceWidget(QWidget):
         if is_player:
             p.setBrush(QColor("#fbbf24"))
             p.drawChord(QRectF(head.x() - 0.75 * u, head.y() - 0.82 * u, 1.50 * u, 1.25 * u), 18 * 16, 144 * 16)
+            tip_y = head.y() - 1.15 * u
+            tri_h = max(6.0, 1.35 * u)
+            tri_w = max(5.0, 0.95 * u)
+            p.setPen(QPen(QColor("#0f172a"), 1.2))
+            p.setBrush(QColor("#facc15"))
+            p.drawPolygon(QPolygonF([
+                QPointF(head.x() - tri_w, tip_y - tri_h),
+                QPointF(head.x() + tri_w, tip_y - tri_h),
+                QPointF(head.x(), tip_y),
+            ]))
+            p.setPen(Qt.PenStyle.NoPen)
 
     def paintEvent(self, _event) -> None:  # noqa: N802 (Qt API)
         p = QPainter(self)
