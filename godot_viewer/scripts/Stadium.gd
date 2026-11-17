@@ -36,8 +36,6 @@ func _ready() -> void:
 	_race_id = _race_id_from_args()
 	_autoquit = OS.get_cmdline_user_args().has("--autoquit")
 	if RaceController.load_race(_race_id):
-		if RaceController.event_kind == "1500m" or RaceController.event_kind == "4x400m":
-			RaceController.time_scale = 4.0
 		get_tree().create_timer(AUTO_START_DELAY).timeout.connect(RaceController.start)
 	elif _autoquit:
 		push_error("Stadium: gara %d non caricabile: esco con errore." % _race_id)
