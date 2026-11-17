@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("TEF_NO_GODOT", "1")  # i test non devono aprire finestre Godot
 
 from PyQt6.QtWidgets import QApplication
 
@@ -1251,6 +1252,15 @@ class TestRaceExport(unittest.TestCase):
         self.assertEqual(sorted(r[0] for r in rows), [1, 2, 3, 4])              # corsie uniche
         self.assertTrue(all(0 < r[2] < r[3] for r in rows))                       # reazione inclusa nel tempo
         self.assertEqual(sorted(rows), sorted(again))                             # stesso sorteggio
+
+    def test_godot_viewer_is_skipped_when_disabled_and_only_for_100m(self):
+        import views.godot_launcher as gl
+
+        self.assertIsNone(gl.find_godot())           # TEF_NO_GODOT attivo nei test
+        self.assertIsNone(gl.viewer_available("100m"))
+        self.assertIsNone(gl.viewer_available("400m"))
+        summary, result = self._summary()
+        self.assertIsNone(gl.launch_race_viewer(summary, result, lambda code: None))  # -> vista interna
 
 
 if __name__ == "__main__":

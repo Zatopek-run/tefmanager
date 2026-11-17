@@ -100,6 +100,14 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
   controlla arrivo esatto a 100 m, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
   `--headless`) salva immagini della scena reale. Testato con Godot 4.7.2 + godot-sqlite 4.9.
+- **Personaggi.** `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
+  (`assets/athlete/`, vedi `CREDITS.md`); abiti ricavati dalla mesh con uno shader. Il modello originale guarda +Z
+  e viene ruotato (`FACING_Y`) per correre verso +X.
+- **Integrazione nel gioco.** `RaceViewerDialog._next` per i `100m` chiama `views/godot_launcher.py`: esporta
+  la gara (`race_export`) in `~/.track_field_manager/race_results.db`, lancia Godot (`--autoquit`) con
+  `QProcess`, mostra una pagina segnaposto e prosegue quando Godot si chiude. **Ripiego sulla vista PyQt
+  interna** se manca Godot (`TEF_GODOT`, scoop o PATH), il progetto o `addons/godot-sqlite/`, se l'export fallisce
+  o se Godot esce subito con errore. `TEF_NO_GODOT=1` lo disattiva (impostato in `tests/test_game.py`).
 - Solo 100m completati: niente ritirati/squalificati, staffette, 400m, 1500m né concorsi.
 
 ## Test: cosa verificano e cosa no

@@ -23,6 +23,7 @@ godot_viewer/
     RaceMotion.gd               curva di velocità, distanza/velocità al tempo t (funzioni pure)
   scenes/
     Stadium.tscn  + scripts/Stadium.gd, BroadcastCameras.gd, RunnerView.gd     VIEW 3D
+  assets/athlete/               personaggio con scheletro + animazioni (CC0, Quaternius), vedi CREDITS.md
     HUD.tscn      + scripts/HUD.gd                                             VIEW 2D
   data/
     schema.sql  demo_seed.sql   schema delle tabelle `races` e `race_results` + gara dimostrativa
@@ -65,5 +66,21 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: la posa di corsa è approssimativa; mai provato con input da tastiera/mouse. Le tribune sono sul lato prato,
-dietro i corridori; il pubblico è una texture a rumore.
+Limiti noti: mai provato con input da tastiera/mouse; il pubblico è una texture a rumore; nessun pettorale.
+La partenza usa `Crouch_Idle` (accovacciato), non una vera posizione ai blocchi con le mani a terra.
+
+## Uso dal gioco PyQt
+
+Alle gare dei 100m il gioco lancia questo visualizzatore da solo (`views/godot_launcher.py`): esporta la gara,
+avvia Godot con `--autoquit` e riprende quando si chiude (a fine gara, dopo 3 s). Serve Godot (`TEF_GODOT`,
+`~/scoop/apps/godot/current/godot.exe` o PATH) e il plugin in `addons/godot-sqlite/`; altrimenti il gioco usa
+la vista interna. «Salta alla fine» nel dialog chiude Godot.
+
+## Personaggi
+
+`RunnerView.gd` carica `Superhero_Male_FullBody.gltf` (65 ossa) e gli applica le animazioni `Crouch_Idle`,
+`Jog_Fwd`, `Sprint`, `Walk` di `UAL1_Standard.glb` (stesso scheletro, versione senza root motion). La cadenza
+dell'animazione segue la velocità reale (`speed / metri per ciclo`), così i piedi non scivolano. Il modello è
+quasi nudo: canotta, pantaloncini e scarpette sono copie della mesh del corpo gonfiate di pochi mm e tagliate per
+altezza con uno shader (UV2 = posizione a riposo), colorate con la squadra. Pelle (4 toni), capelli e altezza
+(1,72–1,88 m) sono deterministici dal nome dell'atleta. Gli asset pesano ~28 MB.

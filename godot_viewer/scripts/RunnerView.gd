@@ -1,221 +1,226 @@
 class_name RunnerView
 extends Node3D
-## VIEW 3D - atleta mid-poly costruito da primitive (nessun asset esterno).
-## Legge `RunnerData` (distanza, velocita') e si limita a rappresentarlo: posizione = distanza,
-## frequenza della falcata = velocita' / lunghezza del passo. Non influenza mai il risultato.
+## VIEW 3D - atleta con scheletro (65 ossa) animato dalla Universal Animation Library di Quaternius (CC0).
+## Legge `RunnerData` (distanza, velocita') e si limita a rappresentarlo: la posizione e' la distanza,
+## l'animazione (accovacciato -> corsa -> camminata) e la sua cadenza dipendono dalla velocita'.
+## Non influenza mai il risultato della gara.
 ##
-## Convenzione assi: pista lungo +X, su = +Y, corsie lungo +Z. Una rotazione positiva attorno a Z
-## porta un arto che pende verso il basso in avanti (+X).
-##
-## Anatomia: arti rastremati (cilindri con raggio diverso alle estremita'), articolazioni sferiche,
-## busto e testa ellissoidali, canotta + pantaloncini nei colori della squadra, pettorale con numero
-## di corsia, scarpette bianche, capelli. Non e' un modello scolpito: per un realismo vero serve un
-## personaggio con scheletro (glTF) e animazioni.
+## Il modello base e' quasi nudo: canotta, pantaloncini e scarpette si ricavano dalla mesh del corpo
+## (triangoli selezionati per altezza, stessi pesi/scheletro, leggermente gonfiati) e si colorano con la squadra.
+## Convenzione assi: pista lungo +X, su = +Y, corsie lungo +Z.
 
 const LANE_WIDTH: float = 1.22
-const BODY_SCALE: float = 0.92     # il modello costruito e' ~1,97 m: scala a ~1,81 m
-const TOP_SPEED: float = 11.5      # m/s oltre cui l'ampiezza della falcata e' massima
-const STRIDE_MIN: float = 2.0      # lunghezza del ciclo completo (2 passi) in partenza, m
-const STRIDE_MAX: float = 4.4      # ...e a regime
-const HIP_HEIGHT: float = 1.0
-const CROUCH_HIP_HEIGHT: float = 0.66
-const CROUCH_DISTANCE: float = 2.5 # a questa distanza dai blocchi il corridore e' gia' in piedi
+
+const CHARACTER_PATH: String = "res://assets/athlete/Superhero_Male_FullBody.gltf"
+const ANIMATION_PATH: String = "res://assets/athlete/UAL1_Standard.glb"
+const SKIN_LIGHT_PATH: String = "res://assets/athlete/T_Superhero_Male_Light.png"
+const SKIN_DARK_PATH: String = "res://assets/athlete/T_Superhero_Male_Dark.png"
+const HAIR_PATHS: Array[String] = [
+	"res://assets/athlete/Hair_Buzzed.gltf",
+	"res://assets/athlete/Hair_SimpleParted.gltf",
+]
+
+## Il modello guarda verso +Z (convenzione glTF): lo giriamo di 90 gradi per farlo correre verso +X.
+const FACING_Y: float = PI * 0.5
+
+## Metri percorsi per ciclo completo (2 passi) di ogni animazione: ricava la cadenza dalla velocita'.
+const STRIDE_SPRINT: float = 4.6
+const STRIDE_JOG: float = 3.2
+const STRIDE_WALK: float = 1.5
+const SPRINT_FROM: float = 7.0   # m/s: da qui in su "Sprint"
+const SPRINT_BACK_TO_JOG: float = 6.0  # isteresi per evitare lo sfarfallio tra due animazioni
+const WALK_BELOW: float = 2.5
+const BLEND_TIME: float = 0.25
+
+static var _animation_library: AnimationLibrary = null
+static var _cloth_shader_cache: Shader = null
 
 var data: RunnerData = null
 
-var _hips: Node3D
-var _torso: Node3D
-var _head: Node3D
-var _legs: Array[Dictionary] = []  # {thigh, shin, foot, side}
-var _arms: Array[Dictionary] = []  # {upper, fore, side}
-var _phase: float = 0.0
+var _model: Node3D
+var _skeleton: Skeleton3D
+var _player: AnimationPlayer
+var _current_anim: StringName = &""
 
 
 func setup(runner: RunnerData) -> void:
 	data = runner
 	position = Vector3(0.0, 0.0, (runner.lane - 1) * LANE_WIDTH)
-	scale = Vector3.ONE * BODY_SCALE
-	_build_body()
-	_apply_pose(0.0, 0.0)
+
+	_model = (load(CHARACTER_PATH) as PackedScene).instantiate() as Node3D
+	_model.rotation.y = FACING_Y
+	add_child(_model)
+	_skeleton = _model.find_child("Skeleton3D", true, false) as Skeleton3D
+
+	var body: MeshInstance3D = _skeleton.get_node("SuperHero_Male") as MeshInstance3D
+	var height: float = _dress(body)
+	_attach_hair()
+	var target_height: float = 1.72 + float(absi(hash(runner.athlete_name + "height")) % 17) / 100.0
+	_model.scale = Vector3.ONE * (target_height / height)
+
+	_setup_animation()
+	_play(&"Crouch_Idle")
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if data == null:
 		return
 	position.x = data.distance
-	var amp: float = clampf(data.speed / TOP_SPEED, 0.0, 1.0)
-	var stride: float = lerpf(STRIDE_MIN, STRIDE_MAX, amp)
-	_phase = fmod(_phase + data.speed / stride * TAU * delta * RaceController.time_scale, TAU)
-	_apply_pose(data.distance, amp)
+	_update_animation()
 
 
-# --- costruzione --------------------------------------------------------------------------------
+# --- animazione ---------------------------------------------------------------------------------
 
-func _build_body() -> void:
-	var skin_color: Color = _skin_color(data.athlete_name)
-	var skin: StandardMaterial3D = _material(skin_color, 0.55)
-	var kit_color: Color = _team_color(data.team_name)
-	var kit: StandardMaterial3D = _material(kit_color, 0.8)
-	var shorts: StandardMaterial3D = _material(kit_color.darkened(0.5), 0.8)
-	var hair: StandardMaterial3D = _material(_hair_color(data.athlete_name), 0.9)
-	var shoe: StandardMaterial3D = _material(Color(0.96, 0.96, 0.96), 0.6)
-	var sole: StandardMaterial3D = _material(kit_color.darkened(0.2), 0.7)
-	var bib: StandardMaterial3D = _material(Color(0.97, 0.97, 0.94), 0.9)
-
-	_hips = Node3D.new()
-	_hips.position = Vector3(0.0, HIP_HEIGHT, 0.0)
-	add_child(_hips)
-	_ellipsoid(_hips, Vector3(0.11, 0.1, 0.175), shorts, Vector3(0.0, 0.0, 0.0))  # bacino
-
-	_torso = Node3D.new()
-	_torso.position = Vector3(0.0, 0.06, 0.0)
-	_hips.add_child(_torso)
-	_ellipsoid(_torso, Vector3(0.115, 0.17, 0.165), kit, Vector3(0.0, 0.14, 0.0))   # addome
-	_ellipsoid(_torso, Vector3(0.14, 0.22, 0.2), kit, Vector3(0.0, 0.4, 0.0))       # torace
-	for side: float in [1.0, -1.0]:  # pettorale: placca sottile sul fianco del torace + numero di corsia
-		_ellipsoid(_torso, Vector3(0.1, 0.075, 0.012), bib, Vector3(0.0, 0.4, 0.2 * side))
-		var number: Label3D = Label3D.new()
-		number.text = str(data.lane)
-		number.font_size = 72
-		number.pixel_size = 0.0014
-		number.modulate = Color(0.05, 0.05, 0.05)
-		number.outline_size = 0
-		number.position = Vector3(0.0, 0.4, 0.214 * side)
-		if side < 0.0:
-			number.rotation.y = PI
-		_torso.add_child(number)
-
-	# Collo, testa, capelli, naso, orecchie.
-	_head = Node3D.new()
-	_head.position = Vector3(0.0, 0.58, 0.0)
-	_torso.add_child(_head)
-	_segment(_head, 0.05, 0.055, -0.1, skin, Vector3.ZERO)                         # collo (cresce verso l'alto)
-	_ellipsoid(_head, Vector3(0.105, 0.125, 0.095), skin, Vector3(0.025, 0.2, 0.0))  # testa
-	_ellipsoid(_head, Vector3(0.11, 0.1, 0.1), hair, Vector3(0.0, 0.245, 0.0))      # capelli
-	_ellipsoid(_head, Vector3(0.025, 0.03, 0.02), skin, Vector3(0.125, 0.19, 0.0))  # naso
-	for side: float in [1.0, -1.0]:
-		_ellipsoid(_head, Vector3(0.015, 0.03, 0.02), skin, Vector3(0.0, 0.2, 0.095 * side))  # orecchie
-
-	for side: float in [1.0, -1.0]:
-		# Braccio: spalla -> gomito -> mano.
-		var shoulder: Node3D = Node3D.new()
-		shoulder.position = Vector3(0.0, 0.54, 0.225 * side)
-		_torso.add_child(shoulder)
-		_ellipsoid(shoulder, Vector3(0.065, 0.065, 0.065), skin, Vector3.ZERO)                 # deltoide
-		_segment(shoulder, 0.052, 0.042, 0.29, skin, Vector3.ZERO)                            # braccio
-		var elbow: Node3D = Node3D.new()
-		elbow.position = Vector3(0.0, -0.29, 0.0)
-		shoulder.add_child(elbow)
-		_ellipsoid(elbow, Vector3(0.042, 0.042, 0.042), skin, Vector3.ZERO)                   # gomito
-		_segment(elbow, 0.045, 0.03, 0.26, skin, Vector3.ZERO)                                # avambraccio
-		_ellipsoid(elbow, Vector3(0.035, 0.055, 0.025), skin, Vector3(0.0, -0.3, 0.0))        # mano
-		_arms.append({"upper": shoulder, "fore": elbow, "side": side})
-
-		# Gamba: anca -> ginocchio -> caviglia -> piede.
-		var thigh: Node3D = Node3D.new()
-		thigh.position = Vector3(0.0, -0.04, 0.1 * side)
-		_hips.add_child(thigh)
-		_segment(thigh, 0.098, 0.062, 0.46, skin, Vector3.ZERO)                               # coscia
-		_segment(thigh, 0.108, 0.1, 0.2, shorts, Vector3.ZERO)                                # gamba del pantaloncino
-		var knee: Node3D = Node3D.new()
-		knee.position = Vector3(0.0, -0.46, 0.0)
-		thigh.add_child(knee)
-		_ellipsoid(knee, Vector3(0.058, 0.058, 0.058), skin, Vector3.ZERO)                    # ginocchio
-		_segment(knee, 0.06, 0.036, 0.43, skin, Vector3.ZERO)                                 # stinco
-		_ellipsoid(knee, Vector3(0.065, 0.11, 0.06), skin, Vector3(-0.02, -0.13, 0.0))        # polpaccio
-		var ankle: Node3D = Node3D.new()
-		ankle.position = Vector3(0.0, -0.43, 0.0)
-		knee.add_child(ankle)
-		_ellipsoid(ankle, Vector3(0.14, 0.05, 0.055), shoe, Vector3(0.055, -0.035, 0.0))      # scarpetta
-		_ellipsoid(ankle, Vector3(0.14, 0.012, 0.058), sole, Vector3(0.06, -0.075, 0.0))      # suola
-		_legs.append({"thigh": thigh, "shin": knee, "foot": ankle, "side": side})
+func _setup_animation() -> void:
+	if _animation_library == null:
+		var ual: Node = (load(ANIMATION_PATH) as PackedScene).instantiate()
+		var source: AnimationPlayer = ual.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		_animation_library = source.get_animation_library(&"")
+		ual.free()
+	_player = AnimationPlayer.new()
+	_model.add_child(_player)  # root_node di default = ".." = _model: le tracce "Armature/Skeleton3D:..." combaciano
+	_player.add_animation_library(&"", _animation_library)
 
 
-## Cilindro rastremato appeso a `parent` con il punto alto in `pos`: `top_r` in alto, `bottom_r` in basso.
-## `length` negativo = cresce verso l'alto (collo).
-func _segment(parent: Node3D, top_r: float, bottom_r: float, length: float, mat: Material, pos: Vector3) -> MeshInstance3D:
-	var m: CylinderMesh = CylinderMesh.new()
-	m.top_radius = top_r
-	m.bottom_radius = bottom_r
-	m.height = absf(length)
-	m.radial_segments = 14
-	m.rings = 1
+func _update_animation() -> void:
+	var s: float = data.speed
+	var want: StringName
+	if s < 0.01 and data.distance < 0.01:
+		want = &"Crouch_Idle"
+	elif s >= SPRINT_FROM or (_current_anim == &"Sprint" and s >= SPRINT_BACK_TO_JOG):
+		want = &"Sprint"
+	elif s < WALK_BELOW:
+		want = &"Walk"
+	else:
+		want = &"Jog_Fwd"
+	_play(want)
+
+	var stride: float = 1.0
+	match _current_anim:
+		&"Sprint": stride = STRIDE_SPRINT
+		&"Jog_Fwd": stride = STRIDE_JOG
+		&"Walk": stride = STRIDE_WALK
+	if _current_anim == &"Crouch_Idle":
+		_player.speed_scale = RaceController.time_scale
+	else:
+		var length: float = _player.get_animation(_current_anim).length
+		_player.speed_scale = clampf(s / stride * length, 0.25, 3.0) * RaceController.time_scale
+
+
+func _play(anim: StringName) -> void:
+	if anim == _current_anim:
+		return
+	_current_anim = anim
+	_player.play(anim, BLEND_TIME)
+
+
+# --- vestiti e capelli --------------------------------------------------------------------------
+
+## Colora la pelle, aggiunge canotta/pantaloncini/scarpette. Ritorna l'altezza del modello a riposo (m).
+func _dress(body: MeshInstance3D) -> float:
+	var skin: StandardMaterial3D = body.get_active_material(0).duplicate() as StandardMaterial3D
+	var tone: int = absi(hash(data.athlete_name)) % 4
+	skin.albedo_texture = load(SKIN_LIGHT_PATH if tone < 2 else SKIN_DARK_PATH) as Texture2D
+	skin.albedo_color = [Color(1, 1, 1), Color(0.82, 0.68, 0.56), Color(1, 1, 1), Color(0.8, 0.72, 0.68)][tone]
+	body.set_surface_override_material(0, skin)
+
+	var verts: PackedVector3Array = body.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var min_y: float = INF
+	var max_y: float = -INF
+	for v: Vector3 in verts:
+		min_y = minf(min_y, v.y)
+		max_y = maxf(max_y, v.y)
+	var h: float = max_y - min_y
+
+	var team: Color = _team_color(data.team_name)
+	# Bounds = (|x| max, y min, y max) in altezze corporee (y: 0 piedi .. 1 cima della testa), a riposo.
+	_add_cloth(body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006)                          # canotta
+	_add_cloth(body, min_y, h, Vector3(0.115, 0.43, 0.60), team.darkened(0.55), 0.007)           # pantaloncini
+	_add_cloth(body, min_y, h, Vector3(1.0, -1.0, 0.045), Color(0.96, 0.96, 0.96), 0.012)        # scarpette
+	return h
+
+
+## Aggiunge un capo ricavato dalla mesh del corpo: stessi vertici/pesi (quindi stesse ossa), gonfiati lungo
+## la normale. Ogni vertice porta in UV2 la sua posizione a riposo (x, y in altezze corporee) e lo shader
+## scarta i pixel fuori da `bounds`: il bordo e' netto anche se la mesh ha pochi triangoli.
+func _add_cloth(body: MeshInstance3D, base_y: float, height: float, bounds: Vector3, color: Color, inflate: float) -> void:
+	var src: Mesh = body.mesh
+	var arrays: Array = src.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+
+	var grown: PackedVector3Array = verts.duplicate()
+	var rel: PackedVector2Array = PackedVector2Array()
+	rel.resize(verts.size())
+	for i in range(verts.size()):
+		grown[i] = verts[i] + normals[i] * inflate
+		rel[i] = Vector2(verts[i].x / height, (verts[i].y - base_y) / height)
+
+	var kept: PackedInt32Array = PackedInt32Array()
+	for t in range(0, index.size(), 3):
+		var y0: float = rel[index[t]].y
+		var y1: float = rel[index[t + 1]].y
+		var y2: float = rel[index[t + 2]].y
+		if minf(y0, minf(y1, y2)) <= bounds.z and maxf(y0, maxf(y1, y2)) >= bounds.y:
+			kept.append(index[t])
+			kept.append(index[t + 1])
+			kept.append(index[t + 2])
+	if kept.is_empty():
+		push_warning("RunnerView: nessun triangolo per il capo %s" % str(color))
+		return
+
+	arrays[Mesh.ARRAY_VERTEX] = grown
+	arrays[Mesh.ARRAY_INDEX] = kept
+	arrays[Mesh.ARRAY_TEX_UV2] = rel
+	var mesh: ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
+		src.surface_get_format(0) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
+
+	var mat: ShaderMaterial = ShaderMaterial.new()
+	mat.shader = _cloth_shader()
+	mat.set_shader_parameter("color", color)
+	mat.set_shader_parameter("bounds", bounds)
+	mesh.surface_set_material(0, mat)
+
 	var mi: MeshInstance3D = MeshInstance3D.new()
-	mi.mesh = m
-	mi.material_override = mat
-	mi.position = pos + Vector3(0.0, -length * 0.5, 0.0)
-	parent.add_child(mi)
-	return mi
+	mi.mesh = mesh
+	mi.skin = body.skin
+	_skeleton.add_child(mi)  # figlio dello scheletro: segue le stesse ossa del corpo
 
 
-func _ellipsoid(parent: Node3D, radii: Vector3, mat: Material, pos: Vector3) -> MeshInstance3D:
-	var m: SphereMesh = SphereMesh.new()
-	m.radius = 1.0
-	m.height = 2.0
-	m.radial_segments = 20
-	m.rings = 10
-	var mi: MeshInstance3D = MeshInstance3D.new()
-	mi.mesh = m
-	mi.material_override = mat
-	mi.scale = radii
-	mi.position = pos
-	parent.add_child(mi)
-	return mi
+static func _cloth_shader() -> Shader:
+	if _cloth_shader_cache == null:
+		_cloth_shader_cache = Shader.new()
+		_cloth_shader_cache.code = """
+shader_type spatial;
+uniform vec4 color : source_color = vec4(1.0);
+uniform vec3 bounds = vec3(0.115, 0.6, 0.82); // |x| max, y min, y max (altezze corporee)
+varying vec2 rel;
+void vertex() { rel = UV2; }
+void fragment() {
+	if (abs(rel.x) > bounds.x || rel.y < bounds.y || rel.y > bounds.z) { discard; }
+	ALBEDO = color.rgb;
+	ROUGHNESS = 0.8;
+}
+"""
+	return _cloth_shader_cache
 
 
-func _material(color: Color, roughness: float) -> StandardMaterial3D:
-	var m: StandardMaterial3D = StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = roughness
-	return m
+func _attach_hair() -> void:
+	var path: String = HAIR_PATHS[absi(hash(data.athlete_name + "hair")) % HAIR_PATHS.size()]
+	var scene: Node = (load(path) as PackedScene).instantiate()
+	var hair: MeshInstance3D = scene.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
+	hair.get_parent().remove_child(hair)
+	scene.free()
+	_skeleton.add_child(hair)  # stesse 65 ossa del corpo: la skin si lega per nome
+	var mat: StandardMaterial3D = hair.get_active_material(0).duplicate() as StandardMaterial3D
+	var tones: Array[Color] = [
+		Color(0.05, 0.04, 0.035), Color(0.2, 0.11, 0.06), Color(0.42, 0.27, 0.12), Color(0.8, 0.62, 0.3)]
+	mat.albedo_color = tones[absi(hash(data.athlete_name + "shade")) % tones.size()]
+	hair.set_surface_override_material(0, mat)
 
 
 ## Colori deterministici dal nome: la stessa gara si rivede sempre uguale.
 func _team_color(team: String) -> Color:
 	return Color.from_hsv(float(absi(hash(team)) % 360) / 360.0, 0.75, 0.9)
-
-
-func _skin_color(athlete: String) -> Color:
-	var tones: Array[Color] = [
-		Color(0.94, 0.76, 0.64), Color(0.82, 0.6, 0.45), Color(0.62, 0.42, 0.3), Color(0.38, 0.25, 0.17)]
-	return tones[absi(hash(athlete)) % tones.size()]
-
-
-func _hair_color(athlete: String) -> Color:
-	var tones: Array[Color] = [
-		Color(0.06, 0.05, 0.04), Color(0.2, 0.12, 0.07), Color(0.4, 0.27, 0.13), Color(0.72, 0.58, 0.32)]
-	return tones[absi(hash(athlete + "h")) % tones.size()]
-
-
-# --- posa ---------------------------------------------------------------------------------------
-
-## `crouch` = 1 ai blocchi (posizione "set"), 0 in corsa. Tutti gli angoli sono interpolati.
-func _apply_pose(distance: float, amp: float) -> void:
-	var crouch: float = clampf(1.0 - distance / CROUCH_DISTANCE, 0.0, 1.0)
-	_hips.position.y = lerpf(HIP_HEIGHT + 0.045 * absf(sin(_phase)) * amp, CROUCH_HIP_HEIGHT, crouch)
-	_hips.rotation.y = lerpf(-0.12 * amp * sin(_phase), 0.0, crouch)    # il bacino ruota...
-	_torso.rotation.y = lerpf(0.2 * amp * sin(_phase), 0.0, crouch)      # ...e le spalle controruotano
-	var lean: float = lerpf(-(0.1 + 0.22 * amp), -0.95, crouch)
-	_torso.rotation.z = lean
-	_head.rotation.z = -lean * lerpf(0.85, 0.55, crouch)                 # lo sguardo resta in avanti
-
-	for leg: Dictionary in _legs:
-		var side: float = leg["side"]
-		var a: float = _phase + (0.0 if side > 0.0 else PI)
-		var thigh_run: float = 0.95 * amp * sin(a) + 0.2 * amp
-		var knee_run: float = -(0.12 + amp * 1.7 * maxf(0.0, cos(a + 0.5)))
-		var foot_run: float = -0.45 * amp * sin(a + 0.9) - 0.1 * amp
-		var thigh_set: float = 1.1 if side > 0.0 else -0.35
-		var knee_set: float = -1.7 if side > 0.0 else -1.0
-		var foot_set: float = 0.0 if side > 0.0 else -0.7
-		(leg["thigh"] as Node3D).rotation.z = lerpf(thigh_run, thigh_set, crouch)
-		(leg["shin"] as Node3D).rotation.z = lerpf(knee_run, knee_set, crouch)
-		(leg["foot"] as Node3D).rotation.z = lerpf(foot_run, foot_set, crouch)
-
-	for arm: Dictionary in _arms:
-		var side: float = arm["side"]
-		var a: float = _phase + (PI if side > 0.0 else 0.0)  # braccio opposto alla gamba dello stesso lato
-		var arm_run: float = 1.15 * amp * sin(a) - 0.1 * amp
-		var elbow_run: float = lerpf(0.35, 1.5, amp) + 0.25 * amp * sin(a + 0.6)
-		(arm["upper"] as Node3D).rotation.z = lerpf(arm_run, 0.95, crouch)  # in "set" le braccia restano verticali
-		(arm["fore"] as Node3D).rotation.z = lerpf(elbow_run, 0.0, crouch)

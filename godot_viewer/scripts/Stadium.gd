@@ -3,6 +3,7 @@ extends Node3D
 ##
 ## Avvio: la gara 1 del DB (o `--race=N` dopo `--` sulla riga di comando) parte da sola dopo 1.5 s.
 ## Tasti: Spazio = (ri)parti, 1/2/4 = velocita' 1x/2x/4x, Esc = salta alla fine.
+## `--autoquit` (dopo `--`): a gara finita chiude l'app dopo AUTOQUIT_DELAY secondi.
 
 const LANE_WIDTH: float = 1.22
 const LANES: int = 8
@@ -10,6 +11,7 @@ const TRACK_X_MIN: float = -15.0
 const TRACK_X_MAX: float = 125.0
 const FINISH_X: float = 100.0
 const AUTO_START_DELAY: float = 1.5
+const AUTOQUIT_DELAY: float = 3.0  # con --autoquit: pausa sul risultato prima di chiudere
 
 const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
 
@@ -18,6 +20,8 @@ const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
 @onready var _runners_root: Node3D = $Runners
 
 var _race_id: int = 1
+var _autoquit: bool = false      # --autoquit: chiude l'app a fine gara (usato dal gioco PyQt)
+var _quit_scheduled: bool = false
 
 
 func _ready() -> void:
@@ -30,8 +34,15 @@ func _ready() -> void:
 
 	RaceController.race_loaded.connect(_on_race_loaded)
 	_race_id = _race_id_from_args()
+	_autoquit = OS.get_cmdline_user_args().has("--autoquit")
 	if RaceController.load_race(_race_id):
 		get_tree().create_timer(AUTO_START_DELAY).timeout.connect(RaceController.start)
+
+
+func _process(_delta: float) -> void:
+	if _autoquit and not _quit_scheduled and RaceController.state == RaceController.State.FINISHED:
+		_quit_scheduled = true
+		get_tree().create_timer(AUTOQUIT_DELAY).timeout.connect(get_tree().quit)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:

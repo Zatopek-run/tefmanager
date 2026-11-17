@@ -1122,6 +1122,14 @@ class RaceViewerDialog(QDialog):
         self.stack.addWidget(self.track2d)
         self.stack.addWidget(self.track3d)
         self.stack.addWidget(self.field)
+        self.godot_page = QLabel("")
+        self.godot_page.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.godot_page.setWordWrap(True)
+        self.godot_page.setStyleSheet("font-size: 20px; font-weight: 700; color: #cbd5e1;")
+        self.stack.addWidget(self.godot_page)
+        self._godot = None  # QProcess del visualizzatore Godot, se la gara è in corso lì
+        self._godot_killed = False
+        self._godot_clock = QElapsedTimer()
         root.addWidget(self.stack, stretch=1)
 
         self.clock = QLabel("")
@@ -1192,24 +1200,64 @@ class RaceViewerDialog(QDialog):
             self.field.set_environment(self.summary.weather, self.summary.track_surface, self.summary.tier)
             self.field.set_race(res.event_name, res, self._seed())
             self.stack.setCurrentWidget(self.field)
+        elif self._start_godot(res):
+            pass  # la gara si vede nel visualizzatore Godot; si prosegue quando si chiude
         else:
-            self.track.set_environment(
-                self.summary.weather, self.summary.track_surface, self.summary.tier,
-                self.summary.season_phase, self.summary.spectators,
-            )
-            self.track.set_race(res.event_name, res, self._seed())
-            self.stack.setCurrentWidget(self.track)
+            self._show_internal_race(res)
         self.btn_next.setEnabled(False)
         self.btn_skip.setEnabled(True)
         self._clock.start()
         self._timer.start()
+
+    def _show_internal_race(self, res: EventResult) -> None:
+        self.track.set_environment(
+            self.summary.weather, self.summary.track_surface, self.summary.tier,
+            self.summary.season_phase, self.summary.spectators,
+        )
+        self.track.set_race(res.event_name, res, self._seed())
+        self.stack.setCurrentWidget(self.track)
+
+    def _start_godot(self, res: EventResult) -> bool:
+        """Prova a far vedere la gara nel visualizzatore Godot. False = si usa la vista interna."""
+        from views.godot_launcher import launch_race_viewer
+
+        proc = launch_race_viewer(self.summary, res, self._on_godot_finished, parent=self)
+        if proc is None:
+            return False
+        self._godot = proc
+        self._godot_killed = False
+        self._godot_clock.start()
+        self.godot_page.setText(
+            f"{res.event_name}: gara in corso nel visualizzatore 3D (Godot).\n"
+            "Si chiude da solo a fine gara; puoi anche chiuderlo con la X o con «Salta alla fine»."
+        )
+        self.stack.setCurrentWidget(self.godot_page)
+        self.btn_pause.setEnabled(False)
+        self.btn_speed.setEnabled(False)
+        self.btn_view.setEnabled(False)
+        return True
+
+    def _on_godot_finished(self, exit_code: int = 0) -> None:
+        if self._godot is None:
+            return
+        crashed = exit_code != 0 and not self._godot_killed and self._godot_clock.elapsed() < 5000
+        self._godot = None
+        self.btn_pause.setEnabled(True)
+        self.btn_speed.setEnabled(True)
+        self.btn_view.setEnabled(True)
+        self.godot_page.setText("")
+        if crashed and 0 <= self._index < len(self.summary.event_results):
+            self._show_internal_race(self.summary.event_results[self._index])  # Godot non è partito: vista interna
+            self._clock.start()
+            return
+        self._on_race_finished()
 
     def _current_widget(self):
         return self.stack.currentWidget()
 
     def _tick(self) -> None:
         dt = self._clock.restart() / 1000.0
-        if self._paused or self._race_done:
+        if self._paused or self._race_done or self._godot is not None:
             return
         w = self._current_widget()
         w.advance(dt * self.SPEEDS[self._speed_idx])
@@ -1241,6 +1289,10 @@ class RaceViewerDialog(QDialog):
         self.btn_speed.setText(f"Velocità {int(self.SPEEDS[self._speed_idx])}x")
 
     def _skip_race(self) -> None:
+        if self._godot is not None:
+            self._godot_killed = True
+            self._godot.kill()  # chiude Godot: finished -> _on_godot_finished
+            return
         if not self._race_done:
             self._current_widget().skip_to_end()
 
@@ -1263,6 +1315,10 @@ class RaceViewerDialog(QDialog):
         if note:
             self.info.setText(self.info.text() + "  |  " + ", ".join(note))
 
-    def done(self, r: int) -> None:  # chiusura: ferma il timer
+    def done(self, r: int) -> None:  # chiusura: ferma il timer e il visualizzatore Godot
         self._timer.stop()
+        if self._godot is not None:
+            proc, self._godot = self._godot, None
+            proc.kill()
+            proc.waitForFinished(2000)
         super().done(r)
