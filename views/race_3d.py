@@ -779,6 +779,37 @@ class Track3DWidget(TrackRaceWidget):
         super().__init__(parent)
         self.setMinimumHeight(420)
         self._cam_label = "BROADCAST"
+        self._replay_active = False
+        self._replay_target_t = 0.0
+
+    # ---- replay dell'arrivo: stessa posa (funzione pura di _t), solo un'altra camera e un t più indietro
+    def start_replay(self, lookback: float = 3.0) -> None:
+        """Riavvolge a `lookback` secondi prima dell'arrivo del vincitore e riparte al rallentatore
+        da un'altra inquadratura. Non ri-simula nulla: la posa di ogni atleta resta la stessa
+        funzione pura di _t già usata in diretta."""
+        rewind_race_time = max(0.0, self._winner_time - lookback)
+        self._t = GUN_AT + rewind_race_time / self._scale
+        self._replay_target_t = GUN_AT + self._winner_time / self._scale
+        self._done = False
+        self._replay_active = True
+        self.update()
+
+    def end_replay(self) -> None:
+        """Torna al fotogramma statico di fine gara (stesso `end_anim` di `advance()`)."""
+        self._replay_active = False
+        self._t = GUN_AT + self._last_finish() / self._scale + 1.2
+        self._done = True
+        self.update()
+
+    def _replay_camera(self, poses: Sequence[Tuple[float, float, float, float]], leader_idx: int, w: int, h: int) -> Camera:
+        """Inquadratura bassa e ravvicinata dal lato pista, in stile moviola: diversa da quelle
+        broadcast usate in diretta, per far sentire che è davvero un replay."""
+        lx, lz, lyaw, _ = poses[leader_idx]
+        fwd_x, fwd_z = math.cos(lyaw), math.sin(lyaw)
+        side_x, side_z = -fwd_z, fwd_x
+        pos = (lx - 2.0 * fwd_x + 9.0 * side_x, 1.05, lz - 2.0 * fwd_z + 9.0 * side_z)
+        target = (lx + 3.0 * fwd_x, 1.05, lz + 3.0 * fwd_z)
+        return Camera(pos, target, 24.0, w, h)
 
     # ---- geometria dell'ovale e stile stadio
     def _track_width(self) -> float:
@@ -831,12 +862,19 @@ class Track3DWidget(TrackRaceWidget):
 
     def _crowd_density(self) -> float:
         if self._tier == CompetitionTier.INTERNAZIONALE:
-            return 0.96
-        if self._tier == CompetitionTier.NAZIONALE:
-            return 0.88
-        if self._tier == CompetitionTier.REGIONALE:
-            return 0.72
-        return 0.52
+            base = 0.96
+        elif self._tier == CompetitionTier.NAZIONALE:
+            base = 0.88
+        elif self._tier == CompetitionTier.REGIONALE:
+            base = 0.72
+        else:
+            base = 0.52
+        leader = max((self.meters(r) for r in self._runners), default=0.0)
+        progress = _clamp(leader / self._distance, 0.0, 1.0) if self._distance else 0.0
+        swell = 0.10 * _smoothstep((progress - 0.6) / 0.4)  # la tribuna si scalda nell'ultimo tratto
+        if self._result is not None and (self._result.is_club_record or self._result.is_pb):
+            swell += 0.05 * _smoothstep((progress - 0.6) / 0.4)  # risultato di rilievo: ancora più calore
+        return min(0.98, base + swell)
 
     def _crowd_pm(self, dark: bool, dof_blur: bool = False) -> QPixmap:
         bucket = int(round(self._crowd_density() * 10))
@@ -917,12 +955,27 @@ class Track3DWidget(TrackRaceWidget):
             poses.append(oval_pose(d - m, lat_zs[i], ref_lat=rl))
         return poses
 
+    def _finish_hold(self) -> float:
+        """Quanto indugiare sul fotofinish prima di tagliare sul vincitore: il distacco 1°-2° è
+        già noto (il modello ha calcolato il risultato prima della messa in scena), quindi la
+        regia può decidere in anticipo invece di reagire a un arrivo che non vede ancora."""
+        margin = self._finish_margin
+        if margin < 0.12:
+            return 1.7
+        if margin < 0.4:
+            return 1.0
+        return 0.55
+
     # ---- regia multi-camera TV
     def _make_camera(self, meters: Sequence[float], poses: Sequence[Tuple[float, float, float, float]], w: int, h: int) -> Camera:
         d = self._distance
         tw = self._track_width()
         leader = max(meters) if meters else 0.0
         leader_idx = max(range(len(meters)), key=lambda i: meters[i]) if meters else 0
+
+        if self._replay_active:
+            self._cam_label = "REPLAY"
+            return self._replay_camera(poses, leader_idx, w, h)
 
         if not self._is_oval_race():
             mine = [m for m, r in zip(meters, self._runners) if r["s"].is_player]
@@ -941,10 +994,11 @@ class Track3DWidget(TrackRaceWidget):
             if self._t < GUN_AT + 0.35 and leader < 5.0:
                 self._cam_label = "BLOCCHI"
                 return Camera(blk_pos, blk_tgt, 31.0, w, h)
-            if self.race_time > self._winner_time + 1.0 * self._scale:
+            hold = self._finish_hold()
+            if self.race_time > self._winner_time + hold * self._scale:
                 self._cam_label = "VINCITORE"
                 wx, wz, _, _ = poses[leader_idx]
-                w_blend = _smoothstep((self.race_time - (self._winner_time + 1.0 * self._scale)) / (0.30 * self._scale))
+                w_blend = _smoothstep((self.race_time - (self._winner_time + hold * self._scale)) / (0.30 * self._scale))
                 w_pos = _lerp3(fin_pos, (wx + 4.0, 1.44, wz + 3.4), w_blend)
                 w_tgt = _lerp3(fin_tgt, (wx - 0.35, 1.15, wz), w_blend)
                 return Camera(w_pos, w_tgt, _lerp(26.5, 25.5, w_blend), w, h)
@@ -966,8 +1020,8 @@ class Track3DWidget(TrackRaceWidget):
         center_x, center_z = STRAIGHT * 0.5, -R_IN
         in_x, in_z = _norm((center_x - lx, 0.0, center_z - lz))[0], _norm((center_x - lx, 0.0, center_z - lz))[2]
 
-        # Post-arrivo: Winner-Cam ravvicinata
-        if self.race_time > self._winner_time + 1.0 * self._scale:
+        # Post-arrivo: Winner-Cam ravvicinata (il distacco 1°-2° è già noto: fotofinish più lungo se l'arrivo è in volata)
+        if self.race_time > self._winner_time + self._finish_hold() * self._scale:
             self._cam_label = "WINNER-CAM"
             pos = (lx + 4.4 * fwd_x - 4.0 * in_x, 1.48, lz + 4.4 * fwd_z - 4.0 * in_z)
             target = (lx - 0.8 * fwd_x, 1.12, lz - 0.8 * fwd_z)
@@ -1773,7 +1827,7 @@ class Track3DWidget(TrackRaceWidget):
                 if len(legs) == 4:
                     tag = legs[min(3, int(max(0.0, min(0.999, meters[i] / self._distance)) * 4))]
             bib = (zlib.crc32(s.athlete_name.encode()) % 890) + 100
-            celebrate = (i == leader_idx) and self.race_time > self._winner_time + 1.0 * self._scale
+            celebrate = (i == leader_idx) and self.race_time > self._winner_time + self._finish_hold() * self._scale
             self._draw_athlete(
                 p, cam, rx, rz, ryaw, rcurv, meters[i], phase, ratio,
                 kit, self._skin(s.athlete_name), s.is_player, tag, bib, is_relay, celebrate=celebrate,

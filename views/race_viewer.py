@@ -196,6 +196,7 @@ class TrackRaceWidget(QWidget):
         self._result: Optional[EventResult] = None
         self._crowd_cache: Optional[QPixmap] = None
         self._winner_time = 1.0
+        self._finish_margin = 999.0  # distacco 1°-2° in secondi: nota in anticipo, guida la regia sul finale
         self._scale = 1.0  # secondi di gara per secondo di animazione
         self._t = 0.0  # secondi di animazione dall'inizio (compresa la sequenza di partenza)
         self._done = False
@@ -244,6 +245,8 @@ class TrackRaceWidget(QWidget):
                 }
             )
         self._winner_time = max(0.5, min(valid) if valid else 1.0)
+        valid_sorted = sorted(valid)
+        self._finish_margin = valid_sorted[1] - valid_sorted[0] if len(valid_sorted) >= 2 else 999.0
         target = TRACK_TARGET_SECONDS.get(event_name)
         self._scale = 1.0 if target is None else max(1.0, self._winner_time / target)
         self._t = 0.0
@@ -1101,6 +1104,8 @@ class RaceViewerDialog(QDialog):
     """Mostra una dopo l'altra le gare del meeting. Si può accelerare, saltare o chiudere."""
 
     SPEEDS = (1.0, 2.0, 4.0)
+    REPLAY_SPEED = 0.35
+    REPLAY_LOOKBACK = 3.0
 
     def __init__(self, summary: CompetitionSummary, parent=None) -> None:
         super().__init__(parent)
@@ -1111,6 +1116,7 @@ class RaceViewerDialog(QDialog):
         self._speed_idx = 0
         self._paused = False
         self._race_done = True
+        self._replay_active = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -1171,12 +1177,19 @@ class RaceViewerDialog(QDialog):
         self.btn_view.clicked.connect(self._toggle_view)
         self.btn_skip = QPushButton("⏩ Salta alla fine")
         self.btn_skip.clicked.connect(self._skip_race)
+        self.btn_replay = QPushButton("🔁 Replay Arrivo")
+        self.btn_replay.setToolTip(
+            "Rivede l'arrivo al rallentatore da un'altra inquadratura (vista 3D, corse in pista): "
+            "il risultato è lo stesso, cambia solo la regia."
+        )
+        self.btn_replay.clicked.connect(self._start_replay)
+        self.btn_replay.setEnabled(False)
         self.btn_next = QPushButton("Prossima gara ▶")
         self.btn_next.setObjectName("PrimaryButton")
         self.btn_next.clicked.connect(self._next)
         self.btn_close = QPushButton("Vai ai risultati")
         self.btn_close.clicked.connect(self.accept)
-        for b in (self.btn_pause, self.btn_speed, self.btn_view, self.btn_skip):
+        for b in (self.btn_pause, self.btn_speed, self.btn_view, self.btn_skip, self.btn_replay):
             bar.addWidget(b)
         bar.addStretch()
         bar.addWidget(self.btn_close)
@@ -1217,6 +1230,8 @@ class RaceViewerDialog(QDialog):
         self.podium.setText("")
         self.clock.setText("")
         self._race_done = False
+        self._replay_active = False
+        self.btn_replay.setEnabled(False)
         if self._start_godot(res):
             pass  # la gara si vede nel visualizzatore Godot; si prosegue quando si chiude
         elif is_field_event(res.event_name):
@@ -1342,12 +1357,36 @@ class RaceViewerDialog(QDialog):
 
     def _tick(self) -> None:
         dt = self._clock.restart() / 1000.0
+        if self._replay_active:
+            self.track3d.advance(dt * self.REPLAY_SPEED)
+            self.clock.setText(f"⏱ {format_race_time(self.track3d.race_clock)}  ·  REPLAY")
+            if self.track3d._t >= self.track3d._replay_target_t:
+                self._end_replay()
+            return
         if self._paused or self._race_done or self._godot is not None:
             return
         w = self._current_widget()
         w.advance(dt * self.SPEEDS[self._speed_idx])
         if w is self.track:
             self.clock.setText(f"⏱ {format_race_time(self.track.race_clock)}")
+
+    def _start_replay(self) -> None:
+        if not self._race_done or self.stack.currentWidget() is not self.track3d:
+            return
+        self._replay_active = True
+        self.track3d.start_replay(self.REPLAY_LOOKBACK)
+        for b in (self.btn_replay, self.btn_pause, self.btn_speed, self.btn_view, self.btn_skip, self.btn_next):
+            b.setEnabled(False)
+
+    def _end_replay(self) -> None:
+        self._replay_active = False
+        self.track3d.end_replay()
+        self.clock.setText(f"⏱ {format_race_time(self.track3d.race_clock)}")
+        for b in (self.btn_replay, self.btn_pause, self.btn_speed, self.btn_view):
+            b.setEnabled(True)
+        last = self._index >= len(self.summary.event_results) - 1
+        self.btn_next.setText("Vai ai risultati ▶" if last else "Prossima gara ▶")
+        self.btn_next.setEnabled(True)
 
     def _toggle_view(self) -> None:
         """Cambia fra vista 3D e 2D senza perdere il punto della gara."""
@@ -1364,6 +1403,7 @@ class RaceViewerDialog(QDialog):
             self.stack.setCurrentWidget(new)
         self.track = new
         self.btn_view.setText("Vista 3D" if new is self.track2d else "Vista 2D")
+        self.btn_replay.setEnabled(self._race_done and new is self.track3d)
 
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
@@ -1384,6 +1424,7 @@ class RaceViewerDialog(QDialog):
     def _on_race_finished(self) -> None:
         self._race_done = True
         self.btn_skip.setEnabled(False)
+        self.btn_replay.setEnabled(self.stack.currentWidget() is self.track3d)
         last = self._index >= len(self.summary.event_results) - 1
         self.btn_next.setText("Vai ai risultati ▶" if last else "Prossima gara ▶")
         self.btn_next.setEnabled(True)
