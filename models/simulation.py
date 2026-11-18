@@ -335,7 +335,9 @@ def apply_weekly_training(
             return gains, injury_note, recovery_note, scandal_note
 
     if athlete.is_injured:
-        heal_step = 2 if (has_physio and athlete.injured_weeks > 1 and r.random() < 0.55) else 1
+        resilient = athlete.personality == Personality.RESILIENTE
+        fast_heal = (has_physio or resilient) and athlete.injured_weeks > 1
+        heal_step = 2 if (fast_heal and r.random() < (0.55 if has_physio else 0.35)) else 1
         athlete.injured_weeks = max(0, athlete.injured_weeks - heal_step)
         rec_amt = r.randint(22, 30) + (8 if has_physio else 0)
         athlete.fatigue = clamp_stat(athlete.fatigue - rec_amt, 0, 100)
@@ -441,11 +443,12 @@ def apply_weekly_training(
     if not rested and not tapering and athlete.fatigue >= 68:
         resilience_factor = max(0.35, 1.35 - athlete.resilience / 100.0)
         impulsive_mult = 1.25 if (athlete.personality == Personality.IMPULSIVO and not has_mental) else 1.0
+        resilient_mult = 0.7 if athlete.personality == Personality.RESILIENTE else 1.0
         doctor_mult = 0.55 if has_doctor else 1.0
         youth_mult = 1.25 if athlete.age <= 17 else 1.0
         injury_prob = min(
             0.50,
-            (athlete.fatigue - 64) * 0.011 * resilience_factor * impulsive_mult * doctor_mult * youth_mult,
+            (athlete.fatigue - 64) * 0.011 * resilience_factor * impulsive_mult * resilient_mult * doctor_mult * youth_mult,
         )
         if r.random() < injury_prob:
             base_weeks = r.randint(1, 3)
@@ -753,6 +756,8 @@ def simulate_competition(
             injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
             if has_doctor:
                 injury_chance *= 0.55
+            if player_athlete.personality == Personality.RESILIENTE:
+                injury_chance *= 0.7
             withdrew = r.random() < injury_chance
 
             if withdrew:
@@ -829,6 +834,7 @@ def simulate_competition(
             # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
             is_pb = False
             is_club_rec = False
+            had_previous_pb = player_athlete.personal_best is not None
             if not wind_illegal and not withdrew:
                 if player_athlete.personal_best is None or _is_better(
                     event_def, p_val, player_athlete.personal_best
@@ -844,6 +850,13 @@ def simulate_competition(
                     state.milestones.insert(
                         0,
                         f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nei {event_name}! {player_athlete.name} segna {p_disp}.",
+                    )
+                elif is_pb and had_previous_pb:
+                    # PB migliorato ma non è (ancora) il record sociale: merita comunque una riga di cronaca.
+                    state.news_log.insert(
+                        0,
+                        f"Sett. {state.week}: {player_athlete.name} migliora il proprio record personale "
+                        f"nei {event_name} ({gender}): {p_disp}.",
                     )
 
                 # Historic benchmark check

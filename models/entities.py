@@ -120,6 +120,7 @@ class Personality(str, Enum):
     PERFEZIONISTA = "Perfezionista"
     IMPULSIVO = "Impulsivo"
     LEADER = "Leader"
+    RESILIENTE = "Resiliente"
 
 
 class WeatherCondition(str, Enum):
@@ -756,6 +757,14 @@ class CompetitionSummary:
             if team == self.player_team:
                 return idx
         return 0
+
+
+# Stessa lista (valore, etichetta), stesso ordine, per i due punti di ingresso di "nuova partita"
+# (StartScreen e NewGameDialog): prima erano in ordine opposto con default diversi.
+GAME_MODE_OPTIONS: List[Tuple[str, str]] = [
+    ("career", "Carriera Completa (Outdoor, Cross, Indoor, Promozioni)"),
+    ("vertical_slice", "Prototipo Outdoor (10 atleti, 3 discipline, 2 gare)"),
+]
 
 
 @dataclass
