@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.database import SaveSlotInfo
+from models.entities import GAME_MODE_OPTIONS
 from models.generator import LAZIO_PROVINCES
 
 
@@ -136,12 +137,8 @@ class StartScreen(QWidget):
         lbl_mode.setObjectName("CardTitle")
         new_lay.addWidget(lbl_mode)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem(
-            "Carriera Completa (Outdoor, Cross, Indoor, Promozioni)", "career"
-        )
-        self.mode_combo.addItem(
-            "Prototipo Outdoor (10 atleti, 3 discipline, 2 gare)", "vertical_slice"
-        )
+        for mode, label in GAME_MODE_OPTIONS:
+            self.mode_combo.addItem(label, mode)
         self.mode_combo.currentIndexChanged.connect(lambda _i: self._update_mode_hint())
         new_lay.addWidget(self.mode_combo)
 

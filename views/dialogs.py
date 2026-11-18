@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import List, Optional
 
 from PyQt6.QtCore import Qt
@@ -28,6 +29,7 @@ from models.entities import (
     COACH_MAX_TIER,
     COACH_STAT_LABELS,
     COACH_STATS,
+    GAME_MODE_OPTIONS,
     Athlete,
     CompetitionSummary,
     PROMOTION_SPOTS,
@@ -41,6 +43,20 @@ from models.entities import (
     coach_weekly_wage,
 )
 from models.generator import LAZIO_PROVINCES, get_recruitment_fee
+
+
+def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
+    """Fascia d'incertezza sul potenziale di un prospetto non ancora tesserato.
+
+    Il valore esatto resta nel modello (usato dalla simulazione); qui si mostra solo una
+    fascia che lo contiene, con un piccolo scarto deterministico (per prospetto) così il
+    centro della fascia non coincide sempre col valore vero.
+    """
+    seed = hash((prospect.name, prospect.age, prospect.specialty.value, prospect.gender))
+    offset = random.Random(seed).randint(-3, 3)
+    lo = max(1, prospect.potential - half_width + offset)
+    hi = min(99, prospect.potential + half_width + offset)
+    return f"{lo}-{hi}"
 
 
 class CompetitionResultsDialog(QDialog):
@@ -307,7 +323,7 @@ class RecruitAthleteDialog(QDialog):
                 origin,
                 a.specialty.value,
                 str(a.overall),
-                str(a.potential),
+                potential_band_display(a),
                 str(a.resilience),
                 a.personality.value,
                 f"${a.weekly_wage}",
@@ -370,7 +386,10 @@ class RecruitAthleteDialog(QDialog):
         elif self.roster:
             comp = f"Nessun atleta in rosa per {prospect.specialty.value} ({prospect.gender})."
         else:
-            comp = f"{prospect.specialty.value} ({prospect.gender}) · OVR {prospect.overall}/Pot {prospect.potential}"
+            comp = (
+                f"{prospect.specialty.value} ({prospect.gender}) · OVR {prospect.overall}/"
+                f"Pot {potential_band_display(prospect)}"
+            )
         budget_txt = (
             f"Budget dopo tesseramento: ${after:,}"
             if after >= 0
@@ -470,12 +489,8 @@ class NewGameDialog(QDialog):
         layout.addWidget(mode_label)
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem(
-            "Prototipo Outdoor (10 atleti, 3 discipline, 2 gare)", "vertical_slice"
-        )
-        self.mode_combo.addItem(
-            "Carriera Completa (Stagioni Outdoor/Cross/Indoor)", "career"
-        )
+        for mode, label in GAME_MODE_OPTIONS:
+            self.mode_combo.addItem(label, mode)
         layout.addWidget(self.mode_combo)
 
         prov_label = QLabel("Provincia di Partenza (Lazio):")

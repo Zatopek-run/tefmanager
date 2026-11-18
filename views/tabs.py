@@ -61,7 +61,12 @@ from models.entities import (
 )
 from controllers.game_controller import scouting_search_cost
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
-from views.dialogs import CompetitionResultsDialog, HireCoachDialog, RecruitAthleteDialog
+from views.dialogs import (
+    CompetitionResultsDialog,
+    HireCoachDialog,
+    RecruitAthleteDialog,
+    potential_band_display,
+)
 
 
 def _coach_combo(controller: GameController, state: GameState, athlete: Athlete) -> QComboBox:
@@ -82,6 +87,13 @@ def _coach_combo(controller: GameController, state: GameState, athlete: Athlete)
 
     combo.currentIndexChanged.connect(on_change)
     return combo
+
+
+def _toggle_sort(active: bool, col: int, desc: bool, clicked_col: int, desc_cols: set[int]) -> tuple[bool, int, bool]:
+    """Click-to-sort state machine shared by tables that re-sort their own Python row list."""
+    if active and col == clicked_col:
+        return True, clicked_col, not desc
+    return True, clicked_col, clicked_col in desc_cols
 
 
 class _ClickableCard(QFrame):
@@ -120,13 +132,14 @@ def _make_stat_card(
     return card, value_lbl, sub_lbl
 
 
-def _weekly_action_items(state: GameState) -> list[tuple[str, str, int]]:
+def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = None) -> list[tuple[str, str, int]]:
     """Return actionable alerts `(text, severity, target_tab_index)` for the current week."""
     items: list[tuple[str, str, int]] = []
     by_id = {a.id: a for a in state.main_squad}
 
     missing_lineups = 0
     injured_lineups = 0
+    lineup_ids: set[int] = set()
     for gender in ("M", "F"):
         lineup = state.lineup_for(gender)
         for ev in state.active_events:
@@ -134,8 +147,10 @@ def _weekly_action_items(state: GameState) -> list[tuple[str, str, int]]:
             ath = by_id.get(aid) if aid is not None else None
             if ath is None:
                 missing_lineups += 1
-            elif ath.is_injured:
-                injured_lineups += 1
+            else:
+                lineup_ids.add(aid)
+                if ath.is_injured:
+                    injured_lineups += 1
 
     if missing_lineups or injured_lineups:
         parts = []
@@ -145,6 +160,19 @@ def _weekly_action_items(state: GameState) -> list[tuple[str, str, int]]:
             parts.append(f"{injured_lineups} infortunati")
         sev = "danger" if state.is_competition_week else "warn"
         items.append((f"Convocazioni: {', '.join(parts)}", sev, 3))
+
+    injured_bench = sum(
+        1 for a in state.main_squad if a.is_injured and a.id not in lineup_ids
+    )
+    if injured_bench:
+        items.append((f"{injured_bench} infortunati non convocati in formazione", "warn", 1))
+
+    if not state.bankrupt and state.budget < 0:
+        sev = "danger" if state.budget <= BANKRUPTCY_THRESHOLD // 2 else "warn"
+        items.append((f"Bilancio in rosso: ${state.budget:,}", sev, 7))
+
+    if free_agent_pool is not None and not free_agent_pool:
+        items.append(("Mercato: nuovi svincolati da valutare questa settimana", "ok", 1))
 
     incomplete_relays = 0
     for gender in ("M", "F"):
@@ -447,7 +475,7 @@ class DashboardTab(QWidget):
             child = self.actions_box.takeAt(0)
             if child.widget() is not None:
                 child.widget().deleteLater()
-        for text, severity, target_idx in _weekly_action_items(state):
+        for text, severity, target_idx in _weekly_action_items(state, self.controller.free_agent_pool):
             btn = QPushButton(text)
             btn.setObjectName("ActionItemButton")
             btn.setProperty("severity", severity)
@@ -499,23 +527,23 @@ class RosterTab(QWidget):
         )
         toolbar.addWidget(btn_rest)
 
-        btn_detail = QPushButton("Scheda Atleta")
-        btn_detail.clicked.connect(self._open_detail_selected)
-        toolbar.addWidget(btn_detail)
+        self.btn_detail = QPushButton("Scheda Atleta")
+        self.btn_detail.clicked.connect(self._open_detail_selected)
+        toolbar.addWidget(self.btn_detail)
 
-        btn_recover = QPushButton("Recupero Selezionato ($250)")
-        btn_recover.clicked.connect(self._recover_selected)
-        toolbar.addWidget(btn_recover)
+        self.btn_recover = QPushButton("Recupero Selezionato ($250)")
+        self.btn_recover.clicked.connect(self._recover_selected)
+        toolbar.addWidget(self.btn_recover)
 
         btn_recruit = QPushButton("Mercato Svincolati")
         btn_recruit.setObjectName("PrimaryButton")
         btn_recruit.clicked.connect(self._open_recruit_dialog)
         toolbar.addWidget(btn_recruit)
 
-        btn_release = QPushButton("Svincola")
-        btn_release.setObjectName("DangerButton")
-        btn_release.clicked.connect(self._release_selected)
-        toolbar.addWidget(btn_release)
+        self.btn_release = QPushButton("Svincola")
+        self.btn_release.setObjectName("DangerButton")
+        self.btn_release.clicked.connect(self._release_selected)
+        toolbar.addWidget(self.btn_release)
 
         root.addLayout(toolbar)
 
@@ -608,7 +636,15 @@ class RosterTab(QWidget):
         header.sectionClicked.connect(self._on_header_clicked)
 
         self.table.cellDoubleClicked.connect(lambda row, _col: self._open_detail(row))
+        self.table.itemSelectionChanged.connect(self._update_selection_buttons)
         root.addWidget(self.table, stretch=1)
+        self._update_selection_buttons()
+
+    def _update_selection_buttons(self) -> None:
+        has_selection = bool(self.table.selectionModel().selectedRows())
+        self.btn_detail.setEnabled(has_selection)
+        self.btn_recover.setEnabled(has_selection)
+        self.btn_release.setEnabled(has_selection)
 
     def _set_gender_filter(self, code: str) -> None:
         self._gender_filter = code
@@ -745,6 +781,7 @@ class RosterTab(QWidget):
             )
             self.table.setCellWidget(row, 15, period_combo)
             self.table.setCellWidget(row, 16, _coach_combo(self.controller, state, a))
+        self._update_selection_buttons()
 
     def _on_focus_changed(self, athlete_id: Optional[int], combo: QComboBox) -> None:
         if athlete_id is not None and isinstance(combo.currentData(), TrainingFocus):
@@ -801,6 +838,9 @@ class CalendarTab(QWidget):
         self._event_combos: Dict[str, QComboBox] = {}
         self._history_list: list[CompetitionSummary] = []
         self._division_filter: str = "ALL"
+        self._hist_sort_active = False
+        self._hist_sort_col = 0
+        self._hist_sort_desc = True
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -893,10 +933,15 @@ class CalendarTab(QWidget):
         hist_layout.setContentsMargins(14, 12, 14, 12)
 
         hist_header = QHBoxLayout()
-        hist_title = QLabel("Archivio Gare Disputate (Doppio clic per classifiche e vento)")
+        hist_title = QLabel("Archivio Gare Disputate (Doppio clic per classifiche e vento; clic sull'intestazione per ordinare)")
         hist_title.setObjectName("SectionHeader")
         hist_header.addWidget(hist_title)
         hist_header.addStretch()
+        self.hist_search = QLineEdit()
+        self.hist_search.setPlaceholderText("Cerca meeting...")
+        self.hist_search.setMaximumWidth(180)
+        self.hist_search.textChanged.connect(lambda _t: self.refresh(self.controller.state))
+        hist_header.addWidget(self.hist_search)
         view_btn = QPushButton("Apri Risultati")
         view_btn.clicked.connect(self._open_selected_history)
         hist_header.addWidget(view_btn)
@@ -912,6 +957,7 @@ class CalendarTab(QWidget):
         self.history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.cellDoubleClicked.connect(lambda _r, _c: self._open_selected_history())
+        self.history_table.horizontalHeader().sectionClicked.connect(self._on_history_header_clicked)
         hist_layout.addWidget(self.history_table)
 
         lower_row.addWidget(hist_panel, stretch=3)
@@ -1015,7 +1061,23 @@ class CalendarTab(QWidget):
                     item.setForeground(QColor("#f87171"))
                 self.league_table.setItem(row, col, item)
 
-        self._history_list = list(state.competition_history)
+        query = self.hist_search.text().strip().lower() if hasattr(self, "hist_search") else ""
+        self._history_list = [
+            c for c in state.competition_history if not query or query in c.meet_name.lower()
+        ]
+        if self._hist_sort_active:
+            sort_keys = {
+                0: lambda c: c.week,
+                1: lambda c: c.meet_name.lower(),
+                2: lambda c: c.is_home,
+                3: lambda c: c.weather.value,
+                4: lambda c: c.team_placement or 99,
+                5: lambda c: c.total_prize_money + c.ticket_income,
+                6: lambda c: c.total_prestige_gained,
+            }
+            self._history_list.sort(
+                key=sort_keys.get(self._hist_sort_col, sort_keys[0]), reverse=self._hist_sort_desc
+            )
         self.history_table.setRowCount(len(self._history_list))
         for row, comp in enumerate(self._history_list):
             team_place = comp.team_placement
@@ -1046,6 +1108,12 @@ class CalendarTab(QWidget):
             dlg = CompetitionResultsDialog(self._history_list[idx], parent=self)
             dlg.exec()
 
+    def _on_history_header_clicked(self, col: int) -> None:
+        self._hist_sort_active, self._hist_sort_col, self._hist_sort_desc = _toggle_sort(
+            self._hist_sort_active, self._hist_sort_col, self._hist_sort_desc, col, desc_cols={0, 5, 6}
+        )
+        self.refresh(self.controller.state)
+
 
 class StaffTab(QWidget):
     """Club technical & medical staff hiring plus tartan track maintenance."""
@@ -1053,6 +1121,9 @@ class StaffTab(QWidget):
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
+        self._coach_sort_active = False
+        self._coach_sort_col = 0
+        self._coach_sort_desc = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1147,6 +1218,7 @@ class StaffTab(QWidget):
         ch = self.coach_table.horizontalHeader()
         ch.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         ch.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        ch.sectionClicked.connect(self._on_coach_header_clicked)
         coach_layout.addWidget(self.coach_table)
         root.addWidget(coach_panel, stretch=3)
 
@@ -1218,8 +1290,23 @@ class StaffTab(QWidget):
         self.hire_coach_btn.setText(
             "Già assunto questa settimana" if hired_this_week else "Assumi Allenatore"
         )
-        self.coach_table.setRowCount(len(state.coaches))
-        for row, coach in enumerate(state.coaches):
+        coaches = list(state.coaches)
+        if self._coach_sort_active:
+            col = self._coach_sort_col
+            if col == 0:
+                key = lambda c: c.name.lower()
+            elif col == 1:
+                key = lambda c: c.kind_label
+            elif 2 <= col <= 5:
+                stat = COACH_STATS[col - 2]
+                key = lambda c: c.skills.get(stat, 0)
+            elif col == 6:
+                key = lambda c: state.coach_load(c)
+            else:
+                key = lambda c: c.weekly_wage
+            coaches.sort(key=key, reverse=self._coach_sort_desc)
+        self.coach_table.setRowCount(len(coaches))
+        for row, coach in enumerate(coaches):
             load = state.coach_load(coach)
             vals = [
                 coach.name,
@@ -1266,6 +1353,14 @@ class StaffTab(QWidget):
             btn.clicked.connect(lambda _c=False, sid=s.id: self.controller.toggle_staff(sid))
             self.table.setCellWidget(row, 5, btn)
 
+    def _on_coach_header_clicked(self, col: int) -> None:
+        if col == 8:  # "Azione" column: button, not sortable data
+            return
+        self._coach_sort_active, self._coach_sort_col, self._coach_sort_desc = _toggle_sort(
+            self._coach_sort_active, self._coach_sort_col, self._coach_sort_desc, col, desc_cols={2, 3, 4, 5, 6, 7}
+        )
+        self.refresh(self.controller.state)
+
     def _open_hire_coach(self) -> None:
         state = self.controller.state
         allowed = sorted(
@@ -1295,6 +1390,9 @@ class FinancesTab(QWidget):
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
+        self._ledger_sort_active = False
+        self._ledger_sort_col = 0
+        self._ledger_sort_desc = True
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1317,15 +1415,24 @@ class FinancesTab(QWidget):
         ledger_layout = QVBoxLayout(ledger_panel)
         ledger_layout.setContentsMargins(14, 12, 14, 12)
 
-        title = QLabel("Libro Mastro & Movimenti")
+        ledger_head = QHBoxLayout()
+        title = QLabel("Libro Mastro & Movimenti (clic sull'intestazione per ordinare)")
         title.setObjectName("SectionHeader")
-        ledger_layout.addWidget(title)
+        ledger_head.addWidget(title)
+        ledger_head.addStretch()
+        self.ledger_search = QLineEdit()
+        self.ledger_search.setPlaceholderText("Cerca categoria o descrizione...")
+        self.ledger_search.setMaximumWidth(220)
+        self.ledger_search.textChanged.connect(lambda _t: self.refresh(self.controller.state))
+        ledger_head.addWidget(self.ledger_search)
+        ledger_layout.addLayout(ledger_head)
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Settimana", "Categoria", "Descrizione", "Importo"])
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().sectionClicked.connect(self._on_ledger_header_clicked)
         self.table.verticalHeader().setVisible(False)
         ledger_layout.addWidget(self.table)
 
@@ -1360,8 +1467,24 @@ class FinancesTab(QWidget):
         self.net_val.setStyleSheet("color: #34d399;" if net >= 0 else "color: #f87171;")
         self.net_sub.setText("Esclusi premi, biglietti e trasferte")
 
-        self.table.setRowCount(len(state.transactions))
-        for row, tx in enumerate(state.transactions):
+        query = self.ledger_search.text().strip().lower() if hasattr(self, "ledger_search") else ""
+        transactions = [
+            tx
+            for tx in state.transactions
+            if not query or query in tx.category.lower() or query in tx.description.lower()
+        ]
+        if self._ledger_sort_active:
+            ledger_keys = {
+                0: lambda tx: tx.week,
+                1: lambda tx: tx.category.lower(),
+                2: lambda tx: tx.description.lower(),
+                3: lambda tx: tx.amount,
+            }
+            transactions.sort(
+                key=ledger_keys.get(self._ledger_sort_col, ledger_keys[0]), reverse=self._ledger_sort_desc
+            )
+        self.table.setRowCount(len(transactions))
+        for row, tx in enumerate(transactions):
             amt_text = f"+${tx.amount:,}" if tx.amount >= 0 else f"-${abs(tx.amount):,}"
             vals = [f"Sett. {tx.week}", tx.category, tx.description, amt_text]
             for col, text in enumerate(vals):
@@ -1371,6 +1494,12 @@ class FinancesTab(QWidget):
                     item.setForeground(QColor("#34d399" if tx.amount >= 0 else "#f87171"))
                 self.table.setItem(row, col, item)
 
+    def _on_ledger_header_clicked(self, col: int) -> None:
+        self._ledger_sort_active, self._ledger_sort_col, self._ledger_sort_desc = _toggle_sort(
+            self._ledger_sort_active, self._ledger_sort_col, self._ledger_sort_desc, col, desc_cols={0, 3}
+        )
+        self.refresh(self.controller.state)
+
 
 class YouthTab(QWidget):
     """Youth academy (vivaio): weekly scouting with points, faster training, promotion at 18."""
@@ -1379,6 +1508,13 @@ class YouthTab(QWidget):
         super().__init__(parent)
         self.controller = controller
         self._youth_row_ids: list[int] = []
+        self._results_list: list = []
+        self._youth_sort_active = False
+        self._youth_sort_col = 0
+        self._youth_sort_desc = False
+        self._results_sort_active = False
+        self._results_sort_col = 0
+        self._results_sort_desc = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1396,14 +1532,14 @@ class YouthTab(QWidget):
         self.squad_title.setObjectName("SectionHeader")
         head.addWidget(self.squad_title)
         head.addStretch()
-        promote_btn = QPushButton("Promuovi in Prima Squadra")
-        promote_btn.setObjectName("PrimaryButton")
-        promote_btn.clicked.connect(self._promote_selected)
-        head.addWidget(promote_btn)
-        release_btn = QPushButton("Svincola")
-        release_btn.setObjectName("DangerButton")
-        release_btn.clicked.connect(self._release_selected)
-        head.addWidget(release_btn)
+        self.promote_btn = QPushButton("Promuovi in Prima Squadra")
+        self.promote_btn.setObjectName("PrimaryButton")
+        self.promote_btn.clicked.connect(self._promote_selected)
+        head.addWidget(self.promote_btn)
+        self.release_btn = QPushButton("Svincola")
+        self.release_btn.setObjectName("DangerButton")
+        self.release_btn.clicked.connect(self._release_selected)
+        head.addWidget(self.release_btn)
         squad_layout.addLayout(head)
 
         hint = QLabel(
@@ -1430,8 +1566,11 @@ class YouthTab(QWidget):
         yh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         yh.setSectionResizeMode(10, QHeaderView.ResizeMode.ResizeToContents)
         yh.setSectionResizeMode(11, QHeaderView.ResizeMode.ResizeToContents)
+        yh.sectionClicked.connect(self._on_youth_header_clicked)
+        self.youth_table.itemSelectionChanged.connect(self._update_youth_buttons)
         squad_layout.addWidget(self.youth_table)
         root.addWidget(squad_panel, stretch=1)
+        self._update_youth_buttons()
 
         scout_panel = QFrame()
         scout_panel.setObjectName("SectionPanel")
@@ -1480,18 +1619,29 @@ class YouthTab(QWidget):
         self.results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.results_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.results_table.horizontalHeader().sectionClicked.connect(self._on_results_header_clicked)
         self.results_table.verticalHeader().setVisible(False)
         scout_layout.addWidget(self.results_table)
 
         sign_row = QHBoxLayout()
         sign_row.addStretch()
-        sign_btn = QPushButton("Inserisci nel Vivaio")
-        sign_btn.setObjectName("PrimaryButton")
-        sign_btn.clicked.connect(self._sign_selected)
-        sign_row.addWidget(sign_btn)
+        self.sign_btn = QPushButton("Inserisci nel Vivaio")
+        self.sign_btn.setObjectName("PrimaryButton")
+        self.sign_btn.clicked.connect(self._sign_selected)
+        sign_row.addWidget(self.sign_btn)
         scout_layout.addLayout(sign_row)
 
+        self.results_table.itemSelectionChanged.connect(self._update_sign_button)
         root.addWidget(scout_panel, stretch=1)
+        self._update_sign_button()
+
+    def _update_youth_buttons(self) -> None:
+        has_selection = bool(self.youth_table.selectionModel().selectedRows())
+        self.promote_btn.setEnabled(has_selection)
+        self.release_btn.setEnabled(has_selection)
+
+    def _update_sign_button(self) -> None:
+        self.sign_btn.setEnabled(bool(self.results_table.selectionModel().selectedRows()))
 
     def _filters(self) -> tuple[Optional[Specialty], bool]:
         spec = self.spec_combo.currentData()
@@ -1527,6 +1677,22 @@ class YouthTab(QWidget):
         if isinstance(self.spec_combo.currentData(), Specialty) and self.spec_combo.currentData() not in allowed:
             self.spec_combo.setCurrentIndex(0)
 
+        youth = list(youth)
+        if self._youth_sort_active:
+            youth_keys = {
+                0: lambda a: a.name.lower(),
+                1: lambda a: a.age,
+                2: lambda a: a.specialty.value,
+                3: lambda a: a.personality.value,
+                4: lambda a: (a.overall, a.potential),
+                5: lambda a: a.speed,
+                6: lambda a: a.stamina,
+                7: lambda a: a.strength,
+                8: lambda a: a.technique,
+                9: lambda a: a.fatigue,
+            }
+            youth.sort(key=youth_keys.get(self._youth_sort_col, youth_keys[0]), reverse=self._youth_sort_desc)
+
         self._youth_row_ids = []
         self.youth_table.setRowCount(len(youth))
         for row, a in enumerate(youth):
@@ -1555,11 +1721,23 @@ class YouthTab(QWidget):
             self.youth_table.setCellWidget(row, 10, focus_combo)
             self.youth_table.setCellWidget(row, 11, _coach_combo(self.controller, state, a))
 
-        results = self.controller.scouting_results
+        results = list(self.controller.scouting_results)
+        if self._results_sort_active:
+            results_keys = {
+                0: lambda a: a.name.lower(),
+                1: lambda a: a.age,
+                2: lambda a: a.specialty.value,
+                3: lambda a: a.personality.value,
+                4: lambda a: a.overall,
+                5: lambda a: a.potential,
+                6: lambda a: a.resilience,
+            }
+            results.sort(key=results_keys.get(self._results_sort_col, results_keys[0]), reverse=self._results_sort_desc)
+        self._results_list = results
         self.results_table.setRowCount(len(results))
         for row, k in enumerate(results):
             vals = [f"{k.name} ({k.gender})", str(k.age), k.specialty.value, k.personality.value,
-                    str(k.overall), str(k.potential), str(k.resilience)]
+                    str(k.overall), potential_band_display(k), str(k.resilience)]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1570,10 +1748,28 @@ class YouthTab(QWidget):
             self.results_table.selectRow(0)
 
         self._update_cost_label()
+        self._update_youth_buttons()
+        self._update_sign_button()
 
     def _on_focus_changed(self, athlete_id: Optional[int], combo: QComboBox) -> None:
         if athlete_id is not None and isinstance(combo.currentData(), TrainingFocus):
             self.controller.set_athlete_training(athlete_id, combo.currentData())
+
+    def _on_youth_header_clicked(self, col: int) -> None:
+        if col >= 10:  # combo widget columns, not sortable data
+            return
+        self._youth_sort_active, self._youth_sort_col, self._youth_sort_desc = _toggle_sort(
+            self._youth_sort_active, self._youth_sort_col, self._youth_sort_desc, col, desc_cols={4, 5, 6, 7, 8, 9}
+        )
+        self.refresh(self.controller.state)
+
+    def _on_results_header_clicked(self, col: int) -> None:
+        if col == 5:  # "Potenziale": mostra solo una fascia, ordinare per il valore vero la svelerebbe
+            return
+        self._results_sort_active, self._results_sort_col, self._results_sort_desc = _toggle_sort(
+            self._results_sort_active, self._results_sort_col, self._results_sort_desc, col, desc_cols={4, 6}
+        )
+        self.refresh(self.controller.state)
 
     def _run_search(self) -> None:
         spec, high = self._filters()
@@ -1581,11 +1777,10 @@ class YouthTab(QWidget):
 
     def _sign_selected(self) -> None:
         rows = self.results_table.selectionModel().selectedRows()
-        results = self.controller.scouting_results
-        if not rows or not (0 <= rows[0].row() < len(results)):
+        if not rows or not (0 <= rows[0].row() < len(self._results_list)):
             QMessageBox.information(self, "Vivaio", "Seleziona prima un ragazzo segnalato.")
             return
-        self.controller.sign_youth(results[rows[0].row()])
+        self.controller.sign_youth(self._results_list[rows[0].row()])
 
     def _selected_youth_id(self) -> Optional[int]:
         rows = self.youth_table.selectionModel().selectedRows()
@@ -1766,6 +1961,9 @@ class RivalsTab(QWidget):
         super().__init__(parent)
         self.controller = controller
         self._club_names: list[str] = []
+        self._rivals_sort_active = False
+        self._rivals_sort_col = 1
+        self._rivals_sort_desc = True
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1839,6 +2037,7 @@ class RivalsTab(QWidget):
         self.clubs_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.clubs_table.verticalHeader().setVisible(False)
         self.clubs_table.itemSelectionChanged.connect(self._show_selected_club)
+        self.clubs_table.horizontalHeader().sectionClicked.connect(self._on_clubs_header_clicked)
         clubs_layout.addWidget(self.clubs_table)
         lower.addWidget(clubs_panel, stretch=3)
 
@@ -1911,7 +2110,19 @@ class RivalsTab(QWidget):
                 self.compare_table.setItem(row, col, self._cell(text, color))
 
         selected = self._selected_club_name()
-        ordered = sorted(clubs, key=lambda c: c.level(events), reverse=True)
+        if self._rivals_sort_active:
+            rivals_keys = {
+                0: lambda c: c.name.lower(),
+                1: lambda c: c.level(events),
+                2: lambda c: c.trend,
+                3: lambda c: c.ambition,
+                4: lambda c: state.league_table.get(c.name, 0),
+            }
+            ordered = sorted(
+                clubs, key=rivals_keys.get(self._rivals_sort_col, rivals_keys[1]), reverse=self._rivals_sort_desc
+            )
+        else:
+            ordered = sorted(clubs, key=lambda c: c.level(events), reverse=True)
         self._club_names = [c.name for c in ordered]
         self.clubs_table.blockSignals(True)
         self.clubs_table.setRowCount(len(ordered))
@@ -1932,6 +2143,12 @@ class RivalsTab(QWidget):
             row = self._club_names.index(selected) if selected in self._club_names else 0
             self.clubs_table.selectRow(row)
         self._show_selected_club()
+
+    def _on_clubs_header_clicked(self, col: int) -> None:
+        self._rivals_sort_active, self._rivals_sort_col, self._rivals_sort_desc = _toggle_sort(
+            self._rivals_sort_active, self._rivals_sort_col, self._rivals_sort_desc, col, desc_cols={1, 2, 3, 4}
+        )
+        self.refresh(self.controller.state)
 
     def _selected_club_name(self) -> Optional[str]:
         rows = self.clubs_table.selectionModel().selectedRows()
@@ -1973,6 +2190,7 @@ class RecordsTab(QWidget):
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
+        self._records_sort = {"m": [False, 0, False], "f": [False, 0, False]}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1986,8 +2204,14 @@ class RecordsTab(QWidget):
         self.records_m_table = self._make_records_panel(
             top_row, "Record Sociali — Maschile (M)"
         )
+        self.records_m_table.horizontalHeader().sectionClicked.connect(
+            lambda col: self._on_records_header_clicked("m", col)
+        )
         self.records_f_table = self._make_records_panel(
             top_row, "Record Sociali — Femminile (F)"
+        )
+        self.records_f_table.horizontalHeader().sectionClicked.connect(
+            lambda col: self._on_records_header_clicked("f", col)
         )
         root.addLayout(top_row, stretch=3)
 
@@ -2046,8 +2270,14 @@ class RecordsTab(QWidget):
         parent_row.addWidget(panel, stretch=1)
         return table
 
-    @staticmethod
+    def _on_records_header_clicked(self, which: str, col: int) -> None:
+        active, scol, desc = self._records_sort[which]
+        self._records_sort[which] = list(_toggle_sort(active, scol, desc, col, desc_cols={1}))
+        self.refresh(self.controller.state)
+
     def _populate_records(
+        self,
+        which: str,
         table: QTableWidget,
         events: list[str],
         records: dict[str, tuple[float, str, str]],
@@ -2056,6 +2286,10 @@ class RecordsTab(QWidget):
         for ev in records:
             if ev not in ordered:
                 ordered.append(ev)
+        active, col, desc = self._records_sort[which]
+        if active:
+            rec_keys = {0: lambda ev: ev, 1: lambda ev: records[ev][0], 2: lambda ev: records[ev][2].lower()}
+            ordered.sort(key=rec_keys.get(col, rec_keys[0]), reverse=desc)
         table.setRowCount(len(ordered))
         for row, ev in enumerate(ordered):
             _val, disp, athlete = records[ev]
@@ -2067,8 +2301,8 @@ class RecordsTab(QWidget):
                 table.setItem(row, col, item)
 
     def refresh(self, state: GameState) -> None:
-        self._populate_records(self.records_m_table, list(EVENTS), state.club_records)
-        self._populate_records(self.records_f_table, list(EVENTS), state.club_records_f)
+        self._populate_records("m", self.records_m_table, list(EVENTS), state.club_records)
+        self._populate_records("f", self.records_f_table, list(EVENTS), state.club_records_f)
 
         self.seasons_table.setRowCount(len(state.season_history))
         for row, h in enumerate(state.season_history):
