@@ -2,7 +2,8 @@
 
 Modulo di visualizzazione gare in stile "diretta TV" 2010. **Solo View**: i risultati li calcola il motore
 Python (`models/simulation.py`) e finiscono in SQLite; Godot li legge e li mette in scena.
-Ogni corridore taglia i 100 m esattamente a `final_time` (il tempo di reazione è incluso).
+Ogni corridore taglia il traguardo esattamente a `final_time` (il tempo di reazione è incluso).
+Eventi: 100m, 400m, 1500m, 4x100m, 4x400m, Salto in Lungo, Getto del Peso.
 
 ## Requisiti
 
@@ -67,7 +68,7 @@ Provato con Godot 4.7.2 (Forward+, Vulkan) e godot-sqlite 4.9:
   distanza monotona, ordine d'arrivo, cronometro bloccato sul vincitore (codice di uscita 0/1).
 - `godot --path godot_viewer -s res://tests/screenshots.gd -- cartella_uscita` — screenshot della scena reale.
 
-Limiti noti: solo 100m e 400m (niente 1500m, staffette, concorsi); la posizione ai blocchi è ottenuta con IK (`SetPoseRig`), non
+Limiti noti: niente altri concorsi (alto, disco, …) né più di 8 corsie; la posizione ai blocchi è ottenuta con IK (`SetPoseRig`), non
 da un'animazione, e la spinta di uscita dai blocchi è l'animazione `Sprint` (non c'è una vera partenza); la finestra Godot è separata dal gioco; nessun pettorale
 (dalla camera laterale non si vedrebbe); il pubblico è una texture procedurale a blocchetti, non persone modellate.
 Provati: tasti Spazio/1/2/4/Esc e `--autoquit` (`tests/verify_input.gd`), ritiro per infortunio (gara 2 del DB
@@ -99,7 +100,7 @@ da grafica originale.
 
 ## Uso dal gioco PyQt
 
-Alle gare dei 100m e dei 400m il gioco lancia questo visualizzatore da solo (`views/godot_launcher.py`): esporta la gara,
+Per tutti gli eventi elencati sopra il gioco lancia questo visualizzatore da solo (`views/godot_launcher.py`): esporta la gara,
 avvia Godot con `--autoquit` e riprende quando si chiude (a fine gara, dopo 3 s). Serve Godot (`TEF_GODOT`,
 `~/scoop/apps/godot/current/godot.exe` o PATH) e il plugin in `addons/godot-sqlite/`; altrimenti il gioco usa
 la vista interna. «Salta alla fine» nel dialog chiude Godot.

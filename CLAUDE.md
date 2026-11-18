@@ -84,30 +84,37 @@ container di sviluppo e non sarebbero testabili).
 
 ## Visualizzatore Godot (`godot_viewer/`)
 
-Modulo **separato** in Godot 4.3+ / GDScript (non fa parte dell'app PyQt): mette in scena i 100m e i 400m in stile
-"diretta TV" 2010 leggendo risultati già calcolati da SQLite (plugin godot-sqlite, in `addons/`, ignorato da git).
+Modulo **separato** in Godot 4.3+ / GDScript (non fa parte dell'app PyQt): mette in scena le gare in pista (100m, 400m, 1500m,
+4x100m, 4x400m) e due concorsi (lungo, peso) in stile "diretta TV" 2010 leggendo risultati già calcolati da SQLite (plugin godot-sqlite, in `addons/`, ignorato da git).
 Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 
 - **MVC.** Model = `autoload/DatabaseManager.gd` (sola lettura), Controller = `autoload/RaceController.gd`
   (tempo, classifica, segnali), View 3D = `Stadium.tscn` + `scripts/` (`BroadcastCameras`, `RunnerView`),
   View 2D = `HUD.tscn`. Anche qui **le viste non cambiano tempi o ordine**.
 - **Contratto con Python.** `godot_viewer/data/schema.sql` è l'unica fonte dello schema (`races`,
-  `race_results`); `models/race_export.py` lo riusa per esportare (`python -m models.race_export [save.db] [out.db]`).
-  `final_time` = `mark_value` e **include** `reaction_time`. Corsie sorteggiate in modo deterministico,
+  `race_results`, `field_attempts` per le prove dei concorsi); `models/race_export.py` lo riusa per esportare
+  (`python -m models.race_export [save.db] [out.db]`, da riga di comando solo i 100m; il gioco esporta ogni evento
+  con `export_race`). `race_results.gender` (M/F) sceglie il modello 3D. `final_time` = `mark_value` e **include** `reaction_time`. Corsie sorteggiate in modo deterministico,
   reazione dalla stessa `reaction_time` della vista PyQt.
 - **`godot_viewer/models/RaceMotion.gd` è la copia GDScript** di `_velocity`/`curve_progress` di
   `race_viewer.py`: se cambi la curva dei 100m in Python, cambiala anche lì.
 - **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
-  controlla arrivo esatto a 100 m, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
+  controlla arrivo esatto, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
   `--headless`) salva immagini della scena reale (`-- cartella [close] --race=2`); `tests/verify_input.gd -- --autoquit`
-  prova tasti e chiusura automatica; `verify_race.gd` copre 100m, 100m con ritirato, 400m e 400m con ritirato (geometria inclusa). Testato con Godot 4.7.2 + godot-sqlite 4.9.
+  prova tasti e chiusura automatica. `verify_race.gd` scorre le 12 gare del DB demo (1-2 = 100m con un ritirato,
+  3-4 = 400m, 5-6 = 1500m, 7 = 4x100m, 8 = 4x400m con squadra squalificata, 9-10 = lungo, 11-12 = peso), geometria
+  inclusa. `verify_pose.gd` gira in `--headless`; `verify_camera.gd` e `verify_input.gd` aprono una finestra vera (serve
+  un display; `verify_camera.gd` dura diversi minuti: lanciarlo in background, non con un timeout breve).
+  Testato con Godot 4.7.2 (flatpak `org.godotengine.Godot`) + godot-sqlite 4.9; l'import del progetto alla prima
+  esecuzione crea file `.uid` (committa quelli dei nuovi script di test).
 - **Personaggi.** `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
   (`assets/athlete/`, vedi `CREDITS.md`); abiti ricavati dalla mesh con uno shader. Il modello originale guarda +Z
   e viene ruotato (`FACING_Y`) per correre verso +X.
-- **Integrazione nel gioco.** `RaceViewerDialog._next` per i `100m` chiama `views/godot_launcher.py`: esporta
-  la gara (`race_export`) in `~/.track_field_manager/race_results.db`, lancia Godot (`--autoquit`) con
+- **Integrazione nel gioco.** `RaceViewerDialog._next` per gli eventi in `GODOT_EVENTS` chiama
+  `views/godot_launcher.py`: esporta la gara (`race_export`) in `~/.track_field_manager/race_results.db`, lancia Godot (`--autoquit`) con
   `QProcess`, mostra una pagina segnaposto e prosegue quando Godot si chiude. **Ripiego sulla vista PyQt
-  interna** se manca Godot (`TEF_GODOT`, scoop o PATH), il progetto o `addons/godot-sqlite/`, se l'export fallisce
+  interna** se manca Godot (`find_godot()` cerca `TEF_GODOT`, `Godot*.exe` nella root, scoop e `godot` nel PATH: **non** vede
+  un'installazione flatpak, che richiede un wrapper `godot` nel PATH o `TEF_GODOT`), il progetto o `addons/godot-sqlite/`, se l'export fallisce
   o se Godot esce subito con errore. `TEF_NO_GODOT=1` lo disattiva (impostato in `tests/test_game.py`).
 - **Ritirati (DNF).** `race_results.status = 'DNF'`: il corridore corre sulla stessa curva fino a 42 m
   (`RaceMotion.dnf_stop_distance(kind)`), rallenta, si ferma (HUD «RIT.») ed è ultimo; `final_time` è solo un tempo di
@@ -125,8 +132,8 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `tests/verify_camera.gd` lo verifica su una finestra VERA 1280x720 (in `--headless` la finestra è 64x64: una
   tolleranza in pixel sarebbe vuota).
   **Niente compressione del tempo**: si guarda in tempo reale e l'utente accelera con i tasti 1/2/4/8
-  (indicatore in basso a destra). `GODOT_EVENTS` in `views/godot_launcher.py` è un elenco esatto: le staffette
-  (`4x100m`…) restano sulla vista PyQt.
+  (indicatore in basso a destra). `GODOT_EVENTS` in `views/godot_launcher.py` è un elenco esatto: un evento nuovo va
+  aggiunto lì, in `race_export.DISTANCES_M` e in `RaceController.GUN_AT_BY_KIND`.
 - **Riferimenti video (lavoro guidato dall'utente).** Il 100m e il 400m sono modellati su due dirette TV scaricate in
   `raw/` (cartella ignorata da git; non committare video): 100m di Roma (`lyles_100m_diamond_league.mp4`, pista blu) e
   finale olimpica dei 400m di Parigi 2024 (`400m_reference_C05vAdxXXEI.mp4`, pista viola). Regola del progetto: niente
@@ -146,9 +153,18 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   polso è `HAND_Y` = 0,20 m perché le dita stanno ~0,17 m oltre l'osso `hand`; le ossa non comandate (clavicole, dita)
   tornano a riposo a ogni aggiornamento. `tests/verify_pose.gd` (headless) legge le ossa **dentro `skeleton_updated`**
   (dopo l'IK: da `_process` si legge la posa pre-IK, che mente).
-- Il visualizzatore Godot copre solo **100m e 400m** (niente 1500m, staffette, concorsi né squalificati). Il 1500m è
-  stato progettato (anello unico sulla corsia 1 + scostamento laterale solo visivo, andatura `Sprint`, tempi `m:ss.xx`)
-  ma NON scritto.
+- **1500m** (`TrackGeometry.pose_1500m`): partenza in piedi (niente blocchi, `RaceController.uses_blocks`), anello
+  unico con coordinata riferita alla corsia 1 (3,75 giri); la corsia sorteggiata dà solo uno scostamento radiale
+  iniziale (partenza a linea curva) che rientra alla corda tra 10 e 90 m (`pack_lat` ≤ 2,1 m). Regia con camere
+  multi-giro; il cronometro dell'HUD passa a `m:ss.x` oltre i 60 s (stessa regola di tutte le gare).
+- **Staffette** (`4x100m`, `4x400m`): una riga per squadra, 4 frazioni sulla stessa curva, testimone che passa di
+  mano (`RunnerView._leg_state`); la 4x400m parte in corsia sfalsata e rientra alla corda dopo il primo giro
+  (`pose_4x400m`). Una squadra del giocatore squalificata ha `status = 'DQ'` (HUD «SQ.»).
+- **Concorsi** (`Salto in Lungo`, `Getto del Peso`): 4 prove per atleta in `field_attempts`, ricavate da
+  `generate_attempts` con lo stesso seed della vista PyQt (nullo = `is_foul`). `RaceController.field_queue` le mette
+  in scena una dopo l'altra; `verify_race.gd` controlla che il miglior salto del vincitore coincida con il suo
+  `mark_value` (solo il vincitore, non gli altri).
+- Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie.
 
 ## Test: cosa verificano e cosa no
 
