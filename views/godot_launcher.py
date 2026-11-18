@@ -192,10 +192,37 @@ def embed_hwnd(hwnd: int, host: QWidget) -> Optional[QWidget]:
 
     user32 = ctypes.windll.user32
     gwl_style = -16
+    ws_child = 0x40000000
     strip_flags = 0x00C00000 | 0x00040000 | 0x00020000 | 0x00010000 | 0x00080000  # caption, frame, min/max, sysmenu
     swp_flags = 0x0002 | 0x0001 | 0x0004 | 0x0020  # NOMOVE | NOSIZE | NOZORDER | FRAMECHANGED
     style = user32.GetWindowLongW(hwnd, gwl_style)
-    user32.SetWindowLongW(hwnd, gwl_style, style & ~strip_flags)
+    # WS_CHILD: senza, la finestra resta "owned" ma di un altro processo e non partecipa
+    # al routing tastiera del genitore (i tasti di gioco non arrivavano mai a Godot).
+    user32.SetWindowLongW(hwnd, gwl_style, (style & ~strip_flags) | ws_child)
     user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, swp_flags)
     qwin = QWindow.fromWinId(hwnd)
-    return QWidget.createWindowContainer(qwin, host)
+    container = QWidget.createWindowContainer(qwin, host)
+    focus_embedded_hwnd(hwnd)
+    return container
+
+
+def focus_embedded_hwnd(hwnd: int) -> None:
+    """Passa il focus tastiera a `hwnd`, che vive nel processo Godot separato.
+
+    `SetFocus` da solo non basta tra processi diversi: ognuno ha la propria coda
+    messaggi, serve `AttachThreadInput` per far seguire il focus al thread di Godot.
+    """
+    if sys.platform != "win32" or not hwnd:
+        return
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    cur_thread = kernel32.GetCurrentThreadId()
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    attached = False
+    if target_thread and target_thread != cur_thread:
+        attached = bool(user32.AttachThreadInput(cur_thread, target_thread, True))
+    user32.SetFocus(hwnd)
+    if attached:
+        user32.AttachThreadInput(cur_thread, target_thread, False)

@@ -10,7 +10,7 @@ import random
 import zlib
 from typing import List, Optional, Sequence
 
-from PyQt6.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QFont, QLinearGradient, QPainter, QPen, QPixmap, QPolygonF
 from PyQt6.QtWidgets import (
     QDialog,
@@ -1144,6 +1144,7 @@ class RaceViewerDialog(QDialog):
         self.stack.addWidget(self.godot_page)
         self._godot = None  # QProcess del visualizzatore Godot, se la gara è in corso lì
         self._godot_container = None
+        self._godot_hwnd = 0
         self._godot_killed = False
         self._godot_clock = QElapsedTimer()
         self._embed_attempts = 0
@@ -1277,6 +1278,8 @@ class RaceViewerDialog(QDialog):
             container = embed_hwnd(hwnd, self.godot_page)
             if container is not None:
                 self._godot_container = container
+                self._godot_hwnd = hwnd
+                container.installEventFilter(self)
                 self.godot_status.hide()
                 self.godot_layout.addWidget(container, stretch=1)
                 return
@@ -1294,8 +1297,26 @@ class RaceViewerDialog(QDialog):
             self._godot_container.setParent(None)
             self._godot_container.deleteLater()
             self._godot_container = None
+        self._godot_hwnd = 0
         self.godot_status.setText("")
         self.godot_status.show()
+
+    def eventFilter(self, obj, event):
+        # Un click nell'area Godot non basta a far arrivare la tastiera al processo
+        # esterno: bisogna ridare il focus nativo esplicitamente (vedi focus_embedded_hwnd).
+        if obj is self._godot_container and self._godot_hwnd:
+            if event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.FocusIn):
+                from views.godot_launcher import focus_embedded_hwnd
+
+                focus_embedded_hwnd(self._godot_hwnd)
+        return super().eventFilter(obj, event)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow() and self._godot_hwnd:
+            from views.godot_launcher import focus_embedded_hwnd
+
+            focus_embedded_hwnd(self._godot_hwnd)
 
     def _on_godot_finished(self, exit_code: int = 0) -> None:
         if self._godot is None:
