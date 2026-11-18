@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from contextlib import closing, contextmanager
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 import json
+import re
 import sqlite3
-from datetime import date
 import random
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -252,6 +254,125 @@ def get_default_save_path() -> Path:
     save_dir = Path.home() / ".track_field_manager"
     save_dir.mkdir(parents=True, exist_ok=True)
     return save_dir / "savegame.db"
+
+
+def get_saves_dir() -> Path:
+    """Return the directory holding multi-slot career/prototype save files."""
+    saves_dir = get_default_save_path().parent / "saves"
+    saves_dir.mkdir(parents=True, exist_ok=True)
+    return saves_dir
+
+
+def make_save_slot_path(team_name: str, saves_dir: Optional[Path] = None) -> Path:
+    """Generate a unique SQLite save path from `team_name` inside `saves_dir`."""
+    target_dir = Path(saves_dir) if saves_dir is not None else get_saves_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "_", team_name.strip().lower()).strip("_") or "societa"
+    candidate = target_dir / f"{slug}.db"
+    idx = 2
+    while candidate.exists():
+        candidate = target_dir / f"{slug}_{idx}.db"
+        idx += 1
+    return candidate
+
+
+@dataclass
+class SaveSlotInfo:
+    """Lightweight metadata for a saved game shown in the start screen."""
+
+    path: Path
+    team_name: str
+    game_mode: str
+    tier: str
+    season_number: int
+    week: int
+    season_phase: str
+    in_game_date: date
+    budget: int
+    prestige: int
+    bankrupt: bool
+    updated_at: datetime
+
+    @property
+    def mode_label(self) -> str:
+        return "Prototipo Outdoor" if self.game_mode == "vertical_slice" else "Carriera Completa"
+
+
+def read_save_summary(db_path: Path) -> Optional[SaveSlotInfo]:
+    """Read save metadata without mutating schema or loading full rosters."""
+    path = Path(db_path)
+    if not path.is_file():
+        return None
+    try:
+        uri = f"{path.resolve().as_uri()}?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            has_table = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_state'"
+            ).fetchone()
+            if not has_table:
+                return None
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(game_state)").fetchall()}
+            bankrupt_expr = "bankrupt" if "bankrupt" in cols else "0 AS bankrupt"
+            row = conn.execute(
+                f"""
+                SELECT team_name, game_mode, budget, week, season_number,
+                       season_phase, start_date, prestige, tier, {bankrupt_expr}
+                FROM game_state WHERE id = 1
+                """
+            ).fetchone()
+            if row is None:
+                return None
+            week = int(row["week"])
+            start_d = date.fromisoformat(row["start_date"])
+            in_game = start_d + timedelta(weeks=max(0, week - 1))
+            mtime = datetime.fromtimestamp(path.stat().st_mtime)
+            return SaveSlotInfo(
+                path=path,
+                team_name=str(row["team_name"]),
+                game_mode=str(row["game_mode"]),
+                tier=str(row["tier"]),
+                season_number=int(row["season_number"]),
+                week=week,
+                season_phase=str(row["season_phase"]),
+                in_game_date=in_game,
+                budget=int(row["budget"]),
+                prestige=int(row["prestige"]),
+                bankrupt=bool(row["bankrupt"]),
+                updated_at=mtime,
+            )
+    except (sqlite3.Error, ValueError, OSError):
+        return None
+
+
+def list_save_slots(
+    saves_dir: Optional[Path] = None, legacy_path: Optional[Path] = None
+) -> List[SaveSlotInfo]:
+    """Return available save slots sorted from most recently updated to oldest."""
+    target_dir = Path(saves_dir) if saves_dir is not None else get_saves_dir()
+    candidates: List[Path] = []
+    if target_dir.is_dir():
+        candidates.extend(sorted(target_dir.glob("*.db")))
+    legacy = Path(legacy_path) if legacy_path is not None else get_default_save_path()
+    if legacy.is_file() and legacy.resolve() not in {c.resolve() for c in candidates}:
+        candidates.append(legacy)
+
+    slots: List[SaveSlotInfo] = []
+    for path in candidates:
+        info = read_save_summary(path)
+        if info is not None:
+            slots.append(info)
+    slots.sort(key=lambda s: s.updated_at, reverse=True)
+    return slots
+
+
+def delete_save_slot(db_path: Path) -> bool:
+    """Delete a save file from disk if it exists."""
+    path = Path(db_path)
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
 
 
 class DatabaseManager:

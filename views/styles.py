@@ -386,4 +386,142 @@ QStatusBar {
     color: #8ea0c8;
     border-top: 1px solid #1c2856;
 }
+
+QMenu {
+    background-color: #101738;
+    color: #eef3ff;
+    border: 1px solid #2b3c78;
+    border-radius: 5px;
+    padding: 4px;
+}
+
+QMenu::item {
+    padding: 7px 18px;
+    border-radius: 4px;
+}
+
+QMenu::item:selected {
+    background-color: #1648a8;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #1f2d5c;
+    margin: 4px 8px;
+}
+
+/* ---------------- Start Screen ---------------- */
+QWidget#StartScreen {
+    background: qradialgradient(cx:0.25, cy:0.15, radius:1.0, stop:0 #142254, stop:0.55 #0b1230, stop:1 #06091a);
+}
+
+QFrame#StartHeroCard {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #111b44, stop:1 #0c1433);
+    border: 1px solid #263a7a;
+    border-top: 3px solid #0de0cc;
+    border-radius: 10px;
+}
+
+QFrame#ContinueCard {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #10244a, stop:1 #132c59);
+    border: 1px solid #0de0cc;
+    border-left: 5px solid #0de0cc;
+    border-radius: 8px;
+}
+
+QLabel#StartTitle {
+    font-size: 30px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 1.2px;
+}
+
+QLabel#StartTagline {
+    font-size: 13px;
+    color: #9bb0db;
+}
+
+/* ---------------- Left Sidebar Navigation ---------------- */
+QFrame#SideNav {
+    background-color: #0a1029;
+    border-right: 1px solid #1c2957;
+}
+
+QPushButton#NavButton {
+    background-color: transparent;
+    color: #93a7d1;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 11px 14px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+QPushButton#NavButton:hover {
+    background-color: #111b42;
+    color: #ffffff;
+}
+
+QPushButton#NavButton:checked {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #152b5e, stop:1 #0e183b);
+    color: #ffffff;
+    border-left: 3px solid #0de0cc;
+}
+
+QLabel#NavSectionLabel {
+    color: #5c709e;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 10px 14px 4px 14px;
+}
+
+/* ---------------- Dashboard Action Center & Filter Pills ---------------- */
+QPushButton#ActionItemButton {
+    background-color: #131c44;
+    color: #eef3ff;
+    border: 1px solid #263875;
+    border-left: 3px solid #fbbf24;
+    border-radius: 5px;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+}
+
+QPushButton#ActionItemButton:hover {
+    background-color: #1b285e;
+    border-color: #0de0cc;
+}
+
+QPushButton#ActionItemButton[severity="danger"] {
+    border-left: 3px solid #eb297a;
+}
+
+QPushButton#ActionItemButton[severity="ok"] {
+    border-left: 3px solid #34d399;
+}
+
+QPushButton#FilterPill {
+    background-color: #11183c;
+    color: #8ea0c8;
+    border: 1px solid #23336b;
+    border-radius: 4px;
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QPushButton#FilterPill:hover {
+    color: #ffffff;
+    border-color: #0de0cc;
+}
+
+QPushButton#FilterPill:checked {
+    background-color: #1648a8;
+    color: #ffffff;
+    border-color: #0de0cc;
+}
 """

@@ -1781,5 +1781,124 @@ class TestGenderDivisions(unittest.TestCase):
             self.assertAlmostEqual(mark(118.0, gender), record)
 
 
+class TestStartScreenAndUX(unittest.TestCase):
+    """Tests for StartScreen, multi-slot saves, sidebar navigation, dashboard actions, and roster filters."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_start_screen_non_destructive_and_multislot_flow(self) -> None:
+        from views.main_window import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            saves_dir = root / "saves"
+            legacy_path = root / "savegame.db"
+
+            ctrl = GameController(
+                auto_create=False,
+                saves_dir=saves_dir,
+                legacy_save_path=legacy_path,
+                rng=random.Random(21),
+            )
+            win = MainWindow(controller=ctrl, start_on_menu=True)
+            self.assertFalse(ctrl.has_active_game)
+            self.assertFalse(legacy_path.exists())
+            self.assertEqual(list(saves_dir.glob("*.db")), [])
+            self.assertIs(win.root_stack.currentWidget(), win.start_screen)
+            self.assertTrue(win.start_screen.continue_card.isHidden())
+            self.assertEqual(win.start_screen.saves_table.rowCount(), 0)
+
+            # Crea la prima carriera dallo schermo di partenza
+            win.start_screen.name_input.setText("Atletica Test")
+            win.start_screen.mode_combo.setCurrentIndex(0)  # career
+            win.start_screen._on_start_new()
+            self.assertTrue(ctrl.has_active_game)
+            self.assertEqual(ctrl.state.team_name, "Atletica Test")
+            self.assertEqual(ctrl.state.game_mode, "career")
+            self.assertIs(win.root_stack.currentWidget(), win.game_page)
+
+            # Ritorna al menu: vede lo slot e la card Continua
+            win.show_start_screen()
+            self.assertFalse(win.start_screen.continue_card.isHidden())
+            self.assertEqual(win.start_screen.cont_club.text(), "Atletica Test")
+            self.assertEqual(win.start_screen.saves_table.rowCount(), 1)
+
+            # Crea una seconda partita senza sovrascrivere la prima
+            win.start_screen.name_input.setText("Atletica Roma")
+            win.start_screen.mode_combo.setCurrentIndex(1)  # vertical_slice
+            win.start_screen._on_start_new()
+            self.assertEqual(ctrl.state.team_name, "Atletica Roma")
+
+            win.show_start_screen()
+            self.assertEqual(win.start_screen.saves_table.rowCount(), 2)
+
+            # Carica il primo salvataggio ("Atletica Test")
+            slots = ctrl.list_save_slots()
+            target = next(s for s in slots if s.team_name == "Atletica Test")
+            target_row = slots.index(target)
+            win.start_screen.saves_table.selectRow(target_row)
+            win.start_screen._on_load_selected()
+            self.assertEqual(ctrl.state.team_name, "Atletica Test")
+            self.assertIs(win.root_stack.currentWidget(), win.game_page)
+
+            # Elimina uno slot direttamente via controller
+            roma = next(s for s in ctrl.list_save_slots() if s.team_name == "Atletica Roma")
+            self.assertTrue(ctrl.delete_save_slot(roma.path))
+            win.show_start_screen()
+            self.assertEqual(win.start_screen.saves_table.rowCount(), 1)
+
+            # Compatibilità con vecchio savegame.db nella cartella principale
+            legacy_db = DatabaseManager(db_path=legacy_path)
+            legacy_ctrl = GameController(db_manager=legacy_db, rng=random.Random(7))
+            legacy_ctrl.start_new_game(team_name="Legacy Club", game_mode="vertical_slice")
+            win.show_start_screen()
+            names = {s.team_name for s in ctrl.list_save_slots()}
+            self.assertEqual(names, {"Atletica Test", "Legacy Club"})
+            win.close()
+
+    def test_sidebar_navigation_action_center_and_roster_filters(self) -> None:
+        from views.main_window import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = DatabaseManager(db_path=Path(tmpdir) / "ux.db")
+            ctrl = GameController(db_manager=db, rng=random.Random(15))
+            win = MainWindow(controller=ctrl)
+
+            # Navigazione sidebar <-> stack
+            self.assertEqual(win.tabs.currentIndex(), 0)
+            win._nav_buttons[3].click()
+            self.assertEqual(win.tabs.currentIndex(), 3)
+            self.assertTrue(win._nav_buttons[3].isChecked())
+
+            # Navigazione dal Centro Azioni della Dashboard
+            win.dashboard_tab.navigate_requested.emit(7)
+            self.assertEqual(win.tabs.currentIndex(), 7)
+            self.assertTrue(win._nav_buttons[7].isChecked())
+
+            # Filtri e ordinamento in Rosa
+            total = len(ctrl.state.main_squad)
+            self.assertEqual(win.roster_tab.table.rowCount(), total)
+            win.roster_tab._set_gender_filter("F")
+            f_count = sum(1 for a in ctrl.state.main_squad if a.gender == "F")
+            self.assertEqual(win.roster_tab.table.rowCount(), f_count)
+            win.roster_tab._set_gender_filter("ALL")
+            self.assertEqual(win.roster_tab.table.rowCount(), total)
+
+            win.roster_tab.search_input.setText(ctrl.state.main_squad[0].name.split()[0])
+            self.assertGreaterEqual(win.roster_tab.table.rowCount(), 1)
+            self.assertLessEqual(win.roster_tab.table.rowCount(), total)
+            win.roster_tab.search_input.clear()
+
+            # Ordinamento per OVR (col 4) mantiene allineati i cellWidget
+            win.roster_tab._on_header_clicked(4)
+            self.assertEqual(win.roster_tab.table.rowCount(), total)
+            self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 14))
+            self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 15))
+            self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 16))
+            win.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 from typing import List, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from models.database import DatabaseManager
+from models.database import (
+    DatabaseManager,
+    SaveSlotInfo,
+    delete_save_slot,
+    get_default_save_path,
+    get_saves_dir,
+    list_save_slots,
+    make_save_slot_path,
+)
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
     COACH_MAX_TIER,
@@ -87,13 +96,41 @@ class GameController(QObject):
         self,
         db_manager: Optional[DatabaseManager] = None,
         rng: Optional[random.Random] = None,
+        auto_create: bool = True,
+        saves_dir: Optional[Path] = None,
+        legacy_save_path: Optional[Path] = None,
     ) -> None:
         super().__init__()
-        self.db = db_manager or DatabaseManager()
+        self._db: Optional[DatabaseManager] = db_manager
+        self._use_slots: bool = db_manager is None
+        self.saves_dir: Path = Path(saves_dir) if saves_dir is not None else get_saves_dir()
+        self.legacy_save_path: Path = (
+            Path(legacy_save_path) if legacy_save_path is not None else get_default_save_path()
+        )
         self.rng = rng or random.Random()
-        self.state: GameState = self._load_or_create_initial_state()
+        self.has_active_game: bool = False
+        if auto_create:
+            self.state: GameState = self._load_or_create_initial_state()
+            self.has_active_game = True
+        else:
+            # In-memory placeholder only: do not touch disk until the player starts or loads a slot.
+            self.state = self._create_fresh_state(game_mode="vertical_slice", persist=False)
         # Last youth-scouting search results (transient: they leave if not signed this week)
         self.scouting_results: List[Athlete] = []
+
+    @property
+    def db(self) -> DatabaseManager:
+        if self._db is None:
+            self._db = DatabaseManager(db_path=self.legacy_save_path)
+        return self._db
+
+    @db.setter
+    def db(self, value: DatabaseManager) -> None:
+        self._db = value
+
+    def list_save_slots(self) -> List[SaveSlotInfo]:
+        """Return available save slots ordered by most recently updated."""
+        return list_save_slots(saves_dir=self.saves_dir, legacy_path=self.legacy_save_path)
 
     def _load_or_create_initial_state(self) -> GameState:
         saved = self.db.load_game()
@@ -107,6 +144,7 @@ class GameController(QObject):
         team_name: str = "Atletica Aurora",
         game_mode: str = "vertical_slice",
         province: Optional[str] = None,
+        persist: bool = True,
     ) -> GameState:
         if game_mode == "vertical_slice":
             roster = generate_vertical_slice_roster(rng=self.rng)
@@ -166,7 +204,8 @@ class GameController(QObject):
             rival_clubs=create_rival_clubs(rng=self.rng, province=province, team_name=team_name),
         )
         auto_build_all_relays(state)
-        self.db.save_game(state)
+        if persist:
+            self.db.save_game(state)
         return state
 
     def start_new_game(
@@ -174,11 +213,17 @@ class GameController(QObject):
         team_name: str = "Atletica Aurora",
         game_mode: str = "vertical_slice",
         province: Optional[str] = None,
+        new_slot: Optional[bool] = None,
     ) -> None:
         """Reset to a fresh career or vertical-slice prototype and persist immediately."""
+        use_new_slot = self._use_slots if new_slot is None else new_slot
+        if use_new_slot:
+            slot_path = make_save_slot_path(team_name, saves_dir=self.saves_dir)
+            self._db = DatabaseManager(db_path=slot_path)
         self.state = self._create_fresh_state(
-            team_name=team_name, game_mode=game_mode, province=province
+            team_name=team_name, game_mode=game_mode, province=province, persist=True
         )
+        self.has_active_game = True
         self.scouting_results = []
         self.state_changed.emit(self.state)
         mode_label = "Prototipo Outdoor" if game_mode == "vertical_slice" else "Carriera Completa"
@@ -186,6 +231,7 @@ class GameController(QObject):
 
     def save_game(self) -> None:
         self.db.save_game(self.state)
+        self.has_active_game = True
         self.status_message.emit(f"Partita salvata in {self.db.db_path.name}.")
 
     def load_game(self) -> bool:
@@ -195,10 +241,28 @@ class GameController(QObject):
             return False
         upgrade_legacy_state(loaded, rng=self.rng)
         self.state = loaded
+        self.has_active_game = True
         self.scouting_results = []
         self.state_changed.emit(self.state)
         self.status_message.emit("Salvataggio caricato.")
         return True
+
+    def load_save_slot(self, db_path: Path) -> bool:
+        """Switch active database to `db_path` and load its GameState."""
+        path = Path(db_path)
+        if not path.is_file():
+            self.status_message.emit("File di salvataggio non trovato.")
+            return False
+        self._db = DatabaseManager(db_path=path)
+        return self.load_game()
+
+    def delete_save_slot(self, db_path: Path) -> bool:
+        """Delete a save slot file; clear active DB handle if it was pointing to it."""
+        path = Path(db_path)
+        if self._db is not None and self._db.db_path.resolve() == path.resolve():
+            self._db = None
+            self.has_active_game = False
+        return delete_save_slot(path)
 
     def set_athlete_training(self, athlete_id: int, focus: TrainingFocus) -> None:
         for athlete in self.state.athletes:

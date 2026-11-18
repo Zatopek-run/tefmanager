@@ -7,7 +7,6 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
-from models.database import DatabaseManager
 from views.main_window import MainWindow
 
 
@@ -17,9 +16,8 @@ def main() -> int:
     app.setApplicationName("Track & Field Manager")
     app.setOrganizationName("TrackFieldManager")
 
-    db_manager = DatabaseManager()
-    controller = GameController(db_manager=db_manager)
-    window = MainWindow(controller=controller)
+    controller = GameController(auto_create=False)
+    window = MainWindow(controller=controller, start_on_menu=True)
     window.show()
 
     return app.exec()

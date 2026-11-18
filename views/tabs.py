@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMessageBox,
     QProgressBar,
@@ -81,9 +83,24 @@ def _coach_combo(controller: GameController, state: GameState, athlete: Athlete)
     return combo
 
 
-def _make_stat_card(title: str, value: str = "-") -> tuple[QFrame, QLabel, QLabel]:
-    card = QFrame()
+class _ClickableCard(QFrame):
+    """StatCard frame that emits `clicked` when pressed."""
+
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+def _make_stat_card(
+    title: str, value: str = "-", clickable: bool = False
+) -> tuple[QFrame, QLabel, QLabel]:
+    card: QFrame = _ClickableCard() if clickable else QFrame()
     card.setObjectName("StatCard")
+    if clickable:
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
     vbox = QVBoxLayout(card)
     vbox.setContentsMargins(14, 10, 14, 10)
     vbox.setSpacing(3)
@@ -94,6 +111,7 @@ def _make_stat_card(title: str, value: str = "-") -> tuple[QFrame, QLabel, QLabe
     value_lbl.setObjectName("CardValue")
     sub_lbl = QLabel("")
     sub_lbl.setObjectName("SubTitle")
+    sub_lbl.setWordWrap(True)
 
     vbox.addWidget(title_lbl)
     vbox.addWidget(value_lbl)
@@ -101,12 +119,75 @@ def _make_stat_card(title: str, value: str = "-") -> tuple[QFrame, QLabel, QLabe
     return card, value_lbl, sub_lbl
 
 
+def _weekly_action_items(state: GameState) -> list[tuple[str, str, int]]:
+    """Return actionable alerts `(text, severity, target_tab_index)` for the current week."""
+    items: list[tuple[str, str, int]] = []
+    by_id = {a.id: a for a in state.main_squad}
+
+    missing_lineups = 0
+    injured_lineups = 0
+    for gender in ("M", "F"):
+        lineup = state.lineup_for(gender)
+        for ev in state.active_events:
+            aid = lineup.get(ev)
+            ath = by_id.get(aid) if aid is not None else None
+            if ath is None:
+                missing_lineups += 1
+            elif ath.is_injured:
+                injured_lineups += 1
+
+    if missing_lineups or injured_lineups:
+        parts = []
+        if missing_lineups:
+            parts.append(f"{missing_lineups} gare scoperte")
+        if injured_lineups:
+            parts.append(f"{injured_lineups} infortunati")
+        sev = "danger" if state.is_competition_week else "warn"
+        items.append((f"Convocazioni: {', '.join(parts)}", sev, 3))
+
+    incomplete_relays = 0
+    for gender in ("M", "F"):
+        relays = state.relays_for(gender)
+        for name in state.active_relays:
+            r = relays.get(name)
+            if r is None or not r.is_complete:
+                incomplete_relays += 1
+    if incomplete_relays:
+        items.append((f"Staffette: {incomplete_relays} formazioni incomplete", "warn", 4))
+
+    tired = sum(1 for a in state.main_squad if not a.is_injured and a.fatigue >= 75)
+    if tired:
+        msg = (
+            f"Gara vicina: {tired} atleti stanchi (valuta Scarico)"
+            if state.is_competition_week
+            else f"{tired} atleti con fatica ≥ 75%"
+        )
+        items.append((msg, "danger" if state.is_competition_week else "warn", 1))
+
+    overloaded = sum(1 for c in state.coaches if state.coach_load(c) > COACH_COMFORT_LOAD)
+    if overloaded:
+        items.append((f"{overloaded} allenatori oltre {COACH_COMFORT_LOAD} atleti", "warn", 6))
+
+    if state.track_condition < 60:
+        items.append((f"Pista usurata al {state.track_condition}% (manutenzione)", "warn", 6))
+
+    if state.scouting_points_left >= 2 and len(state.youth_squad) < YOUTH_SQUAD_MAX:
+        items.append((f"Osservatori: {state.scouting_points_left} punti scouting", "ok", 2))
+
+    if not items:
+        items.append(("Tutto pronto per avanzare la settimana.", "ok", 0))
+    return items
+
+
 class DashboardTab(QWidget):
-    """Overview tab with KPIs, seasonal objectives, club records, and milestones."""
+    """Overview tab with KPIs, action center, seasonal objectives, and squad snapshot."""
+
+    navigate_requested = pyqtSignal(int)
 
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)
         self.controller = controller
+        self._top_athlete_ids: list[int] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -116,10 +197,18 @@ class DashboardTab(QWidget):
 
         cards_row = QHBoxLayout()
         cards_row.setSpacing(12)
-        c1, self.budget_val, self.budget_sub = _make_stat_card("Bilancio Società")
-        c2, self.prestige_val, self.prestige_sub = _make_stat_card("Prestigio & Etica")
-        c3, self.squad_val, self.squad_sub = _make_stat_card("Rosa & Pista Tartan")
-        c4, self.comp_val, self.comp_sub = _make_stat_card("Prossima Gara")
+        c1, self.budget_val, self.budget_sub = _make_stat_card("Bilancio Società", clickable=True)
+        c2, self.prestige_val, self.prestige_sub = _make_stat_card("Prestigio & Etica", clickable=True)
+        c3, self.squad_val, self.squad_sub = _make_stat_card("Rosa & Pista Tartan", clickable=True)
+        c4, self.comp_val, self.comp_sub = _make_stat_card("Prossima Gara", clickable=True)
+        c1.setToolTip("Clicca per aprire Finanze")
+        c2.setToolTip("Clicca per aprire Rivali & Classifica")
+        c3.setToolTip("Clicca per aprire Rosa & Allenamenti")
+        c4.setToolTip("Clicca per aprire Calendario & Gare")
+        c1.clicked.connect(lambda: self.navigate_requested.emit(7))
+        c2.clicked.connect(lambda: self.navigate_requested.emit(5))
+        c3.clicked.connect(lambda: self.navigate_requested.emit(1))
+        c4.clicked.connect(lambda: self.navigate_requested.emit(3))
         for c in (c1, c2, c3, c4):
             cards_row.addWidget(c)
         root.addLayout(cards_row)
@@ -159,7 +248,7 @@ class DashboardTab(QWidget):
 
         root.addLayout(mid_row)
 
-        # Lower split: Squad snapshot + Milestones & News
+        # Lower split: Squad snapshot + Action Center & News
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(12)
 
@@ -167,9 +256,15 @@ class DashboardTab(QWidget):
         left_panel.setObjectName("SectionPanel")
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(14, 12, 14, 12)
+        left_head = QHBoxLayout()
         left_title = QLabel("Migliori Atleti in Rosa")
         left_title.setObjectName("SectionHeader")
-        left_layout.addWidget(left_title)
+        left_head.addWidget(left_title)
+        left_head.addStretch()
+        left_hint = QLabel("Doppio clic per aprire la Scheda Atleta")
+        left_hint.setObjectName("SubTitle")
+        left_head.addWidget(left_hint)
+        left_layout.addLayout(left_head)
 
         self.top_table = QTableWidget(0, 7)
         self.top_table.setHorizontalHeaderLabels(
@@ -177,10 +272,28 @@ class DashboardTab(QWidget):
         )
         self.top_table.setAlternatingRowColors(True)
         self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.top_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.top_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.top_table.verticalHeader().setVisible(False)
+        self.top_table.cellDoubleClicked.connect(lambda row, _col: self._open_top_detail(row))
         left_layout.addWidget(self.top_table)
         bottom_row.addWidget(left_panel, stretch=3)
+
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+
+        actions_panel = QFrame()
+        actions_panel.setObjectName("SectionPanel")
+        actions_layout = QVBoxLayout(actions_panel)
+        actions_layout.setContentsMargins(14, 10, 14, 10)
+        actions_layout.setSpacing(6)
+        actions_title = QLabel("Priorità della Settimana")
+        actions_title.setObjectName("SectionHeader")
+        actions_layout.addWidget(actions_title)
+        self.actions_box = QVBoxLayout()
+        self.actions_box.setSpacing(5)
+        actions_layout.addLayout(self.actions_box)
+        right_col.addWidget(actions_panel)
 
         right_panel = QFrame()
         right_panel.setObjectName("SectionPanel")
@@ -193,9 +306,15 @@ class DashboardTab(QWidget):
         self.news_list.setWordWrap(True)
         self.news_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         right_layout.addWidget(self.news_list)
-        bottom_row.addWidget(right_panel, stretch=2)
+        right_col.addWidget(right_panel, stretch=1)
+
+        bottom_row.addLayout(right_col, stretch=2)
 
         root.addLayout(bottom_row, stretch=1)
+
+    def _open_top_detail(self, row: int) -> None:
+        if 0 <= row < len(self._top_athlete_ids) and self._top_athlete_ids[row] != -1:
+            AthleteDetailDialog(self.controller, self._top_athlete_ids[row], parent=self).exec()
 
     def refresh(self, state: GameState) -> None:
         net = weekly_finances(state)["net"]
@@ -252,15 +371,15 @@ class DashboardTab(QWidget):
                 f"Stagione {last.season}: {last.placement}° in {last.tier.value} — {last.outcome.value}"
             )
 
-        rec_sections = []
+        rec_lines = []
         if state.club_records:
             rec_parts_m = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records.items()]
-            rec_sections.append("M: " + "  |  ".join(rec_parts_m))
+            rec_lines.append("M: " + " · ".join(rec_parts_m))
         if state.club_records_f:
             rec_parts_f = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records_f.items()]
-            rec_sections.append("F: " + "  |  ".join(rec_parts_f))
-        if rec_sections:
-            self.records_label.setText("Record Sociali — " + "   •   ".join(rec_sections))
+            rec_lines.append("F: " + " · ".join(rec_parts_f))
+        if rec_lines:
+            self.records_label.setText("Record Sociali:\n" + "\n".join(rec_lines))
         else:
             self.records_label.setText("Record Sociali: nessun record ancora omologato.")
 
@@ -292,6 +411,7 @@ class DashboardTab(QWidget):
             self.objectives_list.addItem(f"{prefix}{obj.title}")
 
         sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)
+        self._top_athlete_ids = [a.id or -1 for a in sorted_athletes]
         self.top_table.setRowCount(len(sorted_athletes))
         for row, a in enumerate(sorted_athletes):
             vals = [
@@ -315,6 +435,19 @@ class DashboardTab(QWidget):
                         item.setForeground(QColor("#34d399"))
                 self.top_table.setItem(row, col, item)
 
+        while self.actions_box.count():
+            child = self.actions_box.takeAt(0)
+            if child.widget() is not None:
+                child.widget().deleteLater()
+        for text, severity, target_idx in _weekly_action_items(state):
+            btn = QPushButton(text)
+            btn.setObjectName("ActionItemButton")
+            btn.setProperty("severity", severity)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.clicked.connect(lambda _c=False, idx=target_idx: self.navigate_requested.emit(idx))
+            self.actions_box.addWidget(btn)
+
         self.news_list.clear()
         for m in state.milestones[:6]:
             self.news_list.addItem(f"★ {m}")
@@ -329,6 +462,10 @@ class RosterTab(QWidget):
         super().__init__(parent)
         self.controller = controller
         self._athlete_row_ids: list[int] = []
+        self._gender_filter: str = "ALL"
+        self._sort_col: int = 4  # OVR/Pot descending by default? Keep insertion order until user sorts!
+        self._sort_active: bool = False
+        self._sort_desc: bool = True
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -374,11 +511,50 @@ class RosterTab(QWidget):
 
         root.addLayout(toolbar)
 
+        # Quick filter & search bar
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(8)
+        self._gender_group = QButtonGroup(self)
+        for label, code in (("Tutti", "ALL"), ("Maschile (M)", "M"), ("Femminile (F)", "F")):
+            pill = QPushButton(label)
+            pill.setObjectName("FilterPill")
+            pill.setCheckable(True)
+            if code == "ALL":
+                pill.setChecked(True)
+            pill.clicked.connect(lambda _c=False, c=code: self._set_gender_filter(c))
+            self._gender_group.addButton(pill)
+            filter_bar.addWidget(pill)
+
+        self.spec_filter = QComboBox()
+        self.spec_filter.addItem("Tutte le discipline", None)
+        for spec in Specialty:
+            self.spec_filter.addItem(spec.value, spec)
+        self.spec_filter.currentIndexChanged.connect(lambda _i: self.refresh(self.controller.state))
+        filter_bar.addWidget(self.spec_filter)
+
+        self.healthy_only_check = QCheckBox("Solo disponibili")
+        self.healthy_only_check.toggled.connect(lambda _b: self.refresh(self.controller.state))
+        filter_bar.addWidget(self.healthy_only_check)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Cerca atleta per nome...")
+        self.search_input.setMinimumWidth(170)
+        self.search_input.setMaximumWidth(230)
+        self.search_input.textChanged.connect(lambda _t: self.refresh(self.controller.state))
+        filter_bar.addWidget(self.search_input)
+
+        filter_bar.addStretch()
+        self.count_label = QLabel("")
+        self.count_label.setObjectName("SubTitle")
+        filter_bar.addWidget(self.count_label)
+        root.addLayout(filter_bar)
+
         hint = QLabel(
-            "Gestisci carico e periodizzazione: Prep. Specifica accelera la crescita ma stanca; "
-            "Scarico (Tapering) prima delle gare riduce la fatica e fa salire il picco di Forma."
+            "Clicca sulle intestazioni per ordinare. Prep. Specifica accelera la crescita ma stanca; "
+            "Scarico prima delle gare riduce la fatica e fa salire la Forma."
         )
         hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
         root.addWidget(hint)
 
         self.table = QTableWidget(0, 17)
@@ -411,14 +587,59 @@ class RosterTab(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(38)
 
         header = self.table.horizontalHeader()
+        header.setMinimumSectionSize(38)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(14, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(15, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(16, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(14, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(15, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(16, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(0, 150)
+        self.table.setColumnWidth(14, 128)
+        self.table.setColumnWidth(15, 132)
+        self.table.setColumnWidth(16, 150)
+        header.sectionClicked.connect(self._on_header_clicked)
 
         self.table.cellDoubleClicked.connect(lambda row, _col: self._open_detail(row))
         root.addWidget(self.table, stretch=1)
+
+    def _set_gender_filter(self, code: str) -> None:
+        self._gender_filter = code
+        self.refresh(self.controller.state)
+
+    def _on_header_clicked(self, col: int) -> None:
+        if col >= 14:
+            return
+        if self._sort_active and self._sort_col == col:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_active = True
+            self._sort_col = col
+            self._sort_desc = col in (4, 5, 6, 7, 8, 9, 13)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().setSortIndicator(
+            col, Qt.SortOrder.DescendingOrder if self._sort_desc else Qt.SortOrder.AscendingOrder
+        )
+        self.refresh(self.controller.state)
+
+    @staticmethod
+    def _sort_key(a: Athlete, col: int):
+        keys = {
+            0: a.name.lower(),
+            1: a.age,
+            2: a.specialty.value,
+            3: a.personality.value,
+            4: (a.overall, a.potential),
+            5: a.power,
+            6: a.stamina,
+            7: a.technique,
+            8: a.resilience,
+            9: a.form,
+            10: a.fatigue,
+            11: a.status_label,
+            12: a.personal_best or 0.0,
+            13: a.fans,
+        }
+        return keys.get(col, a.name.lower())
 
     def _open_detail_selected(self) -> None:
         rows = self.table.selectionModel().selectedRows()
@@ -433,7 +654,25 @@ class RosterTab(QWidget):
 
     def refresh(self, state: GameState) -> None:
         self._athlete_row_ids = []
-        squad = state.main_squad
+        full_squad = state.main_squad
+        query = self.search_input.text().strip().lower() if hasattr(self, "search_input") else ""
+        spec_val = self.spec_filter.currentData() if hasattr(self, "spec_filter") else None
+        healthy_only = self.healthy_only_check.isChecked() if hasattr(self, "healthy_only_check") else False
+
+        squad = [
+            a
+            for a in full_squad
+            if (self._gender_filter == "ALL" or a.gender == self._gender_filter)
+            and (not isinstance(spec_val, Specialty) or a.specialty == spec_val)
+            and (not healthy_only or not a.is_injured)
+            and (not query or query in a.name.lower())
+        ]
+        if self._sort_active:
+            squad.sort(key=lambda a: self._sort_key(a, self._sort_col), reverse=self._sort_desc)
+        if hasattr(self, "count_label"):
+            self.count_label.setText(f"Mostrati {len(squad)}/{len(full_squad)} atleti")
+        self.table.clearContents()
+        self.table.setRowCount(0)
         self.table.setRowCount(len(squad))
 
         for row, a in enumerate(squad):
