@@ -1428,6 +1428,22 @@ class TestRaceExport(unittest.TestCase):
             self.assertFalse(stale_db.exists())
             self.assertTrue(locked_db.exists())
 
+    def test_godot_class_cache_detection(self) -> None:
+        import views.godot_launcher as gl
+
+        self.assertEqual(gl._missing_class_names(gl.GODOT_PROJECT), set())
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td)
+            (proj / "scripts").mkdir()
+            (proj / "scripts" / "Foo.gd").write_text("class_name FooBar\nextends RefCounted\n", encoding="utf-8")
+            self.assertEqual(gl._missing_class_names(proj), {"FooBar"})
+            (proj / ".godot").mkdir()
+            (proj / ".godot" / "global_script_class_cache.cfg").write_text(
+                'list=[{"class": &"FooBar", "path": "res://scripts/Foo.gd"}]\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(gl._missing_class_names(proj), set())
+
     def test_export_race_includes_inferred_gender(self) -> None:
         import sqlite3
         from models.generator import infer_gender

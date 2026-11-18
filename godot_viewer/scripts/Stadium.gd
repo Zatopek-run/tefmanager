@@ -12,6 +12,8 @@ const CROWD_TILE_METERS: float = 32.0  # lato in metri di una ripetizione della 
 const AUTOQUIT_DELAY: float = 3.0  # con --autoquit: pausa sul risultato prima di chiudere
 
 const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
+const _AdBoards = preload("res://scripts/AdBoards.gd")
+const _TrackSideCrew = preload("res://scripts/TrackSideCrew.gd")
 
 @onready var _sun: DirectionalLight3D = $Sun
 @onready var _track_root: Node3D = $Track
@@ -219,7 +221,7 @@ func _rebuild_world(kind: String) -> void:
 	_build_curve_stands(mid_x, 110.0, 50.0, back_z)
 	_build_track_lights()
 	if not RaceController.is_field(kind):
-		TrackSideCrew.build(_track_root)   # nei concorsi la camera del lungo sta dove stanno i fotografi
+		_TrackSideCrew.build(_track_root)   # nei concorsi la camera del lungo sta dove stanno i fotografi
 	_sun.directional_shadow_max_distance = 160.0
 
 
@@ -252,7 +254,7 @@ func _build_stand_block(center_x: float, length: float, z_start: float, dir: flo
 		_add_box(_track_root, Vector3(length, rise, 1.8), Vector3(center_x, rise * 0.5, z_start + dir * step * 1.8), _crowd_material)
 
 	# Cartelloni davanti alla prima fila, rivolti verso la pista (dir = +1: tribuna a z positivi, guarda -Z).
-	AdBoards.row(_track_root, center_x - length * 0.5, center_x + length * 0.5, z_start - dir * 1.3, PI if dir > 0.0 else 0.0)
+	_AdBoards.row(_track_root, center_x - length * 0.5, center_x + length * 0.5, z_start - dir * 1.3, PI if dir > 0.0 else 0.0)
 
 	# Torri faro con testa emissiva: alimentano il bloom (glow_hdr_threshold = 1.0).
 	var lamp: StandardMaterial3D = StandardMaterial3D.new()
@@ -278,7 +280,7 @@ func _build_curve_stands(mid_x: float, half_len: float, home_z: float, back_z: f
 		var a0: float = acos(clampf((home_z - cz) / radius, -1.0, 1.0))
 		var a1: float = acos(clampf((back_z - cz) / radius, -1.0, 1.0))
 		_build_stand_arc(Vector2(cx, cz), side, radius, a0, a1)
-		AdBoards.arc(_track_root, Vector2(cx, cz), side, radius - 0.4, int(side * 5.0 + 5.0), a0, a1, true)
+		_AdBoards.arc(_track_root, Vector2(cx, cz), side, radius - 0.4, int(side * 5.0 + 5.0), a0, a1, true)
 
 
 ## Gradoni lungo un arco (stessa convenzione di OvalTrackBuilder._arc_point), tutti in una MultiMesh: ~300 scatole

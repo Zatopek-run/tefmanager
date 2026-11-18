@@ -10,7 +10,9 @@ Variabili d'ambiente: TEF_GODOT = percorso di godot.exe; TEF_NO_GODOT = disattiv
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -78,6 +80,50 @@ def _next_race_db_path() -> Path:
     return base_dir / f"race_results_{os.getpid()}_{uuid.uuid4().hex[:8]}.db"
 
 
+def _missing_class_names(project_dir: Path) -> set[str]:
+    """Ritorna i `class_name` dichiarati nei .gd del progetto ma assenti dalla cache Godot."""
+    declared: set[str] = set()
+    for folder in ("models", "scripts", "autoload"):
+        root = project_dir / folder
+        if not root.is_dir():
+            continue
+        for gd in root.rglob("*.gd"):
+            try:
+                text = gd.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            m = re.search(r"^\s*class_name\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.MULTILINE)
+            if m:
+                declared.add(m.group(1))
+    if not declared:
+        return set()
+    cache = project_dir / ".godot" / "global_script_class_cache.cfg"
+    if not cache.is_file():
+        return declared
+    try:
+        cached_text = cache.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return declared
+    cached = set(re.findall(r'"class":\s*&"([A-Za-z_][A-Za-z0-9_]*)"', cached_text))
+    return declared - cached
+
+
+def _ensure_class_cache_fresh(godot: Path, project_dir: Path = GODOT_PROJECT) -> None:
+    """Se mancano `class_name` in `.godot/global_script_class_cache.cfg`, riesegue `--import`."""
+    if not _missing_class_names(project_dir):
+        return
+    try:
+        subprocess.run(
+            [str(godot), "--headless", "--path", str(project_dir), "--import"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def launch_race_viewer(
     summary: CompetitionSummary,
     result: EventResult,
@@ -90,6 +136,7 @@ def launch_race_viewer(
     godot = viewer_available(result.event_name)
     if godot is None:
         return None
+    _ensure_class_cache_fresh(godot)
     db_path = _next_race_db_path()
     try:
         race_id = export_race(summary, result, db_path)

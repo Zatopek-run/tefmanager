@@ -13,6 +13,7 @@ const GRASS_OUT: Color = Color(0.16, 0.4, 0.18)
 const ARC_STEPS: int = 64
 const START_BLOCKS_GROUP: StringName = &"start_blocks"
 const GRASS_STRIPE_PERIOD: float = 8.0   # m: una fascia chiara + una scura
+const _AdBoards = preload("res://scripts/AdBoards.gd")
 
 
 static func build(parent: Node3D, kind: String = "400m") -> void:
@@ -54,10 +55,10 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 	# Rettilinei: solo tra -S e 0 (oltre, nei 100m, il rettilineo prolungato si fonde con la curva e il cartellone starebbe
 	# sul tartan). Curve: a raggio `inner - 1,6`, cioe' 1,6 m dentro il bordo interno, rivolti verso l'esterno.
 	# A doppia faccia: le camere dentro il campo (_o_start, _o_open...) li vedono da dietro.
-	var n: int = AdBoards.row(parent, -s, 0.0, -2.2, 0.0, 0, true)
-	n += AdBoards.row(parent, -s, 0.0, -r1 - inner + 1.6, 0.0, n, true)
-	n += AdBoards.arc(parent, Vector2(0.0, -r1), 1.0, inner - 1.6, n, 0.0, PI, false, true)
-	AdBoards.arc(parent, Vector2(-s, -r1), -1.0, inner - 1.6, n, 0.0, PI, false, true)
+	var n: int = _AdBoards.row(parent, -s, 0.0, -2.2, 0.0, 0, true)
+	n += _AdBoards.row(parent, -s, 0.0, -r1 - inner + 1.6, 0.0, n, true)
+	n += _AdBoards.arc(parent, Vector2(0.0, -r1), 1.0, inner - 1.6, n, 0.0, PI, false, true)
+	_AdBoards.arc(parent, Vector2(-s, -r1), -1.0, inner - 1.6, n, 0.0, PI, false, true)
 
 	if kind == "100m":
 		# Linea di partenza unica (sul rettilineo prolungato), blocchi e cartellini di corsia.
