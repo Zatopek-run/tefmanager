@@ -43,6 +43,7 @@ from views.tabs import (
     CalendarTab,
     DashboardTab,
     FinancesTab,
+    RecordsTab,
     RelayTab,
     RivalsTab,
     RosterTab,
@@ -166,6 +167,7 @@ class MainWindow(QMainWindow):
         self.rivals_tab = RivalsTab(self.controller)
         self.staff_tab = StaffTab(self.controller)
         self.finances_tab = FinancesTab(self.controller)
+        self.records_tab = RecordsTab(self.controller)
 
         pages = [
             ("GESTIONE", [
@@ -181,6 +183,7 @@ class MainWindow(QMainWindow):
             ("SOCIETÀ", [
                 ("Staff && Impianto", self.staff_tab),
                 ("Finanze", self.finances_tab),
+                ("Albo && Record", self.records_tab),
             ]),
         ]
 
@@ -324,6 +327,7 @@ class MainWindow(QMainWindow):
         self.rivals_tab.refresh(state)
         self.staff_tab.refresh(state)
         self.finances_tab.refresh(state)
+        self.records_tab.refresh(state)
 
     def _show_competition_results(self, summary: CompetitionSummary) -> None:
         if summary.event_results:

@@ -241,13 +241,20 @@ class CompetitionResultsDialog(QDialog):
 class RecruitAthleteDialog(QDialog):
     """Scouting dialog featuring Campionati Studenteschi youth talents & free agents."""
 
-    def __init__(self, prospects: List[Athlete], budget: int, parent=None) -> None:
+    def __init__(
+        self,
+        prospects: List[Athlete],
+        budget: int,
+        roster: Optional[List[Athlete]] = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.prospects = prospects
         self.budget = budget
+        self.roster: List[Athlete] = list(roster) if roster is not None else []
         self.selected_prospect: Optional[Athlete] = None
-        self.setWindowTitle("Scouting & Campionati Studenteschi")
-        self.resize(940, 440)
+        self.setWindowTitle("Scouting & Mercato Svincolati")
+        self.resize(960, 470)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -255,14 +262,16 @@ class RecruitAthleteDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(18, 18, 18, 18)
 
-        header = QLabel(f"Talenti Osservati (Budget Disponibile: ${self.budget:,})")
+        header = QLabel(f"Mercato Settimanale (Budget Disponibile: ${self.budget:,})")
         header.setObjectName("SectionHeader")
         layout.addWidget(header)
 
         sub = QLabel(
-            "I ragazzi dei Campionati Studenteschi (15-17 anni) hanno alto Potenziale ma vanno fatti maturare con pazienza."
+            "I ragazzi dei Campionati Studenteschi (15-17 anni) hanno alto Potenziale ma vanno fatti maturare con pazienza. "
+            "Il pool si aggiorna ogni settimana."
         )
         sub.setObjectName("SubTitle")
+        sub.setWordWrap(True)
         layout.addWidget(sub)
 
         self.table = QTableWidget(len(self.prospects), 11)
@@ -314,9 +323,18 @@ class RecruitAthleteDialog(QDialog):
                     item.setForeground(QColor("#f87171"))
                 self.table.setItem(row, col, item)
 
+        self.table.itemSelectionChanged.connect(self._update_comparison)
+        self.table.cellDoubleClicked.connect(lambda _r, _c: self._on_sign())
+        layout.addWidget(self.table)
+
+        self.compare_label = QLabel("")
+        self.compare_label.setObjectName("SubTitle")
+        self.compare_label.setWordWrap(True)
+        layout.addWidget(self.compare_label)
+
         if self.prospects:
             self.table.selectRow(0)
-        layout.addWidget(self.table)
+            self._update_comparison()
 
         btn_row = QHBoxLayout()
         btn_row.addStretch()
@@ -328,6 +346,37 @@ class RecruitAthleteDialog(QDialog):
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(sign_btn)
         layout.addLayout(btn_row)
+
+    def _update_comparison(self) -> None:
+        rows = self.table.selectionModel().selectedRows()
+        if not rows or not (0 <= rows[0].row() < len(self.prospects)):
+            self.compare_label.setText("")
+            return
+        prospect = self.prospects[rows[0].row()]
+        fee = get_recruitment_fee(prospect)
+        after = self.budget - fee
+        peers = [
+            a
+            for a in self.roster
+            if a.specialty == prospect.specialty and a.gender == prospect.gender
+        ]
+        if peers:
+            best = max(peers, key=lambda a: a.overall)
+            diff = prospect.overall - best.overall
+            comp = (
+                f"Confronto in rosa ({prospect.specialty.value} {prospect.gender}): "
+                f"migliore attuale {best.name} (OVR {best.overall}/Pot {best.potential}) · Δ OVR {diff:+d}"
+            )
+        elif self.roster:
+            comp = f"Nessun atleta in rosa per {prospect.specialty.value} ({prospect.gender})."
+        else:
+            comp = f"{prospect.specialty.value} ({prospect.gender}) · OVR {prospect.overall}/Pot {prospect.potential}"
+        budget_txt = (
+            f"Budget dopo tesseramento: ${after:,}"
+            if after >= 0
+            else f"Fondi insufficienti (mancano ${-after:,})"
+        )
+        self.compare_label.setText(f"{comp}   |   {budget_txt}")
 
     def _on_sign(self) -> None:
         rows = self.table.selectionModel().selectedRows()

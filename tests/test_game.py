@@ -1170,7 +1170,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             win = MainWindow(controller=ctrl)
 
             self.assertEqual(win.windowTitle(), "Track & Field Manager")
-            self.assertEqual(win.tabs.count(), 8)
+            self.assertEqual(win.tabs.count(), 9)
             self.assertEqual(win.rivals_tab.clubs_table.rowCount(), 7)
             self.assertEqual(win.rivals_tab.compare_table.rowCount(), 3)
             self.assertEqual(win.rivals_tab.roster_table.rowCount(), 3)
@@ -1897,7 +1897,59 @@ class TestStartScreenAndUX(unittest.TestCase):
             self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 14))
             self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 15))
             self.assertIsNotNone(win.roster_tab.table.cellWidget(0, 16))
+
+            # Filtro M/F in Calendario & Gare
+            self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 6)
+            win.calendar_tab._set_division_filter("M")
+            self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 3)
+            win.calendar_tab._set_division_filter("ALL")
+            self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 6)
+
             win.close()
+
+            # Pool settimanale persistente del Mercato Svincolati + confronto rosa (senza dialog modali connessi)
+            from views.dialogs import RecruitAthleteDialog
+
+            ctrl2 = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "pool.db"), rng=random.Random(15))
+            pool1 = ctrl2.get_free_agent_market(count=5)
+            pool2 = ctrl2.get_free_agent_market(count=5)
+            self.assertEqual([a.name for a in pool1], [a.name for a in pool2])
+            rec_dlg = RecruitAthleteDialog(pool1, ctrl2.state.budget, roster=ctrl2.state.main_squad)
+            self.assertTrue(len(rec_dlg.compare_label.text()) > 0)
+            rec_dlg.close()
+
+            ctrl2.state.budget = 50000
+            self.assertTrue(ctrl2.recruit_athlete(pool1[0]))
+            pool3 = ctrl2.get_free_agent_market(count=5)
+            self.assertNotIn(pool1[0].name, [a.name for a in pool3])
+
+            ctrl2.advance_week()
+            pool_next_week = ctrl2.get_free_agent_market(count=5)
+            self.assertEqual(len(pool_next_week), 5)
+
+            # Vista Albo & Record (indice 8)
+            from models.entities import SeasonEndResult, SeasonOutcome
+
+            win2 = MainWindow(controller=ctrl2)
+            ctrl2.state.club_records["100m"] = (10.85, "10.85s", "Marco Verdi")
+            ctrl2.state.club_records_f["100m"] = (11.95, "11.95s", "Giulia Neri")
+            ctrl2.state.season_history.append(
+                SeasonEndResult(
+                    season=1,
+                    tier=CompetitionTier.PROVINCIALE,
+                    placement=1,
+                    outcome=SeasonOutcome.PROMOTED,
+                    final_table=[],
+                    new_tier=CompetitionTier.REGIONALE,
+                )
+            )
+            win2.dashboard_tab.navigate_requested.emit(8)
+            self.assertEqual(win2.tabs.currentIndex(), 8)
+            win2.records_tab.refresh(ctrl2.state)
+            self.assertEqual(win2.records_tab.records_m_table.rowCount(), 1)
+            self.assertEqual(win2.records_tab.records_f_table.rowCount(), 1)
+            self.assertEqual(win2.records_tab.seasons_table.rowCount(), 1)
+            win2.close()
 
 
 if __name__ == "__main__":

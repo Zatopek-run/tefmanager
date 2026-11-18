@@ -76,7 +76,7 @@ class _StatColumn(QFrame):
         box.setContentsMargins(16, 14, 16, 14)
         box.setSpacing(0)
         head = QLabel(title.upper())
-        head.setStyleSheet("color: #ef4444; font-weight: 800; font-size: 12px; padding-bottom: 8px;")
+        head.setStyleSheet("color: #0de0cc; font-weight: 800; font-size: 12px; letter-spacing: 0.7px; padding-bottom: 8px;")
         box.addWidget(head)
         for name, value, invert in rows:
             row = QFrame()
@@ -131,7 +131,9 @@ class AthleteDetailDialog(QDialog):
         btn_release.setObjectName("DangerButton")
         btn_release.clicked.connect(self._release)
         btn_recover = QPushButton("RECUPERO ($250)")
-        btn_recover.setStyleSheet("background-color: #f97316; color: #111827; border: none;")
+        btn_recover.setStyleSheet(
+            "background-color: #0e7490; color: #f8fafc; border: 1px solid #0de0cc; font-weight: 700;"
+        )
         btn_recover.clicked.connect(self._recover)
         btn_close = QPushButton("✓ CHIUDI")
         btn_close.setObjectName("PrimaryButton")
@@ -224,7 +226,7 @@ class AthleteDetailDialog(QDialog):
         title = QLabel("CARATTERISTICHE")
         title.setStyleSheet(
             "font-size: 15px; font-weight: 800; color: #f8fafc; padding-bottom: 6px;"
-            "border-bottom: 2px solid #ef4444;"
+            "border-bottom: 2px solid #0de0cc;"
         )
         outer.addWidget(title)
 
@@ -240,7 +242,7 @@ class AthleteDetailDialog(QDialog):
         badges.addStretch()
         ovr = QLabel(str(a.overall))
         ovr.setStyleSheet(
-            "background-color: #ef4444; color: white; border-radius: 4px; padding: 3px 10px;"
+            "background-color: #0de0cc; color: #060e26; border-radius: 4px; padding: 3px 10px;"
             "font-weight: 800; font-size: 15px;"
         )
         stars = QLabel(f"★ {potential_stars(a.potential)}")

@@ -53,6 +53,7 @@ from models.entities import (
     GameState,
     PeriodizationPhase,
     RaceAttitude,
+    SeasonOutcome,
     Specialty,
     TrainingFocus,
     gym_upgrade_cost,
@@ -224,12 +225,17 @@ class DashboardTab(QWidget):
         self.tier_progress_label = QLabel("Percorso Categoria")
         self.tier_progress_label.setObjectName("SectionHeader")
         self.tier_progress = QProgressBar()
+        rec_row = QHBoxLayout()
         self.records_label = QLabel("Record Sociali: nessuno ancora stabilito")
         self.records_label.setObjectName("SubTitle")
         self.records_label.setWordWrap(True)
+        rec_row.addWidget(self.records_label, stretch=1)
+        albo_btn = QPushButton("Albo & Record →")
+        albo_btn.clicked.connect(lambda: self.navigate_requested.emit(8))
+        rec_row.addWidget(albo_btn)
         tier_layout.addWidget(self.tier_progress_label)
         tier_layout.addWidget(self.tier_progress)
-        tier_layout.addWidget(self.records_label)
+        tier_layout.addLayout(rec_row)
         mid_row.addWidget(tier_panel, stretch=3)
 
         obj_panel = QFrame()
@@ -371,15 +377,17 @@ class DashboardTab(QWidget):
                 f"Stagione {last.season}: {last.placement}° in {last.tier.value} — {last.outcome.value}"
             )
 
-        rec_lines = []
-        if state.club_records:
-            rec_parts_m = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records.items()]
-            rec_lines.append("M: " + " · ".join(rec_parts_m))
-        if state.club_records_f:
-            rec_parts_f = [f"{ev}: {disp} ({ath})" for ev, (_v, disp, ath) in state.club_records_f.items()]
-            rec_lines.append("F: " + " · ".join(rec_parts_f))
-        if rec_lines:
-            self.records_label.setText("Record Sociali:\n" + "\n".join(rec_lines))
+        n_m = len(state.club_records)
+        n_f = len(state.club_records_f)
+        if n_m or n_f:
+            seasons_note = (
+                f" · {len(state.season_history)} stagioni in archivio"
+                if state.season_history
+                else ""
+            )
+            self.records_label.setText(
+                f"Record Sociali omologati: {n_m} maschili · {n_f} femminili{seasons_note}"
+            )
         else:
             self.records_label.setText("Record Sociali: nessun record ancora omologato.")
 
@@ -761,8 +769,13 @@ class RosterTab(QWidget):
             self.controller.apply_recovery_session(self._athlete_row_ids[row])
 
     def _open_recruit_dialog(self) -> None:
-        prospects = self.controller.generate_free_agents(count=5)
-        dlg = RecruitAthleteDialog(prospects, self.controller.state.budget, parent=self)
+        prospects = self.controller.get_free_agent_market(count=5)
+        dlg = RecruitAthleteDialog(
+            prospects,
+            self.controller.state.budget,
+            roster=self.controller.state.main_squad,
+            parent=self,
+        )
         if dlg.exec() and dlg.selected_prospect is not None:
             self.controller.recruit_athlete(dlg.selected_prospect)
 
@@ -787,6 +800,7 @@ class CalendarTab(QWidget):
         self.controller = controller
         self._event_combos: Dict[str, QComboBox] = {}
         self._history_list: list[CompetitionSummary] = []
+        self._division_filter: str = "ALL"
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -800,8 +814,20 @@ class CalendarTab(QWidget):
         banner_layout.setContentsMargins(14, 12, 14, 12)
         self.cycle_label = QLabel("Calendario Gare")
         self.cycle_label.setObjectName("SectionHeader")
-        banner_layout.addWidget(self.cycle_label)
-        banner_layout.addStretch()
+        self.cycle_label.setWordWrap(True)
+        banner_layout.addWidget(self.cycle_label, stretch=1)
+
+        div_group = QButtonGroup(self)
+        for label, code in (("Tutte", "ALL"), ("M", "M"), ("F", "F")):
+            pill = QPushButton(label)
+            pill.setObjectName("FilterPill")
+            pill.setCheckable(True)
+            if code == "ALL":
+                pill.setChecked(True)
+            pill.clicked.connect(lambda _c=False, c=code: self._set_division_filter(c))
+            div_group.addButton(pill)
+            banner_layout.addWidget(pill)
+        self._div_group = div_group
 
         auto_btn = QPushButton("Formazione Ottimale")
         auto_btn.setObjectName("PrimaryButton")
@@ -915,8 +941,11 @@ class CalendarTab(QWidget):
 
         active_events = state.active_events
         self._event_combos.clear()
-        divisions = ("M", "F")
+        divisions = ("M", "F") if self._division_filter == "ALL" else (self._division_filter,)
+        self.lineup_table.clearContents()
+        self.lineup_table.setRowCount(0)
         self.lineup_table.setRowCount(len(active_events) * len(divisions))
+        by_id = {a.id: a for a in state.main_squad}
 
         for ev_idx, event_name in enumerate(active_events):
             event_def = EVENTS[event_name]
@@ -927,9 +956,15 @@ class CalendarTab(QWidget):
             )
             for div_idx, gender in enumerate(divisions):
                 row = ev_idx * len(divisions) + div_idx
+                assigned_id = state.lineup_for(gender).get(event_name)
+                assigned_ath = by_id.get(assigned_id) if assigned_id is not None else None
+                uncovered = assigned_ath is None or assigned_ath.is_injured
+
                 for col, text in enumerate((f"{event_name} ({gender})", event_def.specialty.value, key_stats)):
                     item = QTableWidgetItem(text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    if col == 0 and uncovered:
+                        item.setForeground(QColor("#f87171"))
                     self.lineup_table.setItem(row, col, item)
 
                 combo = QComboBox()
@@ -939,7 +974,6 @@ class CalendarTab(QWidget):
                         continue
                     label = f"{a.name} ({a.specialty.value}, OVR {a.overall}, Forma {a.form})"
                     combo.addItem(label, a.id)
-                assigned_id = state.lineup_for(gender).get(event_name)
                 idx = combo.findData(assigned_id)
                 combo.setCurrentIndex(idx if idx >= 0 else 0)
                 combo.currentIndexChanged.connect(
@@ -998,6 +1032,10 @@ class CalendarTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.history_table.setItem(row, col, item)
+
+    def _set_division_filter(self, code: str) -> None:
+        self._division_filter = code
+        self.refresh(self.controller.state)
 
     def _open_selected_history(self) -> None:
         rows = self.history_table.selectionModel().selectedRows()
@@ -1920,3 +1958,135 @@ class RivalsTab(QWidget):
                     (f"{a.skill:.1f}", None), (a.pb_display or "—", None)]
             for col, (text, color) in enumerate(vals):
                 self.roster_table.setItem(row, col, self._cell(text, color))
+
+
+class RecordsTab(QWidget):
+    """Club records (M/F), seasonal honours history, and milestone archive."""
+
+    OUTCOME_COLORS = {
+        SeasonOutcome.PROMOTED: "#34d399",
+        SeasonOutcome.CHAMPION: "#fbbf24",
+        SeasonOutcome.STAYED: "#38bdf8",
+        SeasonOutcome.RELEGATED: "#f87171",
+    }
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
+        self.records_m_table = self._make_records_panel(
+            top_row, "Record Sociali — Maschile (M)"
+        )
+        self.records_f_table = self._make_records_panel(
+            top_row, "Record Sociali — Femminile (F)"
+        )
+        root.addLayout(top_row, stretch=3)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+
+        seasons_panel = QFrame()
+        seasons_panel.setObjectName("SectionPanel")
+        seasons_lay = QVBoxLayout(seasons_panel)
+        seasons_lay.setContentsMargins(14, 12, 14, 12)
+        seasons_title = QLabel("Storico Stagioni & Piazzamenti")
+        seasons_title.setObjectName("SectionHeader")
+        seasons_lay.addWidget(seasons_title)
+        self.seasons_table = QTableWidget(0, 4)
+        self.seasons_table.setHorizontalHeaderLabels(
+            ["Stagione", "Categoria", "Posizione", "Verdetto"]
+        )
+        self.seasons_table.setAlternatingRowColors(True)
+        self.seasons_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.seasons_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.seasons_table.verticalHeader().setVisible(False)
+        seasons_lay.addWidget(self.seasons_table)
+        bottom_row.addWidget(seasons_panel, stretch=3)
+
+        milestones_panel = QFrame()
+        milestones_panel.setObjectName("SectionPanel")
+        milestones_lay = QVBoxLayout(milestones_panel)
+        milestones_lay.setContentsMargins(14, 12, 14, 12)
+        milestones_title = QLabel("Albo & Momenti Memorabili")
+        milestones_title.setObjectName("SectionHeader")
+        milestones_lay.addWidget(milestones_title)
+        self.milestones_list = QListWidget()
+        self.milestones_list.setWordWrap(True)
+        self.milestones_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        milestones_lay.addWidget(self.milestones_list)
+        bottom_row.addWidget(milestones_panel, stretch=2)
+
+        root.addLayout(bottom_row, stretch=2)
+
+    @staticmethod
+    def _make_records_panel(parent_row: QHBoxLayout, title_text: str) -> QTableWidget:
+        panel = QFrame()
+        panel.setObjectName("SectionPanel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(14, 12, 14, 12)
+        title = QLabel(title_text)
+        title.setObjectName("SectionHeader")
+        lay.addWidget(title)
+        table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(["Disciplina", "Primato", "Atleta"])
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        lay.addWidget(table)
+        parent_row.addWidget(panel, stretch=1)
+        return table
+
+    @staticmethod
+    def _populate_records(
+        table: QTableWidget,
+        events: list[str],
+        records: dict[str, tuple[float, str, str]],
+    ) -> None:
+        ordered = [ev for ev in events if ev in records]
+        for ev in records:
+            if ev not in ordered:
+                ordered.append(ev)
+        table.setRowCount(len(ordered))
+        for row, ev in enumerate(ordered):
+            _val, disp, athlete = records[ev]
+            for col, text in enumerate((ev, disp, athlete)):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 1:
+                    item.setForeground(QColor("#0de0cc"))
+                table.setItem(row, col, item)
+
+    def refresh(self, state: GameState) -> None:
+        self._populate_records(self.records_m_table, list(EVENTS), state.club_records)
+        self._populate_records(self.records_f_table, list(EVENTS), state.club_records_f)
+
+        self.seasons_table.setRowCount(len(state.season_history))
+        for row, h in enumerate(state.season_history):
+            outcome_txt = h.outcome.value
+            if h.new_tier is not None:
+                outcome_txt = f"{outcome_txt} → {h.new_tier.value}"
+            vals = [f"Stagione {h.season}", h.tier.value, f"{h.placement}°", outcome_txt]
+            color = self.OUTCOME_COLORS.get(h.outcome)
+            for col, text in enumerate(vals):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 3 and color:
+                    item.setForeground(QColor(color))
+                self.seasons_table.setItem(row, col, item)
+
+        self.milestones_list.clear()
+        if state.milestones:
+            for m in state.milestones:
+                self.milestones_list.addItem(f"★ {m}")
+        else:
+            self.milestones_list.addItem("Nessun traguardo storico ancora registrato.")

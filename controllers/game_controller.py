@@ -117,6 +117,8 @@ class GameController(QObject):
             self.state = self._create_fresh_state(game_mode="vertical_slice", persist=False)
         # Last youth-scouting search results (transient: they leave if not signed this week)
         self.scouting_results: List[Athlete] = []
+        # Weekly free-agent market pool (refreshes once per week instead of on every modal open)
+        self.free_agent_pool: List[Athlete] = []
 
     @property
     def db(self) -> DatabaseManager:
@@ -225,6 +227,7 @@ class GameController(QObject):
         )
         self.has_active_game = True
         self.scouting_results = []
+        self.free_agent_pool = []
         self.state_changed.emit(self.state)
         mode_label = "Prototipo Outdoor" if game_mode == "vertical_slice" else "Carriera Completa"
         self.status_message.emit(f"Nuova partita avviata ({mode_label}): {team_name}.")
@@ -243,6 +246,7 @@ class GameController(QObject):
         self.state = loaded
         self.has_active_game = True
         self.scouting_results = []
+        self.free_agent_pool = []
         self.state_changed.emit(self.state)
         self.status_message.emit("Salvataggio caricato.")
         return True
@@ -389,6 +393,12 @@ class GameController(QObject):
             vertical_slice_only=(self.state.game_mode == "vertical_slice"),
         )
 
+    def get_free_agent_market(self, count: int = 5) -> List[Athlete]:
+        """Return this week's free-agent pool, generating it once per week."""
+        if not self.free_agent_pool:
+            self.free_agent_pool = self.generate_free_agents(count=count)
+        return list(self.free_agent_pool)
+
     def recruit_athlete(self, prospect: Athlete) -> bool:
         fee = get_recruitment_fee(prospect)
         if self.state.budget < fee:
@@ -400,6 +410,9 @@ class GameController(QObject):
         next_id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
         prospect.id = next_id
         self.state.athletes.append(prospect)
+        self.free_agent_pool = [
+            p for p in self.free_agent_pool if p is not prospect and p.name != prospect.name
+        ]
         auto_assign_coach(self.state, prospect)
         self.state.budget -= fee
         # Sponsors dislike squad turnover; young signings hurt fidelity less
@@ -521,6 +534,9 @@ class GameController(QObject):
         prospect.id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
         prospect.in_youth_squad = True
         self.state.athletes.append(prospect)
+        self.free_agent_pool = [
+            p for p in self.free_agent_pool if p is not prospect and p.name != prospect.name
+        ]
         auto_assign_coach(self.state, prospect)
         self.scouting_results.remove(prospect)
         self.state.news_log.insert(
@@ -827,6 +843,7 @@ class GameController(QObject):
             return None
         report = advance_week(self.state, rng=self.rng)
         self.scouting_results = []
+        self.free_agent_pool = []
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
         self.week_advanced.emit(report)
