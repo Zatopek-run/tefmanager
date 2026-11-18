@@ -53,6 +53,7 @@ static func _person(parent: Node3D, pos: Vector3, yaw: float, shirt: Color, skin
 	var pivot: Node3D = Node3D.new()
 	pivot.position = pos
 	pivot.rotation.y = yaw
+	pivot.add_to_group(&"crew")
 	parent.add_child(pivot)
 	var leg_h: float = 0.45 if kneeling else 0.85
 	_box(pivot, Vector3(0.34, leg_h, 0.24), Vector3(0.0, leg_h * 0.5, 0.0), TROUSERS)

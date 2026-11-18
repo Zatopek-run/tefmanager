@@ -11,7 +11,8 @@ const LINE: Color = Color(0.95, 0.95, 0.95)
 const GRASS_IN: Color = Color(0.09, 0.27, 0.12)
 const GRASS_OUT: Color = Color(0.16, 0.4, 0.18)
 const ARC_STEPS: int = 64
-const GRASS_STRIPE_PERIOD: float = 8.0    # m: una fascia chiara + una scura
+const START_BLOCKS_GROUP: StringName = &"start_blocks"
+const GRASS_STRIPE_PERIOD: float = 8.0   # m: una fascia chiara + una scura
 
 
 static func build(parent: Node3D, kind: String = "400m") -> void:
@@ -52,10 +53,11 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 	# Cartelloni LED sul bordo interno dei due rettilinei, rivolti verso le camere esterne (+Z).
 	# Rettilinei: solo tra -S e 0 (oltre, nei 100m, il rettilineo prolungato si fonde con la curva e il cartellone starebbe
 	# sul tartan). Curve: a raggio `inner - 1,6`, cioe' 1,6 m dentro il bordo interno, rivolti verso l'esterno.
-	var n: int = AdBoards.row(parent, -s, 0.0, -2.2)
-	n += AdBoards.row(parent, -s, 0.0, -r1 - inner + 1.6, 0.0, n)
-	n += AdBoards.arc(parent, Vector2(0.0, -r1), 1.0, inner - 1.6, n)
-	AdBoards.arc(parent, Vector2(-s, -r1), -1.0, inner - 1.6, n)
+	# A doppia faccia: le camere dentro il campo (_o_start, _o_open...) li vedono da dietro.
+	var n: int = AdBoards.row(parent, -s, 0.0, -2.2, 0.0, 0, true)
+	n += AdBoards.row(parent, -s, 0.0, -r1 - inner + 1.6, 0.0, n, true)
+	n += AdBoards.arc(parent, Vector2(0.0, -r1), 1.0, inner - 1.6, n, 0.0, PI, false, true)
+	AdBoards.arc(parent, Vector2(-s, -r1), -1.0, inner - 1.6, n, 0.0, PI, false, true)
 
 	if kind == "100m":
 		# Linea di partenza unica (sul rettilineo prolungato), blocchi e cartellini di corsia.
@@ -161,6 +163,9 @@ static func _blocks_and_placard(parent: Node3D, origin: Vector3, yaw: float, lan
 	var holder: Node3D = Node3D.new()
 	holder.position = origin
 	holder.rotation.y = yaw
+	holder.name = "StartBlocks_L%d" % lane
+	holder.add_to_group(START_BLOCKS_GROUP)   # Stadium li nasconde quando l'atleta della corsia taglia il traguardo
+	holder.set_meta("lane", lane)
 	parent.add_child(holder)
 	var metal: StandardMaterial3D = _material(Color(0.55, 0.55, 0.58), 0.4)
 	var pad: StandardMaterial3D = _material(Color(0.45, 0.14, 0.1), 0.6)

@@ -172,6 +172,24 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `generate_attempts` con lo stesso seed della vista PyQt (nullo = `is_foul`). `RaceController.field_queue` le mette
   in scena una dopo l'altra; `verify_race.gd` controlla che il miglior salto del vincitore coincida con il suo
   `mark_value` (solo il vincitore, non gli altri).
+- **Ambiente** (solo vista, nessun effetto su tempi o ordine). `scripts/AdBoards.gd`: cartelloni LED con sponsor di
+  FANTASIA (se uno coincide con un'azienda vera, cambialo); a doppia faccia nel campo perché le camere interne
+  (`_o_start`, `_o_open`) li vedono da dietro (il retro nero faceva una striscia scura), a faccia singola davanti
+  alle tribune. `Stadium._build_curve_stands` chiude le tribune dietro le curve con archi (MultiMesh) agganciati alle
+  due tribune dritte: raggio ~110 m nei 400m; nei 100m la tribuna opposta è più vicina e resta un buco di ~14 m. Le
+  camere devono stare dentro il raggio (la più lontana è a ~91 m dal centro curva). `scripts/TrackSideCrew.gd`:
+  fotografi e giudici a forme semplici, **solo nelle corse in pista** (nei concorsi la camera del lungo sta dove
+  stanno i fotografi) e i giudici a z ≥ 14 per non coprire la corsia 8 alla camera del traguardo. Tartan dei 400m
+  `Color(0.43, 0.14, 0.46)`: più chiaro sbiadisce a lavanda, più blu vira a indaco (luce di scena fredda).
+- **Blocchi di partenza** (gruppo `start_blocks`): spariscono quando taglia il traguardo l'atleta di quella corsia e
+  tutti a `race_finished`, perché dopo l'arrivo gli atleti proseguono sulla pista (nei 400m le corsie esterne
+  partono oltre il traguardo e il runout ci passa sopra). Ricompaiono a ogni `race_loaded`.
+- **Nuove classi `class_name`:** Godot le vede solo dopo un import del progetto
+  (`godot --headless --path godot_viewer --import`, crea anche i `.uid` da committare), altrimenti
+  «Identifier not declared».
+- **Flatpak.** `/tmp` dentro il sandbox è privato: gli screenshot scritti in `/tmp/...` non compaiono fuori. Salvali
+  in una cartella della home. `./TrackAndFieldManager.sh` avvia il gioco con il `.venv` ed espone Godot flatpak
+  (wrapper in `~/.track_field_manager/`, `TEF_GODOT`); `--check` mostra cosa userebbe.
 - Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie.
 
 ## Test: cosa verificano e cosa no

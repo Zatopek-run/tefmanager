@@ -33,6 +33,8 @@ func _ready() -> void:
 	add_child(HUD_SCENE.instantiate())
 
 	RaceController.race_loaded.connect(_on_race_loaded)
+	RaceController.runner_finished.connect(_on_runner_finished)
+	RaceController.race_finished.connect(_on_race_finished)
 	_race_id = _race_id_from_args()
 	_autoquit = OS.get_cmdline_user_args().has("--autoquit")
 	if RaceController.load_race(_race_id):
@@ -87,8 +89,24 @@ func _race_id_from_args() -> int:
 	return 1
 
 
+## Dopo il traguardo gli atleti proseguono sulla pista: i blocchi (e il cartellino di corsia) non devono restare sulla loro
+## traiettoria, altrimenti ci passano attraverso. Spariscono quando taglia il traguardo l'atleta di quella corsia.
+func _on_runner_finished(runner: RunnerData) -> void:
+	for holder: Node in get_tree().get_nodes_in_group(OvalTrackBuilder.START_BLOCKS_GROUP):
+		if int(holder.get_meta("lane", -1)) == runner.lane:
+			(holder as Node3D).visible = false
+
+
+## A gara conclusa non ne resta nessuno (anche quelli dei ritirati, che non tagliano mai il traguardo).
+func _on_race_finished(_results: Array[RunnerData]) -> void:
+	for holder: Node in get_tree().get_nodes_in_group(OvalTrackBuilder.START_BLOCKS_GROUP):
+		(holder as Node3D).visible = false
+
+
 func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 	_rebuild_world(RaceController.event_kind)
+	for holder: Node in get_tree().get_nodes_in_group(OvalTrackBuilder.START_BLOCKS_GROUP):
+		(holder as Node3D).visible = true   # nuova gara sulla stessa pista: la scena non viene ricostruita
 	for child: Node in _runners_root.get_children():
 		child.queue_free()
 	if _field_marker != null:
@@ -198,6 +216,7 @@ func _rebuild_world(kind: String) -> void:
 	var back_z: float = -92.0 if kind == "100m" else -125.0
 	_build_stand_block(mid_x, 220.0, 50.0, 1.0, [-130.0, -42.0, 45.0])
 	_build_stand_block(mid_x, 220.0, back_z, -1.0, [-130.0, -42.0, 45.0])
+	_build_curve_stands(mid_x, 110.0, 50.0, back_z)
 	_build_track_lights()
 	if not RaceController.is_field(kind):
 		TrackSideCrew.build(_track_root)   # nei concorsi la camera del lungo sta dove stanno i fotografi
@@ -244,6 +263,61 @@ func _build_stand_block(center_x: float, length: float, z_start: float, dir: flo
 	for x: float in lamp_xs:
 		_add_box(_track_root, Vector3(0.5, 22.0, 0.5), Vector3(x, 11.0, z_start + dir * 14.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
 		_add_box(_track_root, Vector3(4.0, 1.4, 0.4), Vector3(x, 22.5, z_start + dir * 13.6), lamp)
+
+
+## Gradinate dietro le due curve: un arco attorno a ciascun centro di curva che si aggancia alle estremita' delle due
+## tribune dritte (home_z e back_z), cosi' lo stadio non ha le "teste" aperte. Raggio ricavato dai due punti di
+## aggancio: ~110 m nei 400m (aggancio a ~1 m); nei 100m la tribuna opposta e' piu' vicina e resta un buco di ~14 m.
+## Tutte le camere stanno dentro il raggio (la piu' lontana a ~91 m dal centro curva).
+func _build_curve_stands(mid_x: float, half_len: float, home_z: float, back_z: float) -> void:
+	var cz: float = -TrackGeometry.R1
+	for side: float in [1.0, -1.0]:                       # +1 = curva 1 (x = 0), -1 = curva 2 (x = -STRAIGHT)
+		var cx: float = 0.0 if side > 0.0 else -TrackGeometry.STRAIGHT
+		var dx: float = absf(mid_x + side * half_len - cx)
+		var radius: float = 0.5 * (Vector2(dx, home_z - cz).length() + Vector2(dx, back_z - cz).length())
+		var a0: float = acos(clampf((home_z - cz) / radius, -1.0, 1.0))
+		var a1: float = acos(clampf((back_z - cz) / radius, -1.0, 1.0))
+		_build_stand_arc(Vector2(cx, cz), side, radius, a0, a1)
+		AdBoards.arc(_track_root, Vector2(cx, cz), side, radius - 0.4, int(side * 5.0 + 5.0), a0, a1, true)
+
+
+## Gradoni lungo un arco (stessa convenzione di OvalTrackBuilder._arc_point), tutti in una MultiMesh: ~300 scatole
+## unitarie scalate e ruotate, una sola draw call. Ogni gradone e' alto 0,7 m piu' del precedente, come nelle tribune dritte.
+func _build_stand_arc(center: Vector2, sign: float, radius: float, a0: float, a1: float) -> void:
+	const STEPS: int = 6
+	const DEPTH: float = 1.8
+	var segments: int = maxi(1, int(ceilf((a1 - a0) * radius / 3.5)))
+	var da: float = (a1 - a0) / float(segments)
+	var mesh: BoxMesh = BoxMesh.new()
+	mesh.size = Vector3.ONE
+	mesh.material = _crowd_material
+	var mm: MultiMesh = MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = segments * STEPS
+	for i in range(segments):
+		var a: float = a0 + (i + 0.5) * da
+		for step in range(STEPS):
+			var r: float = radius + (step + 0.5) * DEPTH
+			var rise: float = 0.7 * (step + 1)
+			var chord: float = da * r * 1.06                     # 6% in piu': niente fessure tra segmenti
+			var basis: Basis = Basis(Vector3.UP, sign * a).scaled_local(Vector3(chord, rise, DEPTH))
+			var pos: Vector3 = Vector3(center.x + sign * r * sin(a), rise * 0.5, center.y + r * cos(a))
+			mm.set_instance_transform(i * STEPS + step, Transform3D(basis, pos))
+	var inst: MultiMeshInstance3D = MultiMeshInstance3D.new()
+	inst.multimesh = mm
+	_track_root.add_child(inst)
+	# Un faro dietro l'arco, a meta' (testa emissiva come quelle delle tribune dritte).
+	var mid: float = 0.5 * (a0 + a1)
+	var rl: float = radius + STEPS * DEPTH + 6.0
+	var lamp: StandardMaterial3D = StandardMaterial3D.new()
+	lamp.albedo_color = Color(1.0, 0.97, 0.88)
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.95, 0.8)
+	lamp.emission_energy_multiplier = 6.0
+	var base: Vector3 = Vector3(center.x + sign * rl * sin(mid), 0.0, center.y + rl * cos(mid))
+	_add_box(_track_root, Vector3(0.5, 22.0, 0.5), base + Vector3(0.0, 11.0, 0.0), _flat(Color(0.3, 0.3, 0.32), 0.6))
+	_add_box(_track_root, Vector3(4.0, 1.4, 0.4), base + Vector3(0.0, 22.5, 0.0), lamp)
 
 
 ## Folla procedurale: file di spettatori (testa tonda + busto colorato) su fondo scuro, deterministica.

@@ -18,44 +18,59 @@ static var _back: StandardMaterial3D = null
 
 
 ## Fila dritta da x0 a x1 (x0 < x1) alla quota z. Ritorna quanti cartelloni ha messo.
-static func row(parent: Node3D, x0: float, x1: float, z: float, yaw: float = 0.0, first: int = 0) -> int:
+## `both` = schermo e scritta anche sul retro: per i cartelloni del campo, che le camere interne vedono da dietro.
+static func row(parent: Node3D, x0: float, x1: float, z: float, yaw: float = 0.0, first: int = 0, both: bool = false) -> int:
 	var count: int = int(floorf((x1 - x0) / PANEL_W))
 	var x_start: float = (x0 + x1) * 0.5 - count * PANEL_W * 0.5
 	for i in range(count):
-		_panel(parent, Vector3(x_start + (i + 0.5) * PANEL_W, 0.0, z), yaw, first + i)
+		_panel(parent, Vector3(x_start + (i + 0.5) * PANEL_W, 0.0, z), yaw, first + i, both)
 	return count
 
 
 ## Semicerchio di cartelloni lungo una curva, rivolti verso l'ESTERNO. Stessa convenzione di OvalTrackBuilder._arc_point:
 ## punto = (centro.x + sign*r*sin(a), centro.y + r*cos(a)), a da 0 a PI.
-static func arc(parent: Node3D, center: Vector2, sign: float, radius: float, first: int = 0) -> int:
-	var count: int = int(floorf(PI * radius / PANEL_W))
-	var step: float = PI / float(count)
+## `a0`..`a1` limitano l'arco; `inward` li rivolge verso il centro (cartelloni davanti a una tribuna che gira attorno).
+static func arc(parent: Node3D, center: Vector2, sign: float, radius: float, first: int = 0,
+		a0: float = 0.0, a1: float = PI, inward: bool = false, both: bool = false) -> int:
+	var count: int = int(floorf((a1 - a0) * radius / PANEL_W))
+	if count <= 0:
+		return 0
+	var step: float = (a1 - a0) / float(count)
 	for i in range(count):
-		var a: float = (i + 0.5) * step
+		var a: float = a0 + (i + 0.5) * step
 		var pos: Vector3 = Vector3(center.x + sign * radius * sin(a), 0.0, center.y + radius * cos(a))
-		_panel(parent, pos, sign * a, first + i)   # la normale uscente e' (sign*sin a, cos a): yaw = sign*a
+		# La normale uscente e' (sign*sin a, cos a): yaw = sign*a; verso l'interno si ruota di PI.
+		_panel(parent, pos, sign * a + (PI if inward else 0.0), first + i, both)
 	return count
 
 
-static func _panel(parent: Node3D, pos: Vector3, yaw: float, idx: int) -> void:
+static func _panel(parent: Node3D, pos: Vector3, yaw: float, idx: int, both: bool = false) -> void:
 	_ensure_materials()
 	var k: int = idx % SPONSORS.size()
 	var pivot: Node3D = Node3D.new()
 	pivot.position = pos
 	pivot.rotation.y = yaw
+	pivot.add_to_group(&"ad_boards")
 	parent.add_child(pivot)
 	_part(pivot, Vector3(PANEL_W - 0.06, PANEL_H, 0.12), Vector3(0.0, PANEL_H * 0.5, 0.0), _back)
 	_part(pivot, Vector3(PANEL_W - 0.12, PANEL_H - 0.1, 0.02), Vector3(0.0, PANEL_H * 0.5, 0.065), _faces[k])
+	pivot.add_child(_label(SPONSORS[k], 0.085, 0.0))
+	if both:
+		_part(pivot, Vector3(PANEL_W - 0.12, PANEL_H - 0.1, 0.02), Vector3(0.0, PANEL_H * 0.5, -0.065), _faces[k])
+		pivot.add_child(_label(SPONSORS[k], -0.085, PI))
+
+
+static func _label(text: String, z: float, yaw: float) -> Label3D:
 	var label: Label3D = Label3D.new()
-	label.text = SPONSORS[k]
+	label.text = text
 	label.font_size = 72
 	label.pixel_size = 0.0065
 	label.shaded = false
 	label.double_sided = false
 	label.outline_size = 0
-	label.position = Vector3(0.0, PANEL_H * 0.5, 0.085)
-	pivot.add_child(label)
+	label.position = Vector3(0.0, PANEL_H * 0.5, z)
+	label.rotation.y = yaw
+	return label
 
 
 static func _part(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> void:
