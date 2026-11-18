@@ -67,6 +67,7 @@ var _finisher_count: int = 0       # corridori che arrivano al traguardo (esclus
 var _announced: bool = false
 var _winner_time: float = 0.0
 var _last_finish_time: float = 0.0
+var finish_margin: float = INF     # distacco 1°-2° (noto subito, il modello ha gia' calcolato il risultato)
 
 
 ## Carica la gara dal DB. Ritorna false se non ci sono corridori validi.
@@ -91,17 +92,21 @@ func load_race(race_id: int) -> bool:
 	_finisher_count = 0
 	_winner_time = INF
 	_last_finish_time = 0.0
+	var finish_times: Array[float] = []
 	for r: RunnerData in runners:
 		if not r.dnf:
 			_finisher_count += 1
 			_winner_time = minf(_winner_time, r.final_time)
 			_last_finish_time = maxf(_last_finish_time, r.final_time)
+			finish_times.append(r.final_time)
 		r.distance = 0.0
 		r.speed = 0.0
 		r.finished = false
 		r.attempts = []
 		r.best_mark = 0.0
 		r.revealed_rounds = 0
+	finish_times.sort()
+	finish_margin = finish_times[1] - finish_times[0] if finish_times.size() >= 2 else INF
 	live_order = runners.duplicate()
 	field_queue.clear()
 	field_idx = 0
@@ -174,6 +179,18 @@ func set_amount() -> float:
 
 func leader_distance() -> float:
 	return live_order[0].distance if not live_order.is_empty() else 0.0
+
+
+## Quanto indugiare sulla finish-cam prima di tagliare sul carrello/runout: il distacco 1°-2° e'
+## gia' noto (il modello ha calcolato il risultato prima della messa in scena), quindi la regia
+## puo' decidere in anticipo invece di reagire a un arrivo che non vede ancora. Soglie allineate a
+## `Track3DWidget._finish_hold` in race_3d.py.
+func finish_hold() -> float:
+	if finish_margin < 0.12:
+		return 1.7
+	if finish_margin < 0.4:
+		return 1.0
+	return 0.55
 
 
 func _process(delta: float) -> void:

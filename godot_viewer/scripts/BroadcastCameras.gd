@@ -26,7 +26,8 @@ const PATH_END_X: float = 70.0
 const TRACK_FOV: float = 24.0             # il gruppo occupa circa meta' inquadratura
 const LEAD_IN_FRAME: float = 3.0          # il primo sta 3 m a destra del centro dell'inquadratura (~70% della larghezza)
 const CUT_BEFORE_FINISH: float = 10.0     # stacco sul traguardo quando mancano meno di questi metri
-const RUNOUT_CUT_DELAY: float = 1.2       # dopo l'arrivo del primo si torna al carrello alto sulla corsa oltre il traguardo
+# Dopo l'arrivo del primo si torna al carrello alto sulla corsa oltre il traguardo: il ritardo non e'
+# piu' fisso, vedi RaceController.finish_hold() (si allunga sui fotofinish piu' combattuti).
 # Preparazione (secondi di clock prima dello sparo):
 const OPEN_WIDE_TIME: float = 0.8         # apertura larga
 const WIDE_CUT_BEFORE_GUN_100M: float = 0.4
@@ -195,7 +196,7 @@ func _direct_100m() -> void:
 			var leader_done: bool = not live.is_empty() and live[0].finished
 			if rc.race_time < START_WIDE_HOLD:
 				cam = _start_cam
-			elif leader_done and rc.race_time > live[0].final_time + RUNOUT_CUT_DELAY:
+			elif leader_done and rc.race_time > live[0].final_time + rc.finish_hold():
 				cam = _side_cam  # corsa oltre il traguardo, di nuovo dall'alto
 			elif rc.leader_distance() >= _race_distance - CUT_BEFORE_FINISH:
 				cam = _finish_cam
@@ -220,7 +221,7 @@ func _direct_oval() -> void:
 			var live: Array[RunnerData] = rc.live_order
 			if not live.is_empty():
 				var lead: RunnerData = live[0]
-				if lead.finished and rc.race_time > lead.final_time + RUNOUT_CUT_DELAY:
+				if lead.finished and rc.race_time > lead.final_time + rc.finish_hold():
 					cam = _side_cam
 				elif lead.distance >= _race_distance - CUT_BEFORE_FINISH:
 					cam = _finish_cam
