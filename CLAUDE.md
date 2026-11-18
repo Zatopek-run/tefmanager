@@ -43,6 +43,14 @@ tests/       test_game.py
   gara ha un fisico ideale (`BODY_IDEALS` in `simulation.py`): lo scarto sposta il punteggio atteso tra +1,2 e −4
   e il valore dei frazionisti (peso dimezzato). Atleti senza dati fisici (vecchi salvataggi non ancora
   riempiti) restano neutri.
+- **Curve punteggio → misura** (`_score_to_mark`). Una retta per evento e sesso, tarata sulle ancore di livello:
+  score 42 provinciale, 56 regionale, 66 vincitore regionale, 70 nazionale, 84 internazionale; i test
+  `test_*_matches_fidal_ranges` le fissano con fasce larghe. 100m, 400m, 1500m, lungo e peso sono tarati, le
+  staffette (`_relay_mark`) no. Il tetto è il record del mondo, applicato dopo il vento. Le ancore alte di lungo e
+  peso vengono da dati reali (Assoluti 2025, Lazio regionali 2025); provinciale e media regionale di lungo e peso
+  sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
+  `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
+  alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
 - **Salvataggi.** `SCHEMA_VERSION = 7`. Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al

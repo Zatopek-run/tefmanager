@@ -502,13 +502,17 @@ def _score_to_mark(
         secs = total_seconds % 60
         return total_seconds, f"{mins}:{secs:05.2f}"
 
+    # Rette tarate sui livelli di gioco (score 42 provinciale, 56 regionale, 66 vincitore regionale, 70 nazionale,
+    # 84 internazionale). Il tetto è il record del mondo, applicato dopo il vento come per i 100m.
     if event_def.name == "Salto in Lungo":
-        meters = (4.60 + norm * 2.65) if gender == "F" else (5.30 + norm * 3.10)
+        meters = (3.05 + norm * 4.17) if gender == "F" else (4.00 + norm * 4.52)
         if wind_ms is not None:
             meters += wind_ms * 0.08
+        meters = min(meters, 7.52 if gender == "F" else 8.95)
         return meters, f"{meters:.2f}m"
 
-    meters = (10.20 + norm * 9.80) if gender == "F" else (11.40 + norm * 10.60)
+    meters = (0.70 + norm * 19.76) if gender == "F" else (2.00 + norm * 21.00)
+    meters = min(meters, 22.63 if gender == "F" else 23.56)
     return meters, f"{meters:.2f}m"
 
 

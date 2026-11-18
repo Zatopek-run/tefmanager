@@ -1715,6 +1715,71 @@ class TestGenderDivisions(unittest.TestCase):
         self.assertTrue(258.0 <= f_naz <= 268.0)
         self.assertTrue(238.0 <= f_int <= 248.0)
 
+    def test_long_jump_curve_matches_fidal_ranges(self) -> None:
+        from models.entities import EVENTS
+        from models.simulation import _score_to_mark
+
+        ev = EVENTS["Salto in Lungo"]
+
+        def mark(score: float, gender: str) -> float:
+            return _score_to_mark(ev, score, gender=gender)[0]
+
+        # Ancora REALE: campionati regionali Lazio 2025, lungo F vinto con 5,75 (+0.3); M in testa con 6,52 dopo
+        # 2 turni (gara sospesa). Le altre ancore (provinciale, media regionale) sono STIME, non dati FIDAL.
+        # Provinciale (42): M ~5.90, F ~4.80
+        self.assertTrue(5.5 <= mark(42.0, "M") <= 6.3)
+        self.assertTrue(4.5 <= mark(42.0, "F") <= 5.2)
+        # Regionale media (56) e vincitore regionale (66): M ~6.53 / ~6.98, F ~5.39 / ~5.80
+        self.assertTrue(6.2 <= mark(56.0, "M") <= 6.8)
+        self.assertTrue(6.6 <= mark(66.0, "M") <= 7.2)
+        self.assertTrue(5.1 <= mark(56.0, "F") <= 5.6)
+        self.assertTrue(5.5 <= mark(66.0, "F") <= 6.0)
+        # Nazionale (70) e internazionale (84). Riferimento reale: Assoluti 2025, M 8,26 / 7,96 / 7,47,
+        # F 6,78 / 6,41 / 6,20: i livelli di gioco stanno sotto i finalisti d'élite.
+        self.assertTrue(6.8 <= mark(70.0, "M") <= 7.4)
+        self.assertTrue(7.5 <= mark(84.0, "M") <= 8.1)
+        self.assertTrue(5.7 <= mark(70.0, "F") <= 6.2)
+        self.assertTrue(6.3 <= mark(84.0, "F") <= 6.8)
+        # Monotona in score e mai oltre il record del mondo, nemmeno con vento a favore.
+        for gender, record in (("M", 8.95), ("F", 7.52)):
+            marks = [mark(s, gender) for s in range(15, 119, 3)]
+            self.assertEqual(marks, sorted(marks))
+            self.assertAlmostEqual(_score_to_mark(ev, 118.0, wind_ms=2.0, gender=gender)[0], record)
+        self.assertGreater(
+            _score_to_mark(ev, 60.0, wind_ms=2.0)[0], _score_to_mark(ev, 60.0, wind_ms=0.0)[0]
+        )
+
+    def test_shot_put_curve_matches_fidal_ranges(self) -> None:
+        from models.entities import EVENTS
+        from models.simulation import _score_to_mark
+
+        ev = EVENTS["Getto del Peso"]
+
+        def mark(score: float, gender: str) -> float:
+            return _score_to_mark(ev, score, gender=gender)[0]
+
+        # Ancora REALE: campionati regionali Lazio 2025, peso F vinto con 13,75. Peso M vincitore regionale: solo un
+        # dato Veneto (15,58, anno non confermato). Provinciale e media regionale sono STIME, non dati FIDAL.
+        # Provinciale (42): M ~10.82, F ~9.00
+        self.assertTrue(10.0 <= mark(42.0, "M") <= 12.0)
+        self.assertTrue(8.2 <= mark(42.0, "F") <= 10.0)
+        # Regionale media (56) e vincitore regionale (66): M ~13.76 / ~15.86, F ~11.77 / ~13.74
+        self.assertTrue(12.8 <= mark(56.0, "M") <= 14.5)
+        self.assertTrue(15.0 <= mark(66.0, "M") <= 16.5)
+        self.assertTrue(10.8 <= mark(56.0, "F") <= 12.5)
+        self.assertTrue(13.0 <= mark(66.0, "F") <= 14.3)
+        # Nazionale (70) e internazionale (84). Riferimento reale: Assoluti 2025, M 22,82 / 21,02 / 20,38,
+        # F 15,55 / 15,41 / 14,54: i livelli di gioco stanno sotto i finalisti d'élite.
+        self.assertTrue(16.0 <= mark(70.0, "M") <= 17.5)
+        self.assertTrue(19.0 <= mark(84.0, "M") <= 20.5)
+        self.assertTrue(13.8 <= mark(70.0, "F") <= 15.2)
+        self.assertTrue(16.6 <= mark(84.0, "F") <= 18.0)
+        # Monotona in score e mai oltre il record del mondo.
+        for gender, record in (("M", 23.56), ("F", 22.63)):
+            marks = [mark(s, gender) for s in range(15, 119, 3)]
+            self.assertEqual(marks, sorted(marks))
+            self.assertAlmostEqual(mark(118.0, gender), record)
+
 
 if __name__ == "__main__":
     unittest.main()
