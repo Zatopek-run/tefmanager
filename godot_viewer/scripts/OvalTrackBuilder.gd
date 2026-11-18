@@ -5,7 +5,7 @@ extends RefCounted
 ## divergere. Tutto e' geometria procedurale (nessun asset).
 
 const TARTAN: Color = Color(0.17, 0.31, 0.60)   # 100m: tartan blu come nel riferimento (stadio di Roma)
-const TARTAN_400M: Color = Color(0.45, 0.42, 0.78)  # 400m: tartan viola/lavanda come nel riferimento (Parigi 2024)
+const TARTAN_400M: Color = Color(0.43, 0.14, 0.46)  # 400m: tartan viola (Parigi 2024); piu' chiaro sbiadiva a lavanda, piu' blu virava a indaco sotto la luce fredda
 const CHUTE_BEHIND_START: float = 3.0       # 100m: il rettilineo si prolunga oltre la linea di partenza
 const LINE: Color = Color(0.95, 0.95, 0.95)
 const GRASS_IN: Color = Color(0.09, 0.27, 0.12)
