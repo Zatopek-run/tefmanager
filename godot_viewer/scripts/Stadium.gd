@@ -199,6 +199,8 @@ func _rebuild_world(kind: String) -> void:
 	_build_stand_block(mid_x, 220.0, 50.0, 1.0, [-130.0, -42.0, 45.0])
 	_build_stand_block(mid_x, 220.0, back_z, -1.0, [-130.0, -42.0, 45.0])
 	_build_track_lights()
+	if not RaceController.is_field(kind):
+		TrackSideCrew.build(_track_root)   # nei concorsi la camera del lungo sta dove stanno i fotografi
 	_sun.directional_shadow_max_distance = 160.0
 
 
@@ -229,6 +231,9 @@ func _build_stand_block(center_x: float, length: float, z_start: float, dir: flo
 	for step in range(6):
 		var rise: float = 0.7 * (step + 1)
 		_add_box(_track_root, Vector3(length, rise, 1.8), Vector3(center_x, rise * 0.5, z_start + dir * step * 1.8), _crowd_material)
+
+	# Cartelloni davanti alla prima fila, rivolti verso la pista (dir = +1: tribuna a z positivi, guarda -Z).
+	AdBoards.row(_track_root, center_x - length * 0.5, center_x + length * 0.5, z_start - dir * 1.3, PI if dir > 0.0 else 0.0)
 
 	# Torri faro con testa emissiva: alimentano il bloom (glow_hdr_threshold = 1.0).
 	var lamp: StandardMaterial3D = StandardMaterial3D.new()

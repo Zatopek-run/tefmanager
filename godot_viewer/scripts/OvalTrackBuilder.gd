@@ -12,13 +12,6 @@ const GRASS_IN: Color = Color(0.09, 0.27, 0.12)
 const GRASS_OUT: Color = Color(0.16, 0.4, 0.18)
 const ARC_STEPS: int = 64
 const GRASS_STRIPE_PERIOD: float = 8.0    # m: una fascia chiara + una scura
-const AD_PANEL_W: float = 4.0               # cartelloni LED a bordo campo
-const AD_PANEL_H: float = 0.9
-## Sponsor INVENTATI: nessun marchio reale. Se uno coincidesse con un'azienda vera, sostituiscilo.
-const AD_SPONSORS: Array[String] = ["VELOCIA", "SPRINTEX", "MONTALTO", "LUMENIA", "ZEFIRO", "ORBITA", "TRIVELLA", "CAPRIOLA"]
-const AD_COLORS: Array[Color] = [
-	Color(0.55, 0.08, 0.12), Color(0.06, 0.28, 0.45), Color(0.08, 0.32, 0.20), Color(0.40, 0.20, 0.50),
-	Color(0.62, 0.30, 0.05), Color(0.05, 0.30, 0.36), Color(0.45, 0.10, 0.28), Color(0.15, 0.20, 0.50)]
 
 
 static func build(parent: Node3D, kind: String = "400m") -> void:
@@ -57,9 +50,12 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 		_arc_band(parent, Vector2(-s, -r1), -1.0, r - 0.025, r + 0.025, 0.006, line)
 
 	# Cartelloni LED sul bordo interno dei due rettilinei, rivolti verso le camere esterne (+Z).
-	# Solo tra -S e 0: oltre, nei 100m, il rettilineo prolungato si fonde con la curva e il cartellone starebbe sul tartan.
-	_ad_boards(parent, -s, 0.0, -2.2)
-	_ad_boards(parent, -s, 0.0, -r1 - inner + 1.6)   # bordo interno del rettilineo opposto, 1,6 m verso il campo
+	# Rettilinei: solo tra -S e 0 (oltre, nei 100m, il rettilineo prolungato si fonde con la curva e il cartellone starebbe
+	# sul tartan). Curve: a raggio `inner - 1,6`, cioe' 1,6 m dentro il bordo interno, rivolti verso l'esterno.
+	var n: int = AdBoards.row(parent, -s, 0.0, -2.2)
+	n += AdBoards.row(parent, -s, 0.0, -r1 - inner + 1.6, 0.0, n)
+	n += AdBoards.arc(parent, Vector2(0.0, -r1), 1.0, inner - 1.6, n)
+	AdBoards.arc(parent, Vector2(-s, -r1), -1.0, inner - 1.6, n)
 
 	if kind == "100m":
 		# Linea di partenza unica (sul rettilineo prolungato), blocchi e cartellini di corsia.
@@ -220,34 +216,6 @@ static func _box(parent: Node3D, size: Vector3, pos: Vector3, mat: Material) -> 
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
-
-
-## Fila di cartelloni LED da x0 a x1 (x0 < x1) alla quota z, rivolti verso +Z. Sponsor di FANTASIA (grafica originale).
-static func _ad_boards(parent: Node3D, x0: float, x1: float, z: float) -> void:
-	var count: int = int(floorf((x1 - x0) / AD_PANEL_W))
-	var x_start: float = (x0 + x1) * 0.5 - count * AD_PANEL_W * 0.5
-	var back: StandardMaterial3D = _material(Color(0.10, 0.10, 0.12), 0.8)
-	for i in range(count):
-		var idx: int = i % AD_SPONSORS.size()
-		var cx: float = x_start + (i + 0.5) * AD_PANEL_W
-		var face: StandardMaterial3D = _material(AD_COLORS[idx], 0.5)
-		face.emission_enabled = true               # schermo LED: si vede anche di notte
-		face.emission = AD_COLORS[idx]
-		face.emission_energy_multiplier = 0.7
-		var body: MeshInstance3D = _box(parent, Vector3(AD_PANEL_W - 0.06, AD_PANEL_H, 0.12), Vector3(cx, AD_PANEL_H * 0.5, z), back)
-		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var screen: MeshInstance3D = _box(parent, Vector3(AD_PANEL_W - 0.12, AD_PANEL_H - 0.1, 0.02), Vector3(cx, AD_PANEL_H * 0.5, z + 0.065), face)
-		screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var label: Label3D = Label3D.new()
-		label.text = AD_SPONSORS[idx]
-		label.font_size = 72
-		label.pixel_size = 0.0065
-		label.shaded = false
-		label.double_sided = false
-		label.modulate = Color(1.0, 1.0, 1.0)
-		label.outline_size = 0
-		label.position = Vector3(cx, AD_PANEL_H * 0.5, z + 0.085)
-		parent.add_child(label)
 
 
 ## Prato con le fasce chiare e scure del taglio erba (trama in metri, indipendente dalle UV della scatola).
