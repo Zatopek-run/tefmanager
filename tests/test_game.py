@@ -1528,6 +1528,157 @@ class TestRaceExport(unittest.TestCase):
             self.assertEqual(genders["Marco Valenti"], "M")
 
 
+class TestBibsAndLanes(unittest.TestCase):
+    """Numeri di pettorale (models/bibs.py) e sorteggio delle corsie per gli atleti omonimi."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    @staticmethod
+    def _meeting(tmp: str):
+        """Il meeting della settimana 4 con seed 15: i 100m maschili hanno due «Gabriele Fontana» (Sora e Tivoli)."""
+        ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmp) / "bib.db"), rng=random.Random(15))
+        ctrl.state.week = 4
+        summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+        assert summary is not None
+        return summary
+
+    @staticmethod
+    def _synthetic(*events):
+        """Meeting finto: events = [(nome evento, [(atleta, squadra), ...]), ...]."""
+        from models.entities import CompetitionSummary, EventResult, EventStanding
+
+        results = []
+        for name, athletes in events:
+            standings = [EventStanding(a, t, False, 10.0 + i, f"{10.0 + i:.2f}s", placement=i + 1) for i, (a, t) in enumerate(athletes)]
+            results.append(EventResult(event_name=name, player_athlete_name="x", placement=1, total_competitors=len(standings),
+                                       player_mark="", prize_money=0, prestige_gained=0, standings=standings))
+        return CompetitionSummary(
+            week=5, tier=list(CompetitionTier)[0], season_phase=list(SeasonPhase)[0], meet_name="Meeting finto",
+            weather=list(WeatherCondition)[0], track_surface="Tartan", event_results=results,
+            total_prize_money=0, total_prestige_gained=0,
+        )
+
+    def test_bibs_are_unique_three_digit_and_deterministic(self) -> None:
+        from models.bibs import assign_bibs, bib_key
+
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = self._meeting(tmp)
+            bibs = assign_bibs(summary)
+            keys = {bib_key(s) for r in summary.event_results for s in r.standings}
+            self.assertEqual(set(bibs), keys)                          # tutti i partecipanti, staffette comprese
+            numbers = list(bibs.values())
+            self.assertEqual(len(numbers), len(set(numbers)))           # unici in tutto il meeting
+            self.assertTrue(all(100 <= n <= 999 for n in numbers))      # tre cifre
+            self.assertEqual(assign_bibs(summary), bibs)                # deterministico
+            for r in summary.event_results:
+                r.standings.reverse()                                   # non dipende dall'ordine d'arrivo
+            self.assertEqual(assign_bibs(summary), bibs)
+
+    def test_same_athlete_keeps_the_bib_and_homonyms_get_different_ones(self) -> None:
+        from models.bibs import assign_bibs, bib_of
+
+        summary = self._synthetic(
+            ("100m", [("Ada Rossi", "Club A"), ("Bruno Neri", "Club B"), ("Ada Rossi", "Club C")]),   # omonima di un'altra squadra
+            ("Salto in Lungo", [("Ada Rossi", "Club A"), ("Bruno Neri", "Club B")]),
+        )
+        bibs = assign_bibs(summary)
+        ada_100, bruno_100, ada_other = summary.event_results[0].standings
+        ada_long, bruno_long = summary.event_results[1].standings
+        self.assertEqual(bib_of(bibs, ada_100), bib_of(bibs, ada_long))      # stesso atleta, stesso numero in ogni gara
+        self.assertEqual(bib_of(bibs, bruno_100), bib_of(bibs, bruno_long))
+        self.assertNotEqual(bib_of(bibs, ada_100), bib_of(bibs, ada_other))  # persone diverse, numeri diversi
+        self.assertEqual(len(set(bibs.values())), 3)
+
+    def test_export_writes_the_bib_and_adds_the_column_to_old_files(self) -> None:
+        import sqlite3
+
+        from models.bibs import assign_bibs, bib_key
+        from models.race_export import export_race
+
+        summary = self._synthetic(("100m", [("Ada Rossi", "Club A"), ("Bruno Neri", "Club B"), ("Carla Gallo", "Club C")]))
+        result = summary.event_results[0]
+        bibs = assign_bibs(summary)
+        with tempfile.TemporaryDirectory() as tmp:
+            fresh = Path(tmp) / "fresh.db"
+            race_id = export_race(summary, result, fresh)
+            conn = sqlite3.connect(str(fresh))
+            rows = dict(conn.execute("SELECT athlete_name, bib FROM race_results WHERE race_id = ?", (race_id,)).fetchall())
+            conn.close()
+            self.assertEqual(rows, {s.athlete_name: bibs[bib_key(s)] for s in result.standings})
+
+            # race_results.db esportato prima di questa colonna: la CLI vi aggiunge una gara, la colonna va creata
+            legacy = Path(tmp) / "legacy.db"
+            conn = sqlite3.connect(str(legacy))
+            conn.executescript(
+                "CREATE TABLE races (race_id INTEGER PRIMARY KEY, event_name TEXT NOT NULL, meet_name TEXT NOT NULL,"
+                " distance_m REAL NOT NULL DEFAULT 100, wind_ms REAL NOT NULL DEFAULT 0);"
+                "CREATE TABLE race_results (race_id INTEGER NOT NULL, lane INTEGER NOT NULL, athlete_name TEXT NOT NULL,"
+                " team_name TEXT NOT NULL DEFAULT '', gender TEXT NOT NULL DEFAULT 'M', is_player INTEGER NOT NULL DEFAULT 0,"
+                " reaction_time REAL NOT NULL, final_time REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OK',"
+                " PRIMARY KEY (race_id, lane));"
+            )
+            conn.commit()
+            conn.close()
+            race_id = export_race(summary, result, legacy)
+            conn = sqlite3.connect(str(legacy))
+            got = sorted(r[0] for r in conn.execute("SELECT bib FROM race_results WHERE race_id = ?", (race_id,)))
+            conn.close()
+            self.assertEqual(got, sorted(bibs.values()))
+
+    def test_export_every_event_with_homonyms_and_bibs_unique_per_race(self) -> None:
+        """Regressione: due atleti omonimi di squadre diverse nella stessa gara finivano nella stessa corsia (IntegrityError)
+        e la gara non arrivava mai a Godot. Ora si esporta tutto e i pettorali sono unici in ogni gara."""
+        import sqlite3
+
+        from models.bibs import assign_bibs, bib_key
+        from models.race_export import export_race
+
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = self._meeting(tmp)
+            names = [s.athlete_name for s in summary.event_results[0].standings]
+            self.assertGreater(len(names), len(set(names)))      # i 100m M hanno davvero due omonimi: il caso e' quello giusto
+            bibs = assign_bibs(summary)
+            path = Path(tmp) / "all.db"
+            for result in summary.event_results:
+                race_id = export_race(summary, result, path)
+                conn = sqlite3.connect(str(path))
+                rows = conn.execute("SELECT lane, athlete_name, team_name, bib FROM race_results WHERE race_id = ?", (race_id,)).fetchall()
+                conn.close()
+                self.assertEqual(len({r[0] for r in rows}), len(result.standings), result.event_name)   # corsie tutte diverse
+                self.assertEqual(len({r[3] for r in rows}), len(rows), result.event_name)               # pettorali tutti diversi
+                for lane, name, team, bib in rows:
+                    self.assertEqual(bib, bibs[(team, name)])
+
+    def test_lane_draw_is_unchanged_when_names_are_unique(self) -> None:
+        import zlib
+
+        from models.race_export import draw_lanes
+
+        athletes = [("Zeno Bassi", "Club Z"), ("Anna Conti", "Club A"), ("Mario Riva", "Club M"), ("Lia Fonti", "Club L")]
+        legacy_lanes = list(range(1, 5))
+        random.Random(zlib.crc32("5-Meeting|lanes".encode())).shuffle(legacy_lanes)
+        legacy = dict(zip(sorted(n for n, _ in athletes), legacy_lanes))   # l'algoritmo di prima: ordinato per solo nome
+        got = draw_lanes("5-Meeting", athletes)
+        self.assertEqual({n: got[(n, t)] for n, t in athletes}, legacy)
+
+    def test_results_board_shows_the_bib_last_and_none_by_default(self) -> None:
+        from models.bibs import assign_bibs, bib_of
+        from views.results_board import ResultsBoardWidget
+
+        summary = self._synthetic(("100m", [("Ada Rossi", "Club A"), ("Bruno Neri", "Club B")]))
+        result = summary.event_results[0]
+        bibs = assign_bibs(summary)
+        board = ResultsBoardWidget()
+        board.set_result(result, "Meeting finto")
+        self.assertEqual([r[6] for r in board.row_texts()], [0, 0])                      # senza numeri: nessun pettorale
+        board.set_result(result, "Meeting finto", bibs)
+        self.assertEqual([r[6] for r in board.row_texts()], [bib_of(bibs, s) for s in result.standings])
+        board.resize(900, 400)
+        self.assertFalse(board.grab().isNull())                                          # il disegno con i pettorali non solleva eccezioni
+
+
 class TestGenderDivisions(unittest.TestCase):
     """Separate Men's (M) and Women's (F) athletic divisions across sim, DB, and export."""
 

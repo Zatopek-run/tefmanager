@@ -3,6 +3,8 @@
 -- final_time e' il tempo UFFICIALE e include reaction_time (come nel modello Python).
 -- status = 'DNF' (ritirato): final_time e' solo un tempo di riferimento per la velocita' di corsa;
 -- il corridore si ferma a DNF_STOP_DISTANCE metri e non entra nella classifica d'arrivo.
+-- bib = numero di pettorale a tre cifre, unico nel meeting (0 = nessuno). Una staffetta ha un solo numero per tutte le frazioni.
+-- ATTENZIONE: questo file e il seed si spezzano sul punto e virgola: non usarlo nei commenti.
 
 CREATE TABLE IF NOT EXISTS races (
     race_id INTEGER PRIMARY KEY,
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS race_results (
     reaction_time REAL NOT NULL CHECK (reaction_time > 0),
     final_time REAL NOT NULL CHECK (final_time > reaction_time),
     status TEXT NOT NULL DEFAULT 'OK' CHECK (status IN ('OK', 'DNF', 'DQ')),
+    bib INTEGER NOT NULL DEFAULT 0 CHECK (bib >= 0),
     PRIMARY KEY (race_id, lane)
 );
 

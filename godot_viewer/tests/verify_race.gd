@@ -55,6 +55,11 @@ func _start_race(race_id: int) -> bool:
 					monotone = false
 				prev = d
 			_check(monotone, "%s: distanza monotona" % r.athlete_name)
+	var seen_bibs: Dictionary = {}
+	for r: RunnerData in rc.runners:
+		seen_bibs[r.bib] = true
+	_check(rc.runners.all(func(r: RunnerData) -> bool: return r.bib > 0) and seen_bibs.size() == rc.runners.size(),
+		"pettorali presenti e tutti diversi (%d corridori)" % rc.runners.size())
 	if not _connected:  # i segnali si collegano una volta sola: lo stesso controller serve entrambe le gare
 		_connected = true
 		rc.runner_finished.connect(func(r: RunnerData) -> void: _finish_order.append(r.athlete_name))

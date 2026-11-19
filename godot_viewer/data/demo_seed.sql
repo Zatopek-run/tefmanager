@@ -174,3 +174,6 @@ INSERT OR REPLACE INTO field_attempts (race_id, lane, round_num, mark_m, is_foul
 (12, 2, 1, 16.40, 0), (12, 2, 2, 16.85, 0), (12, 2, 3, 16.62, 0), (12, 2, 4, 16.70, 0),
 (12, 3, 1, 17.10, 0), (12, 3, 2, 17.64, 0), (12, 3, 3, 17.30, 1), (12, 3, 4, 17.50, 0),
 (12, 4, 1, 17.75, 0), (12, 4, 2, 17.90, 0), (12, 4, 3, 18.10, 0), (12, 4, 4, 17.85, 0);
+
+-- Pettorali di fantasia per il visualizzatore: unici in ogni gara (rowid * 37 e' coprimo con 900).
+UPDATE race_results SET bib = 100 + (rowid * 37) % 900 WHERE bib = 0;

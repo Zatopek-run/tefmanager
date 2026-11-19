@@ -102,7 +102,9 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Contratto con Python.** `godot_viewer/data/schema.sql` è l'unica fonte dello schema (`races`,
   `race_results`, `field_attempts` per le prove dei concorsi); `models/race_export.py` lo riusa per esportare
   (`python -m models.race_export [save.db] [out.db]`, da riga di comando solo i 100m; il gioco esporta ogni evento
-  con `export_race`). `race_results.gender` (M/F) sceglie il modello 3D. `final_time` = `mark_value` e **include** `reaction_time`. Corsie sorteggiate in modo deterministico,
+  con `export_race`). `race_results.gender` (M/F) sceglie il modello 3D. `race_results.bib` = numero di pettorale (vedi sotto, 0 = nessuno; un DB esportato
+  prima della colonna si legge senza errori, `export_race` la aggiunge con `ALTER TABLE` a un `race_results.db` vecchio). **Schema e seed si
+  spezzano sul punto e virgola** (`DatabaseManager._create_demo_database`): niente `;` nei commenti di `schema.sql`/`demo_seed.sql`. `final_time` = `mark_value` e **include** `reaction_time`. Corsie sorteggiate in modo deterministico,
   reazione dalla stessa `reaction_time` della vista PyQt.
 - **`godot_viewer/models/RaceMotion.gd` è la copia GDScript** di `_velocity`/`curve_progress` di
   `race_viewer.py`: se cambi la curva dei 100m in Python, cambiala anche lì.
@@ -183,6 +185,18 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   L'animazione satura a 8× (`speed_scale` ≤ 8): per misurare la cadenza reale usa `time_scale` ≤ 2.
   `tests/verify_stride.gd` (headless) confronta il modello con le fasce del file. Non c'è fatica per atleta (non è un dato
   esportato) e il tempo di contatto al suolo del file non è usato: la clip di animazione ha proporzioni fisse.
+- **Pettorali.** Un numero a tre cifre per atleta **per meeting**, unico fra tutti i partecipanti (staffette comprese: un numero per
+  squadra, uguale per tutte le frazioni), lo stesso in ogni gara del meeting. Lo assegna **solo** `models/bibs.py` (`assign_bibs(summary)`,
+  chiave `(squadra, nome)`, sorteggio deterministico dal meeting; non è un campo salvato dell'atleta: `EventStanding` non ha un id, quindi
+  nessuna migrazione del salvataggio. Per un numero persistente basterebbe cambiare quella funzione). `export_race` lo scrive in
+  `race_results.bib`, `RunnerData.bib` lo legge. In Godot `BibPrint.gd` disegna il foglio (carta bianca, cifre scure, spille) e
+  `CharacterDress.add_cloth(..., print_opts)` lo stampa **sul tessuto** della canotta davanti e dietro (stesso meccanismo di «STAMPA»;
+  larghezza ≤ 0,12 altezze corporee). Un viewport per corridore, figlio del `RunnerView`: niente cache fra gare (una texture di un
+  viewport liberato resta vuota). Il numero compare anche nel tabellone finale di Godot e in `views/results_board.py`. Le viste PyQt
+  interne 2D/3D (ripiego senza Godot) **non** mostrano i pettorali. `tests/verify_bib.gd` (headless) controlla DB con e senza colonna.
+- **Corsie e omonimi.** `race_export.draw_lanes` usa chiavi `(nome, squadra)`: con il solo nome due omonimi di squadre diverse nella stessa
+  gara finivano nella stessa corsia (`IntegrityError` su `(race_id, lane)`) e la gara non arrivava mai a Godot (il ripiego sulla vista
+  interna è silenzioso). Con nomi tutti diversi il sorteggio è identico a prima (c'è un test).
 - **Classifica finale.** A gara conclusa (`FINISHED`) l'HUD Godot mostra a centro schermo la classifica completa
   (`_update_final_board`); `AUTOQUIT_DELAY` è 8 s perché resti leggibile. Alla chiusura di Godot il dialog PyQt mostra
   `views/results_board.py` (`ResultsBoardWidget`) invece di una pagina vuota; legge solo gli `EventStanding` del modello.

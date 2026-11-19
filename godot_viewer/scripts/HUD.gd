@@ -74,7 +74,7 @@ var _final_panel: PanelContainer
 var _replay_panel: PanelContainer   # etichetta «RALENTI» in alto al centro durante il replay dell'arrivo
 var _final_event: Label
 var _final_title: Label
-var _final_rows: Array[Dictionary] = []  # {box, place_bg, place, stripe, name, team, lane, value}
+var _final_rows: Array[Dictionary] = []  # {box, place_bg, place, stripe, bib_chip, bib, name, team, lane, value}
 
 
 func _ready() -> void:
@@ -585,6 +585,13 @@ func _build_final_board() -> void:
 		stripe.custom_minimum_size = Vector2(5.0, 28.0)
 		stripe.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
+		# Pettorale in miniatura (foglio bianco, cifre scure) come sulla canotta
+		var bib_chip: PanelContainer = PanelContainer.new()
+		bib_chip.add_theme_stylebox_override("panel", _flat_box(BG_WHITE, Color.TRANSPARENT, 0, 0, 0, 0, 6, 6, 1, 1, 2))
+		bib_chip.custom_minimum_size = Vector2(58.0, 0.0)
+		var bib: Label = _styled_label(17, TEXT_DARK, true, true)
+		bib.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		bib_chip.add_child(bib)
 		var name_label: Label = _styled_label(22, Color.WHITE, true)
 		name_label.custom_minimum_size = Vector2(300.0, 0.0)
 		var team: Label = _styled_label(14, TEXT_MUTED, true)
@@ -597,11 +604,11 @@ func _build_final_board() -> void:
 		value.custom_minimum_size = Vector2(110.0, 0.0)
 		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
-		for c: Control in [place_bg, stripe, name_label, team, lane, value]:
+		for c: Control in [place_bg, stripe, bib_chip, name_label, team, lane, value]:
 			box.add_child(c)
 		col.add_child(row_bg)
-		_final_rows.append({"box": row_bg, "place_bg": place_bg, "place": place, "stripe": stripe, "name": name_label,
-			"team": team, "lane": lane, "value": value})
+		_final_rows.append({"box": row_bg, "place_bg": place_bg, "place": place, "stripe": stripe, "bib_chip": bib_chip, "bib": bib,
+			"name": name_label, "team": team, "lane": lane, "value": value})
 
 	_final_panel.visible = false
 	$Root.add_child(_final_panel)
@@ -636,6 +643,8 @@ func _update_final_board() -> void:
 			value = rc.format_time(r.final_time)
 		_set_text(row["place"], "-" if out else str(place_no))
 		_set_text(row["name"], r.team_name.to_upper() if relay else r.athlete_name.to_upper())
+		_set_text(row["bib"], str(r.bib) if r.bib > 0 else "")
+		(row["bib_chip"] as Control).visible = r.bib > 0
 		_set_text(row["team"], "" if relay else r.team_name)
 		_set_text(row["lane"], "" if field else "C%d" % r.lane)
 		_set_text(row["value"], value)

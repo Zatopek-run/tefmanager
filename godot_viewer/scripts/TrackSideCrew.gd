@@ -81,7 +81,7 @@ static func _dress_judge(p: Dictionary) -> void:
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(0.21, 0.57, 0.83), POLO, 0.006)                                  # polo a maniche corte
 	var pr: Dictionary = _prints["GIUDICE"]
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(0.125, 0.56, 0.80), VEST_JUDGE, 0.013, 0.8,
-		pr["tex"], pr["rect"], Color(0.05, 0.05, 0.06))                                                                 # pettorina con scritta
+		{"tex": pr["tex"], "back": pr["rect"], "color": Color(0.05, 0.05, 0.06)})                                       # pettorina con scritta
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(1.0, -1.0, 0.08), Color(0.17, 0.17, 0.19), 0.03, 0.55)          # scarpe (gonfie: arrotondano le dita)
 
 
@@ -153,7 +153,7 @@ static func _photographer(parent: Node3D, pos: Vector3, yaw: float, rng: RandomN
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(0.42, 0.52, 0.83), jacket, 0.007)                                                  # giacca a maniche lunghe
 	var pr: Dictionary = _prints["STAMPA"]
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(0.125, 0.56, 0.79), VEST_PRESS, 0.014, 0.8,
-		pr["tex"], pr["rect"], Color(0.05, 0.05, 0.06))                                                                   # pettorina con scritta
+		{"tex": pr["tex"], "back": pr["rect"], "color": Color(0.05, 0.05, 0.06)})                                         # pettorina con scritta
 	CharacterDress.add_cloth(sk, body, y0, h, Vector3(1.0, -1.0, 0.08), Color(0.17, 0.17, 0.19), 0.03, 0.55)                           # scarpe (gonfie: arrotondano le dita)
 	# Macchina con teleobiettivo tenuta con due mani all'altezza del petto, puntata verso la pista (+z locale).
 	var root: Node3D = p["root"]

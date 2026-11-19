@@ -1,7 +1,8 @@
 """Esporta i risultati di una gara (100m o 400m) in un DB SQLite letto dal visualizzatore Godot (godot_viewer/).
 
 Il modello decide tutto: qui si *copiano* tempi e ordine già calcolati. Le uniche cose ricavate sono la
-corsia (sorteggio deterministico) e il tempo di reazione (stessa funzione della vista 2D/3D PyQt).
+corsia (sorteggio deterministico), il numero di pettorale (`models.bibs.assign_bibs`, uno per atleta per meeting) e il
+tempo di reazione (stessa funzione della vista 2D/3D PyQt).
 `final_time` = `mark_value` ed include già la reazione, come in `views/race_viewer.py`.
 """
 
@@ -15,6 +16,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import List, Optional
 
+from models.bibs import assign_bibs, bib_key
 from models.entities import CompetitionSummary, EventResult, EventStanding
 from models.generator import infer_gender
 from views.race_viewer import _rng, generate_attempts, reaction_time
@@ -37,11 +39,15 @@ def race_seed(summary: CompetitionSummary) -> str:
     return f"{summary.week}-{summary.meet_name}"
 
 
-def draw_lanes(seed: object, athlete_names: List[str]) -> dict:
-    """Sorteggio deterministico delle corsie 1..N (non dipende dall'ordine di arrivo)."""
-    lanes = list(range(1, len(athlete_names) + 1))
+def draw_lanes(seed: object, athletes: List[tuple]) -> dict:
+    """Sorteggio deterministico delle corsie 1..N (non dipende dall'ordine di arrivo).
+
+    `athletes` sono chiavi `(nome, squadra)`: due omonimi di squadre diverse sono persone diverse e non devono finire nella stessa
+    corsia (la chiave primaria `(race_id, lane)` lo vieta). Con nomi tutti diversi l'ordine di sorteggio è quello di sempre.
+    """
+    lanes = list(range(1, len(athletes) + 1))
     random.Random(zlib.crc32(f"{seed}|lanes".encode())).shuffle(lanes)
-    return dict(zip(sorted(athlete_names), lanes))
+    return dict(zip(sorted(athletes), lanes))
 
 
 def _stop_status(result: EventResult, standing: EventStanding) -> Optional[str]:
@@ -80,24 +86,31 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
     if not finishers:
         raise ValueError(f"Nessun classificato per {result.event_name}.")
     reference_time = statistics.median(finishers)
-    lanes = draw_lanes(seed, [s.athlete_name for s in standings])
+    athlete_keys = [(s.athlete_name, s.team_name) for s in standings]
+    if len(set(athlete_keys)) != len(athlete_keys):
+        raise ValueError("Atleti duplicati (stesso nome e stessa squadra) nella stessa gara.")
+    lanes = draw_lanes(seed, athlete_keys)
+    bibs = assign_bibs(summary)
 
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(str(db_path))) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        # Un race_results.db più vecchio a cui si aggiunge una gara (CLI) non ha la colonna: CREATE TABLE IF NOT EXISTS non la crea.
+        if "bib" not in {row[1] for row in conn.execute("PRAGMA table_info(race_results)")}:
+            conn.execute("ALTER TABLE race_results ADD COLUMN bib INTEGER NOT NULL DEFAULT 0")
         race_id = conn.execute("SELECT COALESCE(MAX(race_id), 0) + 1 FROM races").fetchone()[0]
         conn.execute(
             "INSERT INTO races (race_id, event_name, meet_name, distance_m, wind_ms) VALUES (?, ?, ?, ?, ?)",
             (race_id, result.event_name, summary.meet_name, DISTANCES_M[result.event_name], result.wind_ms or 0.0),
         )
         conn.executemany(
-            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, bib) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     race_id,
-                    lanes[s.athlete_name],
+                    lanes[(s.athlete_name, s.team_name)],
                     s.athlete_name,
                     s.team_name,
                     result.gender if result.gender in ("M", "F") else infer_gender(s.athlete_name),
@@ -105,6 +118,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     round(reaction_time(seed, s.athlete_name), 3),
                     reference_time if _stop_status(result, s) is not None else s.mark_value,
                     _stop_status(result, s) or "OK",
+                    bibs[bib_key(s)],
                 )
                 for s in standings
             ],
@@ -112,7 +126,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
         if result.event_name in ("Salto in Lungo", "Getto del Peso"):
             attempt_rows = []
             for s in standings:
-                lane = lanes[s.athlete_name]
+                lane = lanes[(s.athlete_name, s.team_name)]
                 if _stop_status(result, s) is not None:
                     continue
                 for rnd, val in enumerate(

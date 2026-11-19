@@ -71,10 +71,15 @@ static func body_extent(body: MeshInstance3D) -> Vector2:
 ## Aggiunge un capo ricavato dalla mesh del corpo: stessi vertici/pesi (quindi stesse ossa), gonfiati lungo
 ## la normale. Ogni vertice porta in UV2 la sua posizione a riposo (x, y in altezze corporee) e lo shader
 ## scarta i pixel fuori da `bounds` = (|x| max, y min, y max): il bordo e' netto anche se la mesh ha pochi triangoli.
-## Stampa sulla schiena (opzionale): `print_tex` e' una texture con il testo nel canale alfa, `print_rect` = (x centro, y centro,
-## larghezza, altezza) in altezze corporee. E' stampata SUL tessuto (usa le stesse coordinate a riposo del capo), quindi segue la
-## schiena e la sua curvatura invece di restare sospesa come farebbe un'etichetta 3D.
-static func add_cloth(skeleton: Skeleton3D, body: MeshInstance3D, base_y: float, height: float, bounds: Vector3, color: Color, inflate: float, roughness: float = 0.8, print_tex: Texture2D = null, print_rect: Vector4 = Vector4(0.0, 0.7, 0.19, 0.05), print_color: Color = Color(0.05, 0.05, 0.06)) -> void:
+## Stampa (opzionale, `print_opts`): disegno STAMPATO SUL tessuto (usa le stesse coordinate a riposo del capo), quindi segue il busto e
+## la sua curvatura invece di restare sospeso come farebbe un'etichetta 3D. Chiavi:
+##   "tex"       Texture2D del disegno;
+##   "back"      Vector4 (x centro, y centro, larghezza, altezza) in altezze corporee del disegno sulla schiena (assente = niente);
+##   "front"     idem sul davanti (assente = niente);
+##   "tex_color" true: si usano i colori della texture (foglio bianco, cifre scure); false (default): conta solo l'alfa e
+##               l'inchiostro e' "color" (testo su tessuto, es. STAMPA);
+##   "color"     inchiostro per la modalita' solo-alfa.
+static func add_cloth(skeleton: Skeleton3D, body: MeshInstance3D, base_y: float, height: float, bounds: Vector3, color: Color, inflate: float, roughness: float = 0.8, print_opts: Dictionary = {}) -> void:
 	var src: Mesh = body.mesh
 	var arrays: Array = src.surface_get_arrays(0)
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -104,7 +109,8 @@ static func add_cloth(skeleton: Skeleton3D, body: MeshInstance3D, base_y: float,
 	arrays[Mesh.ARRAY_VERTEX] = grown
 	arrays[Mesh.ARRAY_INDEX] = kept
 	arrays[Mesh.ARRAY_TEX_UV2] = rel
-	if print_tex != null:
+	var has_print: bool = not print_opts.is_empty()
+	if has_print:
 		# Colore del vertice: r = 1 se sta sulla schiena, cioe' dietro il centro del busto (z a riposo minore della media dei
 		# vertici del capo; il modello guarda +z). Non si usa la normale: ai fianchi cambia segno e taglierebbe il testo.
 		# Serve allo shader per stampare solo dietro (davanti e dietro condividono le stesse x, y).
@@ -127,11 +133,13 @@ static func add_cloth(skeleton: Skeleton3D, body: MeshInstance3D, base_y: float,
 		src.surface_get_format(0) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
 
 	var mat: ShaderMaterial = ShaderMaterial.new()
-	mat.shader = cloth_shader() if print_tex == null else print_shader()
-	if print_tex != null:
-		mat.set_shader_parameter("print_tex", print_tex)
-		mat.set_shader_parameter("print_rect", print_rect)
-		mat.set_shader_parameter("print_color", print_color)
+	mat.shader = print_shader() if has_print else cloth_shader()
+	if has_print:
+		mat.set_shader_parameter("print_tex", print_opts["tex"])
+		mat.set_shader_parameter("back_rect", print_opts.get("back", Vector4.ZERO))
+		mat.set_shader_parameter("front_rect", print_opts.get("front", Vector4.ZERO))
+		mat.set_shader_parameter("print_color", print_opts.get("color", Color(0.05, 0.05, 0.06)))
+		mat.set_shader_parameter("tex_color", 1.0 if bool(print_opts.get("tex_color", false)) else 0.0)
 	mat.set_shader_parameter("color", color)
 	mat.set_shader_parameter("bounds", bounds)
 	mat.set_shader_parameter("rough", roughness)
@@ -162,8 +170,9 @@ void fragment() {
 	return _cloth_shader_cache
 
 
-## Come `cloth_shader`, con in piu' una stampa (testo) sulla schiena: la texture e' campionata con le coordinate a riposo del capo.
-## Dalla schiena, con il modello che guarda +z, la destra dello schermo e' -x: la u del testo cresce al calare di x.
+## Come `cloth_shader`, con in piu' una stampa sul davanti e/o sulla schiena: la texture e' campionata con le coordinate a riposo
+## del capo. Dalla schiena, con il modello che guarda +z, la destra dello schermo e' -x (la u cresce al calare di x); dal davanti
+## e' +x (la u cresce al crescere di x). `rect.z == 0` = nessuna stampa su quel lato.
 static func print_shader() -> Shader:
 	if _print_shader_cache == null:
 		_print_shader_cache = Shader.new()
@@ -173,20 +182,26 @@ uniform vec4 color : source_color = vec4(1.0);
 uniform vec3 bounds = vec3(0.115, 0.6, 0.82); // |x| max, y min, y max (altezze corporee)
 uniform float rough = 0.8;
 uniform sampler2D print_tex : filter_linear, repeat_disable;
-uniform vec4 print_rect = vec4(0.0, 0.7, 0.19, 0.05); // x centro, y centro, larghezza, altezza (altezze corporee)
+uniform vec4 back_rect = vec4(0.0);   // x centro, y centro, larghezza, altezza (altezze corporee)
+uniform vec4 front_rect = vec4(0.0);
 uniform vec4 print_color : source_color = vec4(0.05, 0.05, 0.06, 1.0);
+uniform float tex_color = 0.0;        // 1 = colori della texture (foglio), 0 = solo alfa con l'inchiostro print_color
 varying vec2 rel;
 varying float back;
 void vertex() { rel = UV2; back = COLOR.r; }
 void fragment() {
 	if (abs(rel.x) > bounds.x || rel.y < bounds.y || rel.y > bounds.z) { discard; }
 	vec3 col = color.rgb;
-	if (back > 0.5) {
-		vec2 uv = vec2(0.5 - (rel.x - print_rect.x) / print_rect.z, 0.5 - (rel.y - print_rect.y) / print_rect.w);
-		if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) {
-			col = mix(col, print_color.rgb, texture(print_tex, uv).a * 0.92);
-		}
+	vec4 tex = vec4(0.0);
+	vec4 r = back > 0.5 ? back_rect : front_rect;
+	if (r.z > 0.0) {
+		float dx = (rel.x - r.x) / r.z;
+		vec2 uv = vec2(0.5 + (back > 0.5 ? -dx : dx), 0.5 - (rel.y - r.y) / r.w);
+		if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) { tex = texture(print_tex, uv); }
 	}
+	vec3 ink = tex_color > 0.5 ? tex.rgb : print_color.rgb;
+	float a = tex_color > 0.5 ? tex.a : tex.a * 0.92;
+	col = mix(col, ink, a);
 	ALBEDO = col;
 	ROUGHNESS = rough;
 }

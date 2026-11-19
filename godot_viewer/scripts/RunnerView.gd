@@ -244,7 +244,12 @@ func _dress(body: MeshInstance3D) -> float:
 
 	var team: Color = _team_color(data.team_name)
 	# Bounds = (|x| max, y min, y max) in altezze corporee (y: 0 piedi .. 1 cima della testa), a riposo.
-	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006)                          # canotta
+	# Pettorale davanti e dietro, stampato sulla canotta (0 = nessuno: canotta liscia come prima, es. DB esportati senza numeri).
+	var bib_print: Dictionary = {}
+	if data.bib > 0:
+		var bib_rect: Vector4 = BibPrint.rect()
+		bib_print = {"tex": BibPrint.make_texture(self, data.bib), "back": bib_rect, "front": bib_rect, "tex_color": true}
+	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006, 0.8, bib_print)           # canotta
 	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.43, 0.60), team.darkened(0.55), 0.007)           # pantaloncini
 	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(1.0, -1.0, 0.045), Color(0.96, 0.96, 0.96), 0.012)        # scarpette
 	return h

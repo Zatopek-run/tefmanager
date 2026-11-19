@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_field_attempts_table() or _demo_race_count() < 12):
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_bib_column() or not _has_field_attempts_table() or _demo_race_count() < 12):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()
@@ -29,9 +29,18 @@ func _ready() -> void:
 
 
 func _has_gender_column() -> bool:
+	return _has_race_results_column("gender")
+
+
+## Numero di pettorale: i DB esportati prima di questa colonna non ce l'hanno (si legge 0 = nessun pettorale).
+func _has_bib_column() -> bool:
+	return _has_race_results_column("bib")
+
+
+func _has_race_results_column(column: String) -> bool:
 	var cols: Array[Dictionary] = _select("PRAGMA table_info(race_results);", [])
 	for c: Dictionary in cols:
-		if str(c.get("name", "")) == "gender":
+		if str(c.get("name", "")) == column:
 			return true
 	return false
 
@@ -85,8 +94,9 @@ func get_race_info(race_id: int) -> Dictionary:
 ## Corridori della gara ordinati per corsia. Righe con dati incoerenti vengono scartate.
 func get_race_runners(race_id: int) -> Array[RunnerData]:
 	var result: Array[RunnerData] = []
+	var bib_column: String = "bib" if _has_bib_column() else "0 AS bib"
 	var rows: Array[Dictionary] = _select(
-		"SELECT lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status "
+		"SELECT lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, " + bib_column + " "
 		+ "FROM race_results WHERE race_id = ? ORDER BY lane;", [race_id])
 	for row: Dictionary in rows:
 		var runner: RunnerData = RunnerData.from_row(row)

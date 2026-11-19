@@ -8,6 +8,7 @@ var athlete_name: String = ""
 var team_name: String = ""
 var gender: String = "M"
 var lane: int = 1
+var bib: int = 0                # numero di pettorale (0 = nessuno): lo assegna Python, vedi models/bibs.py
 var is_player: bool = false
 var reaction_time: float = 0.0  # secondi, incluso nel tempo ufficiale
 var final_time: float = 0.0     # tempo ufficiale dallo sparo
@@ -30,6 +31,7 @@ static func from_row(row: Dictionary) -> RunnerData:
 	r.team_name = str(row.get("team_name", ""))
 	r.gender = str(row.get("gender", "M")).to_upper()
 	r.lane = int(row.get("lane", 1))
+	r.bib = maxi(0, int(row.get("bib", 0)))
 	r.is_player = int(row.get("is_player", 0)) != 0
 	r.reaction_time = float(row.get("reaction_time", 0.0))
 	r.final_time = float(row.get("final_time", 0.0))

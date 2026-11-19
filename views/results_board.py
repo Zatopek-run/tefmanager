@@ -8,12 +8,13 @@ Grafica originale, nessun marchio reale.
 from __future__ import annotations
 
 import zlib
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPainter
 from PyQt6.QtWidgets import QWidget
 
+from models.bibs import BibKey, bib_of
 from models.entities import EVENTS, EventResult, EventStanding
 
 BG_NAVY = QColor(14, 19, 51, 238)
@@ -27,6 +28,8 @@ TEXT_DARK = QColor(12, 17, 46)
 TEXT_MUTED = QColor(173, 194, 230)
 PLAYER_TEXT = QColor(92, 219, 255)
 WHITE = QColor(255, 255, 255)
+PAPER = QColor(247, 247, 240)
+INK = QColor(13, 13, 18)
 
 MAX_WIDTH = 820
 HEADER_H = 40
@@ -48,11 +51,14 @@ class ResultsBoardWidget(QWidget):
         super().__init__(parent)
         self._result: Optional[EventResult] = None
         self._meet = ""
+        self._bibs: Dict[BibKey, int] = {}
         self.setMinimumHeight(240)
 
-    def set_result(self, result: EventResult, meet_name: str) -> None:
+    def set_result(self, result: EventResult, meet_name: str, bibs: Optional[Dict[BibKey, int]] = None) -> None:
+        """`bibs` = `models.bibs.assign_bibs(summary)`: se manca non si mostra nessun pettorale."""
         self._result = result
         self._meet = meet_name
+        self._bibs = bibs or {}
         self.update()
 
     # ---- contenuto
@@ -71,13 +77,13 @@ class ResultsBoardWidget(QWidget):
         return "CLASSIFICA FINALE" if ev is not None and ev.unit == "m" else "ORDINE D'ARRIVO"
 
     def row_texts(self) -> List[tuple]:
-        """[(posizione o '-', nome, squadra, valore, is_player, fuori_classifica)] nell'ordine ufficiale."""
+        """[(posizione o '-', nome, squadra, valore, is_player, fuori_classifica, pettorale)] nell'ordine ufficiale (0 = nessun pettorale)."""
         res = self._result
         if res is None:
             return []
         out = []
         for s in sorted(res.standings, key=lambda st: st.placement):
-            out.append(self._row_of(res, s))
+            out.append(self._row_of(res, s) + (bib_of(self._bibs, s),))
         return out
 
     @staticmethod
@@ -127,8 +133,8 @@ class ResultsBoardWidget(QWidget):
         y += SUBBAR_H + GAP
 
         name_pt = max(10, min(17, int(row_h * 0.42)))
-        for place, name, team, value, is_player, out in rows[:shown]:
-            self._draw_row(p, QRectF(x0, y, bw, row_h), place, name, team, value, is_player, out, name_pt)
+        for place, name, team, value, is_player, out, bib in rows[:shown]:
+            self._draw_row(p, QRectF(x0, y, bw, row_h), place, name, team, value, is_player, out, name_pt, bib)
             y += row_h + GAP
 
         if len(rows) > shown:
@@ -146,7 +152,7 @@ class ResultsBoardWidget(QWidget):
         p.end()
 
     def _draw_row(self, p: QPainter, r: QRectF, place: str, name: str, team: str, value: str,
-                  is_player: bool, out: bool, pt: int) -> None:
+                  is_player: bool, out: bool, pt: int, bib: int = 0) -> None:
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(BG_PLAYER if is_player else BG_ROW)
         p.drawRoundedRect(r, 2, 2)
@@ -165,9 +171,19 @@ class ResultsBoardWidget(QWidget):
         p.setBrush(team_color(team))
         p.drawRect(QRectF(sx, r.y() + 4, 5, r.height() - 8))
 
+        nx = sx + 15
+        if bib > 0:
+            # Pettorale in miniatura: foglio bianco con le cifre scure, come sulla canotta nella vista 3D.
+            chip = QRectF(nx, r.y() + 4, max(46.0, r.height() * 1.6), r.height() - 8)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(PAPER)
+            p.drawRoundedRect(chip, 2, 2)
+            p.setPen(INK)
+            p.setFont(self._font(max(9, pt - 2), heavy=True))
+            p.drawText(chip, Qt.AlignmentFlag.AlignCenter, str(bib))
+            nx = chip.right() + 12
         value_w = 120.0
         team_w = min(200.0, r.width() * 0.26)
-        nx = sx + 15
         name_w = r.right() - pad - value_w - team_w - nx - 8
         p.setPen(PLAYER_TEXT if is_player else (TEXT_MUTED if out else WHITE))
         f = self._font(pt, heavy=False)

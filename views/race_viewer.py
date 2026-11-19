@@ -34,6 +34,7 @@ from models.entities import (
     SeasonPhase,
     WeatherCondition,
 )
+from models.bibs import assign_bibs
 from views.results_board import ResultsBoardWidget
 
 # Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
@@ -1111,6 +1112,7 @@ class RaceViewerDialog(QDialog):
     def __init__(self, summary: CompetitionSummary, parent=None) -> None:
         super().__init__(parent)
         self.summary = summary
+        self._bibs = assign_bibs(summary)  # numeri di pettorale del meeting: gli stessi mostrati in Godot
         self.setWindowTitle(f"Gare in diretta — {summary.meet_name}")
         self.resize(1160, 740)
         self._index = -1
@@ -1355,7 +1357,7 @@ class RaceViewerDialog(QDialog):
             return
         if 0 <= self._index < len(self.summary.event_results):
             # Godot si è chiuso: al posto della pagina vuota la classifica completa, come alla TV.
-            self.results_board.set_result(self.summary.event_results[self._index], self.summary.meet_name)
+            self.results_board.set_result(self.summary.event_results[self._index], self.summary.meet_name, self._bibs)
             self.stack.setCurrentWidget(self.results_board)
         self._on_race_finished()
 
