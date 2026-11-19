@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import traceback
 from pathlib import Path
 from typing import List, Optional
 
@@ -10,7 +11,9 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from models.database import (
     DatabaseManager,
+    SaveMigrationError,
     SaveSlotInfo,
+    UnsupportedSaveVersion,
     delete_save_slot,
     get_default_save_path,
     get_saves_dir,
@@ -109,6 +112,9 @@ class GameController(QObject):
         )
         self.rng = rng or random.Random()
         self.has_active_game: bool = False
+        # Esito dell'ultimo caricamento fallito: «messaggio per l'utente», riga vuota, dettagli
+        # (percorso del backup e traceback completo). Vuoto se l'ultimo caricamento è riuscito.
+        self.last_load_error: str = ""
         if auto_create:
             self.state: GameState = self._load_or_create_initial_state()
             self.has_active_game = True
@@ -237,12 +243,35 @@ class GameController(QObject):
         self.has_active_game = True
         self.status_message.emit(f"Partita salvata in {self.db.db_path.name}.")
 
+    def _record_load_failure(self, exc: BaseException) -> None:
+        """Registra un caricamento fallito senza farlo salire (in PyQt6 un'eccezione non gestita
+        dentro uno slot termina il processo: misurato, exit 134). Nulla viene ingoiato: il
+        traceback completo resta in `last_load_error` e il messaggio va nella barra di stato."""
+        if isinstance(exc, UnsupportedSaveVersion):
+            headline = exc.message + " Il file non è stato modificato."
+        elif isinstance(exc, SaveMigrationError):
+            headline = f"{exc} Il file non è stato modificato."
+        else:
+            headline = f"Impossibile aprire il salvataggio: {exc}"
+        details = []
+        backup = getattr(exc, "backup_path", None)
+        if backup is not None:
+            details.append(f"Backup creato prima del tentativo: {backup}")
+        details.append("".join(traceback.format_exception(exc)).rstrip())
+        self.last_load_error = headline + "\n\n" + "\n\n".join(details)
+        self.status_message.emit(headline)
+
     def load_game(self) -> bool:
-        loaded = self.db.load_game()
-        if loaded is None:
-            self.status_message.emit("Nessun salvataggio trovato.")
+        self.last_load_error = ""
+        try:
+            loaded = self.db.load_game()
+            if loaded is None:
+                self.status_message.emit("Nessun salvataggio trovato.")
+                return False
+            upgrade_legacy_state(loaded, rng=self.rng)
+        except Exception as exc:  # noqa: BLE001 - mai far crashare l'app: vedi _record_load_failure
+            self._record_load_failure(exc)
             return False
-        upgrade_legacy_state(loaded, rng=self.rng)
         self.state = loaded
         self.has_active_game = True
         self.scouting_results = []
@@ -252,13 +281,26 @@ class GameController(QObject):
         return True
 
     def load_save_slot(self, db_path: Path) -> bool:
-        """Switch active database to `db_path` and load its GameState."""
+        """Switch active database to `db_path` and load its GameState.
+
+        Se l'apertura o il caricamento falliscono (versione non supportata, migrazione non
+        riuscita, file danneggiato) ritorna False e `state`/`_db` restano quelli di prima.
+        """
         path = Path(db_path)
+        self.last_load_error = ""
         if not path.is_file():
             self.status_message.emit("File di salvataggio non trovato.")
             return False
-        self._db = DatabaseManager(db_path=path)
-        return self.load_game()
+        previous_db = self._db
+        try:
+            self._db = DatabaseManager(db_path=path)
+        except Exception as exc:  # noqa: BLE001 - `_db` non è stato sostituito
+            self._record_load_failure(exc)
+            return False
+        if not self.load_game():
+            self._db = previous_db
+            return False
+        return True
 
     def delete_save_slot(self, db_path: Path) -> bool:
         """Delete a save slot file; clear active DB handle if it was pointing to it."""

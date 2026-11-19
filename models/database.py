@@ -122,6 +122,34 @@ MAX_BACKUPS_PER_SLOT = 3
 _BACKUP_STAMP_FORMAT = "%Y%m%d-%H%M%S-%f"  # microsecondi: due backup non collidono
 
 
+class UnsupportedSaveVersion(Exception):
+    """Il file ha una `user_version` che questo gioco non sa aprire né migrare.
+
+    Sollevata PRIMA di qualsiasi scrittura: il file resta intatto.
+    """
+
+    def __init__(
+        self, versione_trovata: int, versione_attesa: int, path: Optional[Path] = None
+    ) -> None:
+        self.versione_trovata = versione_trovata
+        self.versione_attesa = versione_attesa
+        self.path = path
+        super().__init__(self.message)
+
+    @property
+    def is_newer(self) -> bool:
+        return self.versione_trovata > self.versione_attesa
+
+    @property
+    def message(self) -> str:
+        if self.is_newer:
+            return (
+                f"Salvataggio di una versione più recente (v{self.versione_trovata}, "
+                f"questo gioco arriva alla v{self.versione_attesa}): aggiorna il gioco."
+            )
+        return f"Salvataggio non riconosciuto o non migrabile (versione v{self.versione_trovata})."
+
+
 class SaveMigrationError(RuntimeError):
     """Backup o migrazione non riusciti: il salvataggio è rimasto com'era.
 
@@ -419,21 +447,75 @@ class SaveSlotInfo:
     prestige: int
     bankrupt: bool
     updated_at: datetime
+    schema_version: int = SCHEMA_VERSION
+    # "ok" | "newer" (versione più recente) | "unsupported" (non migrabile) | "corrupt" (non SQLite)
+    status: str = "ok"
+    size_bytes: int = 0
+
+    @property
+    def is_supported(self) -> bool:
+        return self.status == "ok"
 
     @property
     def mode_label(self) -> str:
+        if not self.is_supported:
+            return "—"
         return "Prototipo Outdoor" if self.game_mode == "vertical_slice" else "Carriera Completa"
 
 
+def _unsupported_slot(
+    path: Path, status: str, version: int, size: int, mtime: datetime
+) -> SaveSlotInfo:
+    """Slot non apribile: solo i metadati affidabili (file, mtime, dimensione, `user_version`)."""
+    labels = {
+        "newer": f"Salvataggio di versione più recente (v{version})",
+        "unsupported": f"Salvataggio non compatibile (v{version})",
+        "corrupt": "Salvataggio danneggiato",
+    }
+    return SaveSlotInfo(
+        path=path,
+        team_name=labels[status],
+        game_mode="",
+        tier="—",
+        season_number=0,
+        week=0,
+        season_phase="",
+        in_game_date=mtime.date(),
+        budget=0,
+        prestige=0,
+        bankrupt=False,
+        updated_at=mtime,
+        schema_version=version,
+        status=status,
+        size_bytes=size,
+    )
+
+
 def read_save_summary(db_path: Path) -> Optional[SaveSlotInfo]:
-    """Read save metadata without mutating schema or loading full rosters."""
+    """Read save metadata without mutating schema or loading full rosters.
+
+    Uno slot che il gioco non sa aprire (versione più recente, non migrabile, non SQLite) viene
+    elencato lo stesso, marcato in `status`, con i soli metadati affidabili: così l'utente vede la
+    partita e capisce perché non si apre. Un file di 0 byte (DB nuovo) non è uno slot.
+    """
     path = Path(db_path)
     if not path.is_file():
         return None
     try:
-        uri = f"{path.resolve().as_uri()}?mode=ro"
-        with closing(sqlite3.connect(uri, uri=True)) as conn:
+        stat = path.stat()
+        mtime = datetime.fromtimestamp(stat.st_mtime)
+        size = stat.st_size
+    except OSError:
+        return None
+    if size == 0:
+        return None
+    try:
+        with closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
             conn.row_factory = sqlite3.Row
+            version, tables = _inspect(conn)
+            if tables == 0 or not _is_supported_version(version):
+                status = "newer" if version > SCHEMA_VERSION else "unsupported"
+                return _unsupported_slot(path, status, version, size, mtime)
             has_table = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_state'"
             ).fetchone()
@@ -453,7 +535,6 @@ def read_save_summary(db_path: Path) -> Optional[SaveSlotInfo]:
             week = int(row["week"])
             start_d = date.fromisoformat(row["start_date"])
             in_game = start_d + timedelta(weeks=max(0, week - 1))
-            mtime = datetime.fromtimestamp(path.stat().st_mtime)
             return SaveSlotInfo(
                 path=path,
                 team_name=str(row["team_name"]),
@@ -467,7 +548,13 @@ def read_save_summary(db_path: Path) -> Optional[SaveSlotInfo]:
                 prestige=int(row["prestige"]),
                 bankrupt=bool(row["bankrupt"]),
                 updated_at=mtime,
+                schema_version=version,
+                size_bytes=size,
             )
+    except sqlite3.OperationalError:
+        return None  # file bloccato o non apribile: non è un salvataggio «danneggiato»
+    except sqlite3.DatabaseError:
+        return _unsupported_slot(path, "corrupt", 0, size, mtime)  # non SQLite / malformato
     except (sqlite3.Error, ValueError, OSError):
         return None
 
@@ -637,7 +724,8 @@ class DatabaseManager:
         """Apre o crea il file. Regole (CLAUDE.md, convenzione 4):
 
         - file assente o di 0 byte: DB nuovo, creato in una sola transazione;
-        - versione non riconosciuta: comportamento storico (azzera), fino al lotto 1.2;
+        - versione non riconosciuta (più recente, v0/v1 con dati, nessuna tabella utente):
+          `UnsupportedSaveVersion` PRIMA di qualsiasi scrittura;
         - versione migrabile: backup verificato, poi migrazione in un'unica transazione;
         - versione corrente: nessuna scrittura (si completano solo eventuali tabelle mancanti).
         """
@@ -649,11 +737,8 @@ class DatabaseManager:
 
         with closing(sqlite3.connect(_ro_uri(path), uri=True)) as ro:
             version, tables = _inspect(ro)
-            if not _is_supported_version(version):
-                # Comportamento storico, ancora invariato in questo lotto (1.1): azzera lo
-                # schema. Lo sostituisce il rifiuto di `UnsupportedSaveVersion` (lotto 1.2).
-                self._write_transaction(expected_version=version, reset=True)
-                return
+            if tables == 0 or not _is_supported_version(version):
+                raise UnsupportedSaveVersion(version, SCHEMA_VERSION, path)
             if version == SCHEMA_VERSION:
                 present = {
                     r[0]
@@ -681,7 +766,7 @@ class DatabaseManager:
         if self.last_backup_path is not None:
             _prune_backups(path)  # solo a migrazione riuscita
 
-    def _write_transaction(self, expected_version: int, reset: bool = False) -> None:
+    def _write_transaction(self, expected_version: int) -> None:
         """Migrazione e creazione tabelle in UNA transazione esplicita (`BEGIN IMMEDIATE`).
 
         `isolation_level=None`: il modulo `sqlite3` non apre né chiude transazioni da solo e
@@ -703,10 +788,6 @@ class DatabaseManager:
                     for col_name, col_def in columns:
                         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
                 v += 1
-            if reset:
-                for table in ("game_state", "athletes", "staff", "transactions",
-                              "competition_history", "coaches"):
-                    conn.execute(f"DROP TABLE IF EXISTS {table}")
             for statement in _schema_statements():
                 conn.execute(statement)
             # PRAGMA non accetta parametri: intero costante, mai input esterno

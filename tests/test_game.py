@@ -2183,5 +2183,158 @@ class TestStartScreenAndUX(unittest.TestCase):
             win2.close()
 
 
+class TestUnsupportedSlotLoading(unittest.TestCase):
+    """Lotto 1.2: cliccare uno slot non apribile mostra un messaggio e l'app resta viva.
+
+    Senza il fix l'eccezione sale dal click dentro uno slot PyQt6 e il processo termina con
+    SIGABRT (exit 134, misurato): per questo il test «app viva» gira in un processo a parte.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _slots(self, tmpdir: str, version: int) -> tuple[Path, Path]:
+        """(slot valido, slot con `user_version` = `version`) nella stessa cartella."""
+        import sqlite3
+        from contextlib import closing
+
+        from tests.test_migrations import make_save
+
+        saves = Path(tmpdir) / "saves"
+        saves.mkdir()
+        good = make_save(saves / "buono.db", 9)
+        bad = make_save(saves / "altro.db", 9)
+        with closing(sqlite3.connect(bad)) as conn:
+            conn.execute(f"PRAGMA user_version = {version}")
+            conn.commit()
+        return good, bad
+
+    def test_controller_refuses_and_keeps_the_running_game(self) -> None:
+        import hashlib
+
+        from models.database import SCHEMA_VERSION
+
+        for version, expected in ((SCHEMA_VERSION + 1, "più recente"), (1, "non riconosciuto o non migrabile")):
+            with self.subTest(versione=version), tempfile.TemporaryDirectory() as tmpdir:
+                _good, bad = self._slots(tmpdir, version)
+                ctrl = GameController(
+                    db_manager=DatabaseManager(db_path=Path(tmpdir) / "in_corso.db"), rng=random.Random(15)
+                )
+                state_before, db_before = ctrl.state, ctrl.db
+                digest = hashlib.sha256(bad.read_bytes()).hexdigest()
+                messages: list[str] = []
+                ctrl.status_message.connect(messages.append)
+                self.assertFalse(ctrl.load_save_slot(bad))
+                self.assertIn(expected, ctrl.last_load_error)
+                self.assertIn("Traceback", ctrl.last_load_error)  # traceback completo, non ingoiato
+                self.assertTrue(messages and expected in messages[-1])
+                self.assertIs(ctrl.state, state_before)
+                self.assertIs(ctrl.db, db_before)
+                self.assertEqual(hashlib.sha256(bad.read_bytes()).hexdigest(), digest)
+
+    def test_failed_migration_reports_backup_and_keeps_state(self) -> None:
+        from unittest import mock
+
+        from models.database import MIGRATIONS
+        from tests.test_migrations import failing_migration, make_save
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old = make_save(Path(tmpdir) / "vecchio.db", 7)
+            ctrl = GameController(
+                db_manager=DatabaseManager(db_path=Path(tmpdir) / "in_corso.db"), rng=random.Random(15)
+            )
+            state_before, db_before = ctrl.state, ctrl.db
+            with mock.patch.dict(MIGRATIONS, {7: failing_migration(7, broken=True)}):
+                self.assertFalse(ctrl.load_save_slot(old))
+            self.assertIn("Backup creato prima del tentativo", ctrl.last_load_error)
+            self.assertIn(".db.bak", ctrl.last_load_error)
+            self.assertIn("Traceback", ctrl.last_load_error)
+            self.assertIs(ctrl.state, state_before)
+            self.assertIs(ctrl.db, db_before)
+            # senza il guasto simulato la migrazione riesce (le righe sentinella non sono una
+            # partita caricabile, quindi si apre il DB e non si chiama load_game)
+            DatabaseManager(db_path=old)
+
+    def test_start_screen_shows_a_message_for_each_kind(self) -> None:
+        from unittest import mock
+
+        from PyQt6.QtWidgets import QMessageBox
+
+        from models.database import SCHEMA_VERSION
+        from views.start_screen import StartScreen
+
+        for version, expected in ((SCHEMA_VERSION + 1, "aggiorna il gioco"), (0, "non riconosciuto o non migrabile")):
+            with self.subTest(versione=version), tempfile.TemporaryDirectory() as tmpdir:
+                _good, bad = self._slots(tmpdir, version)
+                ctrl = GameController(
+                    auto_create=False, saves_dir=Path(tmpdir) / "saves", legacy_save_path=Path(tmpdir) / "nessuno.db"
+                )
+                screen = StartScreen(ctrl)
+                row = [s.path for s in screen._slots].index(bad)
+                self.assertFalse(screen._slots[row].is_supported)
+                self.assertTrue(screen._slots[0].is_supported or screen._latest_supported_slot() is not None)
+                screen.saves_table.selectRow(row)
+                seen: list = []
+
+                def fake_exec(box) -> int:
+                    seen.append((box.text(), box.detailedText(), box.icon()))
+                    return 0
+
+                ready: list = []
+                screen.game_ready.connect(lambda: ready.append(1))
+                with mock.patch.object(QMessageBox, "exec", fake_exec):
+                    screen.load_btn.click()
+                self.assertEqual(len(seen), 1)
+                text, details, icon = seen[0]
+                self.assertIn(expected, text)
+                self.assertIn("Traceback", details)
+                self.assertEqual(icon, QMessageBox.Icon.Warning)
+                self.assertEqual(ready, [], "lo slot non si apre")
+                screen.close()
+
+    def test_clicking_an_unsupported_slot_does_not_kill_the_process(self) -> None:
+        """Il rischio vero: senza il fix l'app termina (exit 134). Il test fallisce se muore."""
+        import subprocess
+        import sys
+
+        from models.database import SCHEMA_VERSION
+
+        repo = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _good, bad = self._slots(tmpdir, SCHEMA_VERSION + 1)
+            script = f"""
+import os, sys
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["TEF_NO_GODOT"] = "1"
+sys.path.insert(0, {str(repo)!r})
+from pathlib import Path
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication, QMessageBox
+from controllers.game_controller import GameController
+from views.start_screen import StartScreen
+
+app = QApplication([])
+shown = []
+QMessageBox.exec = lambda self: shown.append(self.text()) or 0
+saves = Path({str(Path(tmpdir) / "saves")!r})
+ctrl = GameController(auto_create=False, saves_dir=saves, legacy_save_path=saves / "nessuno.db")
+screen = StartScreen(ctrl)
+screen.saves_table.selectRow([s.path.name for s in screen._slots].index("altro.db"))
+QTimer.singleShot(0, screen.load_btn.click)  # dal ciclo degli eventi, come un click vero
+def done():
+    print("APP-VIVA", len(shown), shown[0] if shown else "")
+    app.quit()
+QTimer.singleShot(300, done)
+sys.exit(app.exec())
+"""
+            result = subprocess.run(
+                [sys.executable, "-c", script], capture_output=True, text=True, timeout=120, cwd=str(repo)
+            )
+        self.assertEqual(result.returncode, 0, f"processo terminato: {result.returncode}\n{result.stderr[-1500:]}")
+        self.assertIn("APP-VIVA 1 ", result.stdout)
+        self.assertIn("aggiorna il gioco", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

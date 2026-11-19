@@ -247,8 +247,8 @@ class StartScreen(QWidget):
             "Nessun salvataggio" if n == 0 else ("1 salvataggio" if n == 1 else f"{n} salvataggi")
         )
 
-        if self._slots:
-            latest = self._slots[0]
+        latest = self._latest_supported_slot()
+        if latest is not None:
             self.continue_card.setVisible(True)
             status_tag = " · SOCIETÀ FALLITA" if latest.bankrupt else ""
             self.cont_club.setText(latest.team_name)
@@ -271,6 +271,8 @@ class StartScreen(QWidget):
                 f"${s.budget:,}",
                 s.updated_at.strftime("%d/%m %H:%M"),
             ]
+            if not s.is_supported:  # solo i metadati affidabili: file, data, versione
+                vals = [s.team_name, "—", "—", "—", f"{s.size_bytes // 1024} KiB", vals[5]]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(
@@ -280,6 +282,9 @@ class StartScreen(QWidget):
                 )
                 if col == 4 and s.budget < 0:
                     item.setForeground(QColor("#f87171"))
+                if not s.is_supported:
+                    item.setForeground(QColor("#fbbf24"))
+                    item.setToolTip(f"{s.path.name} — versione del salvataggio: v{s.schema_version}")
                 self.saves_table.setItem(row, col, item)
 
         if n > 0:
@@ -300,18 +305,35 @@ class StartScreen(QWidget):
         self.load_btn.setEnabled(has_sel)
         self.delete_btn.setEnabled(has_sel)
 
-    def _on_continue(self) -> None:
-        if not self._slots:
-            return
-        if self.controller.load_save_slot(self._slots[0].path):
+    def _latest_supported_slot(self) -> Optional[SaveSlotInfo]:
+        """Lo slot più recente che il gioco sa aprire (gli altri compaiono solo nell'elenco)."""
+        return next((s for s in self._slots if s.is_supported), None)
+
+    def _show_load_error(self) -> None:
+        """Avvisa che lo slot non si è aperto: testo breve + dettagli (backup e traceback)."""
+        text, _, details = self.controller.last_load_error.partition("\n\n")
+        box = QMessageBox(
+            QMessageBox.Icon.Warning, "Impossibile aprire il salvataggio", text, parent=self
+        )
+        if details:
+            box.setDetailedText(details)
+        box.exec()
+
+    def _load_slot(self, slot: SaveSlotInfo) -> None:
+        if self.controller.load_save_slot(slot.path):
             self.game_ready.emit()
+        elif self.controller.last_load_error:
+            self._show_load_error()
+
+    def _on_continue(self) -> None:
+        slot = self._latest_supported_slot()
+        if slot is not None:
+            self._load_slot(slot)
 
     def _on_load_selected(self) -> None:
         slot = self._selected_slot()
-        if slot is None:
-            return
-        if self.controller.load_save_slot(slot.path):
-            self.game_ready.emit()
+        if slot is not None:
+            self._load_slot(slot)
 
     def _on_delete_selected(self) -> None:
         slot = self._selected_slot()
@@ -320,7 +342,9 @@ class StartScreen(QWidget):
         ans = QMessageBox.question(
             self,
             "Elimina Salvataggio",
-            f"Eliminare definitivamente il salvataggio di '{slot.team_name}' (Sett. {slot.week})?",
+            f"Eliminare definitivamente il salvataggio di '{slot.team_name}' (Sett. {slot.week})?"
+            if slot.is_supported
+            else f"Eliminare definitivamente il file '{slot.path.name}'? Non è apribile da questa versione.",
         )
         if ans == QMessageBox.StandardButton.Yes:
             self.controller.delete_save_slot(slot.path)

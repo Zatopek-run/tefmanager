@@ -347,5 +347,124 @@ class TestMigrationSafety(_TmpCase):
         self.assertEqual(slots[0].team_name, "SENTINELLA-v7")
 
 
+# --------------------------------------------------------------------------- lotto 1.2
+
+
+class TestUnsupportedVersions(_TmpCase):
+    def assert_refused(self, path: Path, found: int) -> dbm.UnsupportedSaveVersion:
+        before = sha(path)
+        with self.assertRaises(dbm.UnsupportedSaveVersion) as cm:
+            DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before, "nessuna scrittura: hash identico")
+        self.assertEqual(cm.exception.versione_trovata, found)
+        self.assertEqual(cm.exception.versione_attesa, SCHEMA_VERSION)
+        self.assertFalse((path.parent / dbm.BACKUPS_DIRNAME).exists(), "nessun backup per un rifiuto")
+        return cm.exception
+
+    def test_e2_unknown_versions_are_refused_not_wiped(self) -> None:
+        """E2 (AUDIT R2): più recente, v0 e v1 con dati non vengono mai azzerati."""
+        for version in (SCHEMA_VERSION + 1, SCHEMA_VERSION + 50, 0, 1):
+            with self.subTest(versione=version):
+                path = make_save(self.slot(f"x{version}"), SCHEMA_VERSION)
+                with closing(sqlite3.connect(path)) as conn:
+                    conn.execute(f"PRAGMA user_version = {version}")
+                    conn.commit()
+                self.assert_refused(path, version)
+                with closing(sqlite3.connect(path)) as conn:  # nessun DROP: i dati ci sono ancora
+                    self.assertEqual(
+                        conn.execute("SELECT team_name FROM game_state").fetchone()[0],
+                        f"SENTINELLA-v{SCHEMA_VERSION}",
+                    )
+                    self.assertEqual(conn.execute("SELECT COUNT(*) FROM athletes").fetchone()[0], 1)
+
+    def test_messages_distinguish_newer_from_unrecognised(self) -> None:
+        newer = dbm.UnsupportedSaveVersion(SCHEMA_VERSION + 1, SCHEMA_VERSION)
+        old = dbm.UnsupportedSaveVersion(1, SCHEMA_VERSION)
+        self.assertTrue(newer.is_newer)
+        self.assertFalse(old.is_newer)
+        self.assertIn("più recente", newer.message)
+        self.assertIn("aggiorna il gioco", newer.message)
+        self.assertIn("non riconosciuto o non migrabile", old.message)
+        self.assertNotIn("più recente", old.message)
+
+    def test_a_gap_in_the_migration_chain_is_refused(self) -> None:
+        path = make_save(self.slot(), 7)
+        chain = {k: v for k, v in MIGRATIONS.items() if k != 8}  # 7 -> 8 -> (manca) -> 9
+        with mock.patch.dict(dbm.__dict__, {"MIGRATIONS": chain}):
+            self.assert_refused(path, 7)
+
+    def test_non_empty_file_without_user_tables_is_refused(self) -> None:
+        # zero tabelle utente (sqlite_sequence non conta): non è un DB nuovo
+        only_header = self.slot("intestazione")
+        with closing(sqlite3.connect(only_header)) as conn:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            conn.commit()
+        self.assertGreater(only_header.stat().st_size, 0)
+        self.assert_refused(only_header, SCHEMA_VERSION)
+        dropped = self.slot("droppato")
+        with closing(sqlite3.connect(dropped)) as conn:
+            conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+            conn.execute("INSERT INTO t DEFAULT VALUES")
+            conn.execute("DROP TABLE t")  # resta sqlite_sequence
+            conn.execute("PRAGMA user_version = 5")
+            conn.commit()
+        with closing(sqlite3.connect(dropped)) as conn:
+            self.assertEqual(dbm._inspect(conn), (5, 0))
+        self.assert_refused(dropped, 5)
+
+    def test_a_non_sqlite_file_is_not_touched(self) -> None:
+        path = self.slot("testo")
+        path.write_bytes(b"questo non e' un database sqlite " * 40)
+        before = sha(path)
+        with self.assertRaises(sqlite3.DatabaseError):
+            DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+
+    def test_read_save_summary_lists_unsupported_slots_read_only(self) -> None:
+        cases = {"nuovo": SCHEMA_VERSION + 3, "vecchio": 1, "zero": 0}
+        for name, version in cases.items():
+            with self.subTest(name):
+                path = make_save(self.slot(name), SCHEMA_VERSION)
+                with closing(sqlite3.connect(path)) as conn:
+                    conn.execute(f"PRAGMA user_version = {version}")
+                    conn.commit()
+                before, mtime = sha(path), path.stat().st_mtime_ns
+                info = dbm.read_save_summary(path)
+                assert info is not None
+                self.assertFalse(info.is_supported)
+                self.assertEqual(info.status, "newer" if version > SCHEMA_VERSION else "unsupported")
+                self.assertEqual(info.schema_version, version)
+                self.assertEqual(info.size_bytes, path.stat().st_size)
+                self.assertIn(f"(v{version})", info.team_name)
+                self.assertAlmostEqual(info.updated_at.timestamp(), path.stat().st_mtime, places=3)
+                self.assertEqual(sha(path), before)
+                self.assertEqual(path.stat().st_mtime_ns, mtime)
+
+    def test_corrupt_and_empty_files_in_the_slot_list(self) -> None:
+        good = make_save(self.slot("buono"), SCHEMA_VERSION)
+        newer = make_save(self.slot("piu_recente"), SCHEMA_VERSION)
+        with closing(sqlite3.connect(newer)) as conn:
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
+            conn.commit()
+        garbage = self.slot("danneggiato")
+        garbage.write_bytes(b"\x00\x01 non sqlite " * 100)
+        self.slot("vuoto").touch()
+        # un backup vero nella sottocartella: non deve comparire
+        make_save(self.slot("vecchio"), 7)
+        DatabaseManager(db_path=self.slot("vecchio"))
+        self.assertTrue(self.backups("vecchio"))
+        slots = dbm.list_save_slots(self.dir, legacy_path=self.dir / "inesistente.db")
+        by_name = {s.path.name: s for s in slots}
+        self.assertEqual(
+            set(by_name), {"buono.db", "piu_recente.db", "danneggiato.db", "vecchio.db"},
+            "il file di 0 byte non è uno slot; i backup non compaiono",
+        )
+        self.assertEqual(by_name["buono.db"].status, "ok")
+        self.assertEqual(by_name["piu_recente.db"].status, "newer")
+        self.assertEqual(by_name["danneggiato.db"].status, "corrupt")
+        self.assertEqual(by_name["danneggiato.db"].team_name, "Salvataggio danneggiato")
+        self.assertEqual(good, by_name["buono.db"].path)
+
+
 if __name__ == "__main__":
     unittest.main()
