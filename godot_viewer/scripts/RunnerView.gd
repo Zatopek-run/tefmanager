@@ -13,20 +13,6 @@ const LANE_WIDTH: float = 1.22
 
 const CHARACTER_PATH: String = "res://assets/athlete/Superhero_Male_FullBody.gltf"
 const CHARACTER_PATH_F: String = "res://assets/athlete/Superhero_Female_FullBody.gltf"
-const ANIMATION_PATH: String = "res://assets/athlete/UAL1_Standard.glb"
-const SKIN_LIGHT_PATH: String = "res://assets/athlete/T_Superhero_Male_Light.png"
-const SKIN_DARK_PATH: String = "res://assets/athlete/T_Superhero_Male_Dark.png"
-const SKIN_LIGHT_PATH_F: String = "res://assets/athlete/T_Superhero_Female_Light_BaseColor.png"
-const SKIN_DARK_PATH_F: String = "res://assets/athlete/T_Superhero_Female_Dark_BaseColor.png"
-const HAIR_PATHS: Array[String] = [
-	"res://assets/athlete/Hair_Buzzed.gltf",
-	"res://assets/athlete/Hair_SimpleParted.gltf",
-]
-const HAIR_PATHS_F: Array[String] = [
-	"res://assets/athlete/Hair_Long.gltf",
-	"res://assets/athlete/Hair_Buns.gltf",
-]
-
 ## Il modello guarda verso +Z (convenzione glTF): lo giriamo di 90 gradi per farlo correre verso +X.
 const FACING_Y: float = PI * 0.5
 
@@ -42,8 +28,6 @@ const BLOCK_START_BLEND: float = 0.06
 const DRIVE_LEAN_MAX: float = deg_to_rad(26.0)   # inclinazione in avanti in uscita dai blocchi
 const DRIVE_RISE_METERS: float = 16.0            # metri su cui il busto si raddrizza gradualmente
 
-static var _animation_library: AnimationLibrary = null
-static var _cloth_shader_cache: Shader = null
 const PLAYER_MARKER_COLOR: Color = Color(1.0, 0.86, 0.12)
 
 var data: RunnerData = null
@@ -78,7 +62,7 @@ func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visu
 	add_child(_model)
 	_skeleton = _model.find_child("Skeleton3D", true, false) as Skeleton3D
 
-	var body: MeshInstance3D = _find_body_mesh()
+	var body: MeshInstance3D = CharacterDress.find_body_mesh(_skeleton)
 	var height: float = _dress(body)
 	_attach_hair()
 	if runner.is_player:
@@ -161,14 +145,9 @@ func _apply_transform(leg_dist: float = -1.0) -> void:
 # --- animazione ---------------------------------------------------------------------------------
 
 func _setup_animation() -> void:
-	if _animation_library == null:
-		var ual: Node = (load(ANIMATION_PATH) as PackedScene).instantiate()
-		var source: AnimationPlayer = ual.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		_animation_library = source.get_animation_library(&"")
-		ual.free()
 	_player = AnimationPlayer.new()
 	_model.add_child(_player)  # root_node di default = ".." = _model: le tracce "Armature/Skeleton3D:..." combaciano
-	_player.add_animation_library(&"", _animation_library)
+	_player.add_animation_library(&"", CharacterDress.animation_library())
 
 
 func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
@@ -256,110 +235,19 @@ func _play(anim: StringName, blend: float = BLEND_TIME) -> void:
 
 # --- vestiti e capelli --------------------------------------------------------------------------
 
-func _find_body_mesh() -> MeshInstance3D:
-	for name_try: String in ["Superhero_Female", "SuperHero_Male"]:
-		var n: Node = _skeleton.get_node_or_null(name_try)
-		if n is MeshInstance3D:
-			return n as MeshInstance3D
-	for child: Node in _skeleton.get_children():
-		if child is MeshInstance3D and not child.name in ["Eyebrows", "Eyes"]:
-			return child as MeshInstance3D
-	return null
-
-
 ## Colora la pelle, aggiunge canotta/pantaloncini/scarpette. Ritorna l'altezza del modello a riposo (m).
 func _dress(body: MeshInstance3D) -> float:
-	var skin: StandardMaterial3D = body.get_active_material(0).duplicate() as StandardMaterial3D
-	var tone: int = absi(hash(_visual_key)) % 4
-	var light_tex: String = SKIN_LIGHT_PATH_F if data.gender == "F" else SKIN_LIGHT_PATH
-	var dark_tex: String = SKIN_DARK_PATH_F if data.gender == "F" else SKIN_DARK_PATH
-	skin.albedo_texture = load(light_tex if tone < 2 else dark_tex) as Texture2D
-	skin.albedo_color = [Color(1, 1, 1), Color(0.82, 0.68, 0.56), Color(1, 1, 1), Color(0.8, 0.72, 0.68)][tone]
-	body.set_surface_override_material(0, skin)
-
-	var verts: PackedVector3Array = body.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
-	var min_y: float = INF
-	var max_y: float = -INF
-	for v: Vector3 in verts:
-		min_y = minf(min_y, v.y)
-		max_y = maxf(max_y, v.y)
-	var h: float = max_y - min_y
+	CharacterDress.apply_skin(body, data.gender, absi(hash(_visual_key)) % 4)
+	var ext: Vector2 = CharacterDress.body_extent(body)
+	var min_y: float = ext.x
+	var h: float = ext.y
 
 	var team: Color = _team_color(data.team_name)
 	# Bounds = (|x| max, y min, y max) in altezze corporee (y: 0 piedi .. 1 cima della testa), a riposo.
-	_add_cloth(body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006)                          # canotta
-	_add_cloth(body, min_y, h, Vector3(0.115, 0.43, 0.60), team.darkened(0.55), 0.007)           # pantaloncini
-	_add_cloth(body, min_y, h, Vector3(1.0, -1.0, 0.045), Color(0.96, 0.96, 0.96), 0.012)        # scarpette
+	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006)                          # canotta
+	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.43, 0.60), team.darkened(0.55), 0.007)           # pantaloncini
+	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(1.0, -1.0, 0.045), Color(0.96, 0.96, 0.96), 0.012)        # scarpette
 	return h
-
-
-## Aggiunge un capo ricavato dalla mesh del corpo: stessi vertici/pesi (quindi stesse ossa), gonfiati lungo
-## la normale. Ogni vertice porta in UV2 la sua posizione a riposo (x, y in altezze corporee) e lo shader
-## scarta i pixel fuori da `bounds`: il bordo e' netto anche se la mesh ha pochi triangoli.
-func _add_cloth(body: MeshInstance3D, base_y: float, height: float, bounds: Vector3, color: Color, inflate: float) -> void:
-	var src: Mesh = body.mesh
-	var arrays: Array = src.surface_get_arrays(0)
-	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-
-	var grown: PackedVector3Array = verts.duplicate()
-	var rel: PackedVector2Array = PackedVector2Array()
-	rel.resize(verts.size())
-	for i in range(verts.size()):
-		grown[i] = verts[i] + normals[i] * inflate
-		rel[i] = Vector2(verts[i].x / height, (verts[i].y - base_y) / height)
-
-	var kept: PackedInt32Array = PackedInt32Array()
-	for t in range(0, index.size(), 3):
-		var y0: float = rel[index[t]].y
-		var y1: float = rel[index[t + 1]].y
-		var y2: float = rel[index[t + 2]].y
-		if minf(y0, minf(y1, y2)) <= bounds.z and maxf(y0, maxf(y1, y2)) >= bounds.y:
-			kept.append(index[t])
-			kept.append(index[t + 1])
-			kept.append(index[t + 2])
-	if kept.is_empty():
-		push_warning("RunnerView: nessun triangolo per il capo %s" % str(color))
-		return
-
-	arrays[Mesh.ARRAY_VERTEX] = grown
-	arrays[Mesh.ARRAY_INDEX] = kept
-	arrays[Mesh.ARRAY_TEX_UV2] = rel
-	for ci: int in [Mesh.ARRAY_CUSTOM0, Mesh.ARRAY_CUSTOM1, Mesh.ARRAY_CUSTOM2, Mesh.ARRAY_CUSTOM3]:
-		arrays[ci] = null
-	var mesh: ArrayMesh = ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {},
-		src.surface_get_format(0) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
-
-	var mat: ShaderMaterial = ShaderMaterial.new()
-	mat.shader = _cloth_shader()
-	mat.set_shader_parameter("color", color)
-	mat.set_shader_parameter("bounds", bounds)
-	mesh.surface_set_material(0, mat)
-
-	var mi: MeshInstance3D = MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.skin = body.skin
-	_skeleton.add_child(mi)  # figlio dello scheletro: segue le stesse ossa del corpo
-
-
-static func _cloth_shader() -> Shader:
-	if _cloth_shader_cache == null:
-		_cloth_shader_cache = Shader.new()
-		_cloth_shader_cache.code = """
-shader_type spatial;
-uniform vec4 color : source_color = vec4(1.0);
-uniform vec3 bounds = vec3(0.115, 0.6, 0.82); // |x| max, y min, y max (altezze corporee)
-varying vec2 rel;
-void vertex() { rel = UV2; }
-void fragment() {
-	if (abs(rel.x) > bounds.x || rel.y < bounds.y || rel.y > bounds.z) { discard; }
-	ALBEDO = color.rgb;
-	ROUGHNESS = 0.8;
-}
-"""
-	return _cloth_shader_cache
 
 
 func _update_player_marker() -> void:
@@ -400,18 +288,7 @@ func _attach_player_marker() -> void:
 
 
 func _attach_hair() -> void:
-	var pool: Array[String] = HAIR_PATHS_F if data.gender == "F" else HAIR_PATHS
-	var path: String = pool[absi(hash(_visual_key + "hair")) % pool.size()]
-	var scene: Node = (load(path) as PackedScene).instantiate()
-	var hair: MeshInstance3D = scene.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D
-	hair.get_parent().remove_child(hair)
-	scene.free()
-	_skeleton.add_child(hair)  # stesse 65 ossa del corpo: la skin si lega per nome
-	var mat: StandardMaterial3D = hair.get_active_material(0).duplicate() as StandardMaterial3D
-	var tones: Array[Color] = [
-		Color(0.05, 0.04, 0.035), Color(0.2, 0.11, 0.06), Color(0.42, 0.27, 0.12), Color(0.8, 0.62, 0.3)]
-	mat.albedo_color = tones[absi(hash(_visual_key + "shade")) % tones.size()]
-	hair.set_surface_override_material(0, mat)
+	CharacterDress.attach_hair(_skeleton, data.gender, _visual_key)
 
 
 func _attach_baton() -> void:

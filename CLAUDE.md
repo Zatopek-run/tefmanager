@@ -115,7 +115,8 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   un display; `verify_camera.gd` dura diversi minuti: lanciarlo in background, non con un timeout breve).
   Testato con Godot 4.7.2 (flatpak `org.godotengine.Godot`) + godot-sqlite 4.9; l'import del progetto alla prima
   esecuzione crea file `.uid` (committa quelli dei nuovi script di test).
-- **Personaggi.** `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
+- **Personaggi.** Vestiario, pelle, capelli e libreria di animazioni sono in `scripts/CharacterDress.gd` (condiviso da `RunnerView` e
+  `TrackSideCrew`). `RunnerView.gd` usa un modello con scheletro e animazioni CC0 di Quaternius
   (`assets/athlete/`, vedi `CREDITS.md`); abiti ricavati dalla mesh con uno shader. Il modello originale guarda +Z
   e viene ruotato (`FACING_Y`) per correre verso +X.
 - **Integrazione nel gioco.** `RaceViewerDialog._next` per gli eventi in `GODOT_EVENTS` chiama
@@ -202,7 +203,12 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   alle tribune. `Stadium._build_curve_stands` chiude le tribune dietro le curve con archi (MultiMesh) agganciati alle
   due tribune dritte: raggio ~110 m nei 400m; nei 100m la tribuna opposta è più vicina e resta un buco di ~14 m. Le
   camere devono stare dentro il raggio (la più lontana è a ~91 m dal centro curva). `scripts/TrackSideCrew.gd`:
-  fotografi e giudici a forme semplici, **solo nelle corse in pista** (nei concorsi la camera del lungo sta dove
+  fotografi e giudici **persone vere** (stesso modello con scheletro dei corridori, vestiti da `CharacterDress`, animazioni in loop:
+  `Pistol_Idle` con macchina e teleobiettivo per i fotografi, `Sitting_Idle`/`Idle_Talking` per i giudici, tavolo con computer e
+  sedie; posizioni delle mani e del bacino misurate sul modello, costanti in cima al file). Le scritte «STAMPA»/«GIUDICE» sono
+  **stampate sul tessuto** (`CharacterDress.add_cloth(..., print_tex, print_rect)`: texture del testo da un `SubViewport`, campionata
+  con le coordinate a riposo del capo, solo sulla schiena): un'etichetta 3D restava sospesa e si sovrapponeva al corpo. Il testo
+  non deve superare ±0,06 altezze corporee di larghezza, oltre la schiena gira di lato e si taglia, **solo nelle corse in pista** (nei concorsi la camera del lungo sta dove
   stanno i fotografi) e i giudici a z ≥ 14 per non coprire la corsia 8 alla camera del traguardo. Tartan dei 400m
   `Color(0.43, 0.14, 0.46)`: più chiaro sbiadisce a lavanda, più blu vira a indaco (luce di scena fredda).
 - **Blocchi di partenza** (gruppo `start_blocks`): spariscono quando taglia il traguardo l'atleta di quella corsia e
