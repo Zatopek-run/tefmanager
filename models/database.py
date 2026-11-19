@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import lru_cache
 import json
 import re
 import sqlite3
@@ -113,6 +114,132 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     7: V8_COLUMNS,
     8: V9_COLUMNS,
 }
+
+# Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
+# `.db.bak`, così `glob("*.db")` degli slot non li vede mai.
+BACKUPS_DIRNAME = "backups"
+MAX_BACKUPS_PER_SLOT = 3
+_BACKUP_STAMP_FORMAT = "%Y%m%d-%H%M%S-%f"  # microsecondi: due backup non collidono
+
+
+class SaveMigrationError(RuntimeError):
+    """Backup o migrazione non riusciti: il salvataggio è rimasto com'era.
+
+    `backup_path` è il backup verificato creato prima del tentativo (None se non si è arrivati lì).
+    """
+
+    def __init__(self, message: str, backup_path: Optional[Path] = None) -> None:
+        super().__init__(message)
+        self.backup_path = backup_path
+
+
+def _migration_reaches_current(version: int) -> bool:
+    """True se `MIGRATIONS` porta senza buchi da `version` a `SCHEMA_VERSION`."""
+    if version not in MIGRATIONS:
+        return False
+    v = version
+    while v in MIGRATIONS:
+        v += 1
+    return v == SCHEMA_VERSION
+
+
+def _is_supported_version(version: int) -> bool:
+    return version == SCHEMA_VERSION or _migration_reaches_current(version)
+
+
+def _ro_uri(path: Path) -> str:
+    return f"{Path(path).resolve().as_uri()}?mode=ro"
+
+
+def _inspect(conn: sqlite3.Connection) -> Tuple[int, int]:
+    """(`user_version`, numero di tabelle utente): sola lettura, nessuna scrittura."""
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    tables = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'"
+    ).fetchone()[0]
+    return version, int(tables)
+
+
+@lru_cache(maxsize=1)
+def _schema_statements() -> Tuple[str, ...]:
+    """Gli statement di `_CREATE_TABLES_SQL`, uno per uno (niente `executescript`: farebbe COMMIT)."""
+    return tuple(part.strip() for part in _CREATE_TABLES_SQL.split(";") if part.strip())
+
+
+def _schema_table_names() -> set:
+    return set(re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", _CREATE_TABLES_SQL))
+
+
+def _backup_dir(db_path: Path) -> Path:
+    return Path(db_path).parent / BACKUPS_DIRNAME
+
+
+def _backup_name_pattern(db_path: Path) -> "re.Pattern[str]":
+    stem = re.escape(Path(db_path).stem)
+    return re.compile(rf"^{stem}\.v(\d+)\.(\d{{8}}-\d{{6}}-\d{{6}})\.db\.bak$")
+
+
+def list_backups(db_path: Path) -> List[Path]:
+    """I backup di QUESTO slot (pattern esatto), dal più vecchio al più recente."""
+    directory = _backup_dir(db_path)
+    if not directory.is_dir():
+        return []
+    pattern = _backup_name_pattern(db_path)
+    found = []
+    for entry in directory.iterdir():
+        m = pattern.match(entry.name)
+        if m and entry.is_file():
+            found.append((m.group(2), entry.name, entry))
+    found.sort(key=lambda t: (t[0], t[1]))
+    return [t[2] for t in found]
+
+
+def _verify_backup(path: Path, version: int) -> None:
+    """Il backup deve aprirsi, passare `integrity_check` ed essere alla versione di partenza."""
+    with closing(sqlite3.connect(_ro_uri(path), uri=True)) as conn:
+        result = conn.execute("PRAGMA integrity_check").fetchall()
+        if result != [("ok",)]:
+            raise SaveMigrationError(f"Il backup non supera integrity_check: {result[:3]}")
+        found = conn.execute("PRAGMA user_version").fetchone()[0]
+        if found != version:
+            raise SaveMigrationError(
+                f"Il backup è alla versione v{found}, attesa v{version}"
+            )
+
+
+def _create_backup(source: sqlite3.Connection, db_path: Path, version: int) -> Path:
+    """Copia coerente via `Connection.backup()` (mai `shutil.copy` su un DB aperto), sempre nuova.
+
+    Si scrive in `.tmp`, si verifica, poi si rinomina: un backup parziale non ha mai il nome finale.
+    """
+    directory = _backup_dir(db_path)
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime(_BACKUP_STAMP_FORMAT)
+    final = directory / f"{Path(db_path).stem}.v{version}.{stamp}.db.bak"
+    tmp = final.with_name(final.name + ".tmp")
+    if final.exists():
+        raise SaveMigrationError(f"Il backup {final.name} esiste già: non lo sovrascrivo.")
+    try:
+        with closing(sqlite3.connect(str(tmp))) as dest:
+            source.backup(dest)
+        _verify_backup(tmp, version)
+        tmp.rename(final)
+    except BaseException as exc:
+        tmp.unlink(missing_ok=True)  # solo il nostro temporaneo, mai un backup precedente
+        if isinstance(exc, SaveMigrationError) or not isinstance(exc, Exception):
+            raise
+        raise SaveMigrationError(f"Backup non riuscito: {exc}") from exc
+    return final
+
+
+def _prune_backups(db_path: Path) -> None:
+    """Tiene i `MAX_BACKUPS_PER_SLOT` più recenti di questo slot. Solo dopo una migrazione riuscita."""
+    for old in list_backups(db_path)[:-MAX_BACKUPS_PER_SLOT]:
+        try:
+            old.unlink()
+        except OSError:
+            pass  # la pulizia è facoltativa: meglio un backup in più che un errore
 
 
 def _relays_to_json(relays: Dict[str, Relay]) -> str:
@@ -375,6 +502,122 @@ def delete_save_slot(db_path: Path) -> bool:
     return True
 
 
+_CREATE_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS game_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    team_name TEXT NOT NULL,
+    game_mode TEXT NOT NULL,
+    budget INTEGER NOT NULL,
+    week INTEGER NOT NULL,
+    season_number INTEGER NOT NULL,
+    season_phase TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    prestige INTEGER NOT NULL,
+    reputation INTEGER NOT NULL,
+    tier TEXT NOT NULL,
+    track_condition INTEGER NOT NULL,
+    member_fees_weekly INTEGER NOT NULL,
+    event_lineup_json TEXT NOT NULL,
+    club_records_json TEXT NOT NULL,
+    objectives_json TEXT NOT NULL,
+    milestones_json TEXT NOT NULL,
+    news_log_json TEXT NOT NULL,
+    pending_dilemma_json TEXT,
+    event_attitude_json TEXT NOT NULL DEFAULT '{}',
+    gym_level INTEGER NOT NULL DEFAULT 0,
+    stand_seats INTEGER NOT NULL DEFAULT 500,
+    fidelity INTEGER NOT NULL DEFAULT 100,
+    scouting_points_used INTEGER NOT NULL DEFAULT 0,
+    bankrupt INTEGER NOT NULL DEFAULT 0,
+    league_table_json TEXT NOT NULL DEFAULT '{}',
+    relays_json TEXT NOT NULL DEFAULT '{}',
+    coach_hired_week INTEGER NOT NULL DEFAULT 0,
+    rivals_json TEXT NOT NULL DEFAULT '[]',
+    season_history_json TEXT NOT NULL DEFAULT '[]',
+    event_lineup_f_json TEXT NOT NULL DEFAULT '{}',
+    club_records_f_json TEXT NOT NULL DEFAULT '{}',
+    relays_f_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS athletes (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    age INTEGER NOT NULL,
+    specialty TEXT NOT NULL,
+    speed INTEGER NOT NULL,
+    stamina INTEGER NOT NULL,
+    strength INTEGER NOT NULL,
+    technique INTEGER NOT NULL,
+    resilience INTEGER NOT NULL,
+    form INTEGER NOT NULL,
+    fatigue INTEGER NOT NULL,
+    potential INTEGER NOT NULL,
+    personality TEXT NOT NULL,
+    training_focus TEXT NOT NULL,
+    periodization TEXT NOT NULL,
+    sleep_quality INTEGER NOT NULL,
+    nutrition INTEGER NOT NULL,
+    weekly_wage INTEGER NOT NULL,
+    injured_weeks INTEGER NOT NULL DEFAULT 0,
+    is_youth_prospect INTEGER NOT NULL DEFAULT 0,
+    personal_best REAL,
+    personal_best_display TEXT,
+    doping_boost_weeks INTEGER NOT NULL DEFAULT 0,
+    in_youth_squad INTEGER NOT NULL DEFAULT 0,
+    fans INTEGER NOT NULL DEFAULT 0,
+    coach_id INTEGER,
+    nationality TEXT NOT NULL DEFAULT 'Italia',
+    height_cm INTEGER NOT NULL DEFAULT 0,
+    weight_kg INTEGER NOT NULL DEFAULT 0,
+    gender TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS coaches (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    specialty TEXT,
+    skills_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS staff (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    skill INTEGER NOT NULL,
+    weekly_cost INTEGER NOT NULL,
+    hired INTEGER NOT NULL,
+    description TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    week INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    category TEXT NOT NULL,
+    amount INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS competition_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    week INTEGER NOT NULL,
+    tier TEXT NOT NULL,
+    season_phase TEXT NOT NULL,
+    meet_name TEXT NOT NULL,
+    weather TEXT NOT NULL,
+    track_surface TEXT NOT NULL,
+    total_prize_money INTEGER NOT NULL,
+    total_prestige_gained INTEGER NOT NULL,
+    travel_cost INTEGER NOT NULL,
+    promoted_to TEXT,
+    results_json TEXT NOT NULL,
+    is_home INTEGER NOT NULL DEFAULT 0,
+    spectators INTEGER NOT NULL DEFAULT 0,
+    ticket_income INTEGER NOT NULL DEFAULT 0,
+    team_standings_json TEXT NOT NULL DEFAULT '[]',
+    player_team TEXT NOT NULL DEFAULT ''
+);
+"""
+
 class DatabaseManager:
     """Handles SQLite schema creation, saving, and loading of GameState."""
 
@@ -391,146 +634,90 @@ class DatabaseManager:
                 yield conn
 
     def _init_schema(self) -> None:
-        with self._connect() as conn:
-            current_ver = conn.execute("PRAGMA user_version").fetchone()[0]
-            if current_ver in MIGRATIONS:
-                # Upgrade path: keep the save, add the newer columns step by step
-                while current_ver in MIGRATIONS:
-                    for table, columns in MIGRATIONS[current_ver].items():
-                        for col_name, col_def in columns:
-                            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
-                    current_ver += 1
-                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-            elif current_ver != SCHEMA_VERSION:
-                conn.executescript(
-                    """
-                    DROP TABLE IF EXISTS game_state;
-                    DROP TABLE IF EXISTS athletes;
-                    DROP TABLE IF EXISTS staff;
-                    DROP TABLE IF EXISTS transactions;
-                    DROP TABLE IF EXISTS competition_history;
-                    DROP TABLE IF EXISTS coaches;
-                    """
+        """Apre o crea il file. Regole (CLAUDE.md, convenzione 4):
+
+        - file assente o di 0 byte: DB nuovo, creato in una sola transazione;
+        - versione non riconosciuta: comportamento storico (azzera), fino al lotto 1.2;
+        - versione migrabile: backup verificato, poi migrazione in un'unica transazione;
+        - versione corrente: nessuna scrittura (si completano solo eventuali tabelle mancanti).
+        """
+        self.last_backup_path: Optional[Path] = None
+        path = self.db_path
+        if not path.exists() or path.stat().st_size == 0:
+            self._write_transaction(expected_version=0)
+            return
+
+        with closing(sqlite3.connect(_ro_uri(path), uri=True)) as ro:
+            version, tables = _inspect(ro)
+            if not _is_supported_version(version):
+                # Comportamento storico, ancora invariato in questo lotto (1.1): azzera lo
+                # schema. Lo sostituisce il rifiuto di `UnsupportedSaveVersion` (lotto 1.2).
+                self._write_transaction(expected_version=version, reset=True)
+                return
+            if version == SCHEMA_VERSION:
+                present = {
+                    r[0]
+                    for r in ro.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+                }
+                needs_write = not _schema_table_names() <= present
+            else:
+                needs_write = True
+                # Sorgente del backup: la stessa connessione in sola lettura dell'ispezione
+                self.last_backup_path = _create_backup(ro, path, version)
+
+        if not needs_write:
+            return
+        try:
+            self._write_transaction(expected_version=version)
+        except SaveMigrationError as exc:
+            if exc.backup_path is None:
+                exc.backup_path = self.last_backup_path
+            raise
+        except Exception as exc:
+            raise SaveMigrationError(
+                f"Migrazione dalla v{version} non riuscita ({exc}): il salvataggio è rimasto com'era.",
+                self.last_backup_path,
+            ) from exc
+        if self.last_backup_path is not None:
+            _prune_backups(path)  # solo a migrazione riuscita
+
+    def _write_transaction(self, expected_version: int, reset: bool = False) -> None:
+        """Migrazione e creazione tabelle in UNA transazione esplicita (`BEGIN IMMEDIATE`).
+
+        `isolation_level=None`: il modulo `sqlite3` non apre né chiude transazioni da solo e
+        non fa COMMIT impliciti. Gli ALTER, le CREATE e `PRAGMA user_version` stanno nella
+        stessa transazione: o c'è tutto o non cambia niente.
+        """
+        conn = sqlite3.connect(str(self.db_path), isolation_level=None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            # Riletta con il lock di scrittura: un altro processo può aver migrato nel frattempo
+            current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if current != expected_version and current != SCHEMA_VERSION:
+                raise SaveMigrationError(
+                    f"La versione del file è cambiata durante l'apertura (v{expected_version} -> v{current})."
                 )
-                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS game_state (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    team_name TEXT NOT NULL,
-                    game_mode TEXT NOT NULL,
-                    budget INTEGER NOT NULL,
-                    week INTEGER NOT NULL,
-                    season_number INTEGER NOT NULL,
-                    season_phase TEXT NOT NULL,
-                    start_date TEXT NOT NULL,
-                    prestige INTEGER NOT NULL,
-                    reputation INTEGER NOT NULL,
-                    tier TEXT NOT NULL,
-                    track_condition INTEGER NOT NULL,
-                    member_fees_weekly INTEGER NOT NULL,
-                    event_lineup_json TEXT NOT NULL,
-                    club_records_json TEXT NOT NULL,
-                    objectives_json TEXT NOT NULL,
-                    milestones_json TEXT NOT NULL,
-                    news_log_json TEXT NOT NULL,
-                    pending_dilemma_json TEXT,
-                    event_attitude_json TEXT NOT NULL DEFAULT '{}',
-                    gym_level INTEGER NOT NULL DEFAULT 0,
-                    stand_seats INTEGER NOT NULL DEFAULT 500,
-                    fidelity INTEGER NOT NULL DEFAULT 100,
-                    scouting_points_used INTEGER NOT NULL DEFAULT 0,
-                    bankrupt INTEGER NOT NULL DEFAULT 0,
-                    league_table_json TEXT NOT NULL DEFAULT '{}',
-                    relays_json TEXT NOT NULL DEFAULT '{}',
-                    coach_hired_week INTEGER NOT NULL DEFAULT 0,
-                    rivals_json TEXT NOT NULL DEFAULT '[]',
-                    season_history_json TEXT NOT NULL DEFAULT '[]',
-                    event_lineup_f_json TEXT NOT NULL DEFAULT '{}',
-                    club_records_f_json TEXT NOT NULL DEFAULT '{}',
-                    relays_f_json TEXT NOT NULL DEFAULT '{}'
-                );
-
-                CREATE TABLE IF NOT EXISTS athletes (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    age INTEGER NOT NULL,
-                    specialty TEXT NOT NULL,
-                    speed INTEGER NOT NULL,
-                    stamina INTEGER NOT NULL,
-                    strength INTEGER NOT NULL,
-                    technique INTEGER NOT NULL,
-                    resilience INTEGER NOT NULL,
-                    form INTEGER NOT NULL,
-                    fatigue INTEGER NOT NULL,
-                    potential INTEGER NOT NULL,
-                    personality TEXT NOT NULL,
-                    training_focus TEXT NOT NULL,
-                    periodization TEXT NOT NULL,
-                    sleep_quality INTEGER NOT NULL,
-                    nutrition INTEGER NOT NULL,
-                    weekly_wage INTEGER NOT NULL,
-                    injured_weeks INTEGER NOT NULL DEFAULT 0,
-                    is_youth_prospect INTEGER NOT NULL DEFAULT 0,
-                    personal_best REAL,
-                    personal_best_display TEXT,
-                    doping_boost_weeks INTEGER NOT NULL DEFAULT 0,
-                    in_youth_squad INTEGER NOT NULL DEFAULT 0,
-                    fans INTEGER NOT NULL DEFAULT 0,
-                    coach_id INTEGER,
-                    nationality TEXT NOT NULL DEFAULT 'Italia',
-                    height_cm INTEGER NOT NULL DEFAULT 0,
-                    weight_kg INTEGER NOT NULL DEFAULT 0,
-                    gender TEXT NOT NULL DEFAULT ''
-                );
-
-                CREATE TABLE IF NOT EXISTS coaches (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    specialty TEXT,
-                    skills_json TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS staff (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    skill INTEGER NOT NULL,
-                    weekly_cost INTEGER NOT NULL,
-                    hired INTEGER NOT NULL,
-                    description TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS transactions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    week INTEGER NOT NULL,
-                    description TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    amount INTEGER NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS competition_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    week INTEGER NOT NULL,
-                    tier TEXT NOT NULL,
-                    season_phase TEXT NOT NULL,
-                    meet_name TEXT NOT NULL,
-                    weather TEXT NOT NULL,
-                    track_surface TEXT NOT NULL,
-                    total_prize_money INTEGER NOT NULL,
-                    total_prestige_gained INTEGER NOT NULL,
-                    travel_cost INTEGER NOT NULL,
-                    promoted_to TEXT,
-                    results_json TEXT NOT NULL,
-                    is_home INTEGER NOT NULL DEFAULT 0,
-                    spectators INTEGER NOT NULL DEFAULT 0,
-                    ticket_income INTEGER NOT NULL DEFAULT 0,
-                    team_standings_json TEXT NOT NULL DEFAULT '[]',
-                    player_team TEXT NOT NULL DEFAULT ''
-                );
-                """
-            )
+            v = current
+            while v in MIGRATIONS and current != SCHEMA_VERSION:
+                for table, columns in MIGRATIONS[v].items():
+                    for col_name, col_def in columns:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                v += 1
+            if reset:
+                for table in ("game_state", "athletes", "staff", "transactions",
+                              "competition_history", "coaches"):
+                    conn.execute(f"DROP TABLE IF EXISTS {table}")
+            for statement in _schema_statements():
+                conn.execute(statement)
+            # PRAGMA non accetta parametri: intero costante, mai input esterno
+            conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def has_saved_game(self) -> bool:
         with self._connect() as conn:
