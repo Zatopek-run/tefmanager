@@ -20,12 +20,20 @@ lotto di `docs/PLAN.md` che la realizza. Mappa dei documenti: `docs/AUDIT.md` (s
    processo). *Stato attuale: non conforme* — il controller usa `random.Random()` non seminato e nulla è salvato
    (`game_controller.py:110`), `views/dialogs.py:55` usa `hash()` → lotti 2.1, 2.2.
 4. **Ogni migrazione ha backup + transazione + test su fixture**; mai `DROP` di dati su una versione sconosciuta.
-   *Stato attuale: non conforme* — ALTER in autocommit, nessun backup, `DROP TABLE` su versioni ignote
-   (`database.py:393-415`) → lotti 1.1, 1.2.
+   *Stato attuale: conforme* (lotti 1.1 e 1.2, 2026-11-19). Prima di ogni migrazione `_init_schema` crea un backup
+   verificato con `Connection.backup()` in `<cartella dello slot>/backups/<slot>.v{N}.{timestamp-µs}.db.bak` (sempre
+   nuovo, mai riusato; si tengono i 3 più recenti per slot, potati solo dopo una migrazione riuscita; fuori dal
+   `glob("*.db")` degli slot, quindi non compaiono nell'elenco). La migrazione è una sola transazione
+   (`BEGIN IMMEDIATE`, `isolation_level=None`, `execute()` per statement: **mai `executescript`**, fa COMMIT impliciti;
+   `user_version` nella stessa transazione). Una versione non migrabile (più recente, v0/v1 con dati, nessuna tabella
+   utente in un file non vuoto) solleva `UnsupportedSaveVersion` prima di qualsiasi scrittura: **non si aggiunge più
+   alcun `DROP` di dati**. «DB nuovo» = file assente o di 0 byte. Il ripristino da backup è manuale (copiare il
+   `.db.bak` come `.db`): non c'è ancora una funzione nel gioco. Test: `tests/test_migrations.py`.
 5. **L'ordine del tick settimanale è quello di `docs/TICK.md`** e non si cambia senza aggiornare il documento (anche
    l'ordine delle chiamate all'RNG ne fa parte). *Stato attuale: conforme* (il documento descrive il codice di oggi).
 6. **I test di simulazione girano senza Qt**; gli smoke test GUI usano `QT_QPA_PLATFORM=offscreen`.
-   *Stato attuale: non conforme* — l'intera suite sta in `tests/test_game.py` e importa PyQt6 a riga 15 → lotto 5.1.
+   *Stato attuale: parzialmente conforme* — `tests/test_migrations.py` è senza Qt, ma i test di simulazione stanno
+   ancora in `tests/test_game.py`, che importa PyQt6 a riga 15 → lotto 5.1.
 7. **Niente modifiche non richieste in altre cartelle**: niente refactor, rename o «già che ci sono»; un difetto
    trovato per strada si annota in `docs/AUDIT.md`, non si corregge di nascosto. Una decisione di design resta
    all'utente (`docs/QUESTIONS.md`).
@@ -38,8 +46,9 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 80 test, OK, ~3,1 s
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # equivalente (verificato, 80 test)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 105 test, OK, ~3,6 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 84 test (80 + 4 sugli slot non supportati)
+PYTHONPATH=. python3 -m unittest tests.test_migrations -v                      # 21 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
 ```
 
@@ -64,7 +73,7 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (unico file, 80 test, importa PyQt6)
+tests/       test_game.py   (84 test, importa PyQt6)    test_migrations.py   (21 test, senza Qt: migrazioni e slot)
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN
 ```
 
@@ -93,7 +102,9 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
 - **Salvataggi.** `SCHEMA_VERSION = 9` (`database.py:42`; il valore precedente scritto qui, 7, era obsoleto). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
-  caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta).
+  caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni
+  sconosciute: vedi convenzione 4. `GameController.load_save_slot`/`load_game` non fanno salire le eccezioni (in PyQt6
+  un'eccezione che esce da uno slot termina il processo, exit 134): ritornano `False` e riempiono `last_load_error`.
 
 ## Gare in diretta (`views/race_viewer.py`, `views/race_3d.py`)
 

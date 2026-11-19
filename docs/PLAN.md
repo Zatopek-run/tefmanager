@@ -8,21 +8,23 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 ## Area 1 — Sicurezza dei salvataggi
 
-### Lotto 1.1 — Migrazione transazionale con backup
+### Lotto 1.1 — Migrazione transazionale con backup — ✅ FATTO (commit `5a21154`, 2026-11-19)
 - **Obiettivo:** una migrazione o riesce per intero o non cambia nulla; prima di toccare un file si crea il backup.
 - **File:** `models/database.py` (`_init_schema`), `tests/` (nuovo file `tests/test_migrations.py` senza Qt, vedi 5.1; fino ad allora in `test_game.py`).
 - **Rischio:** medio (tocca il percorso di apertura di ogni salvataggio). Ridurlo: cambiare solo `_init_schema`, lasciare invariate `MIGRATIONS` e le colonne.
 - **Verifica:** nuovi test su fixture: (a) v2…v8 → v9 con dati identici (riusa `_drop_columns_after`); (b) migrazione con ALTER che fallisce al secondo statement (monkeypatch `MIGRATIONS`): il file resta byte per byte uguale e riapribile, `user_version` invariato; (c) il backup esiste, è apribile con `sqlite3` ed è alla versione di partenza.
 - **Accettazione:** il test (b) riproduce l'esperimento E1 di `AUDIT.md` e passa; nessuna regressione nei test v2/v7/v8/v9 esistenti.
 - **Dipende da:** QUESTIONS 1 (politica di backup).
+- **Esito:** E1 riscritto come `tests/test_migrations.py::TestMigrationSafety::test_e1_failed_migration_leaves_original_untouched` (rosso sul codice precedente: hash del file cambiato; verde dopo). Backup in `saves/backups/` (non `nomefile.db.bak-v{N}` come ipotizzato: vedi QUESTIONS 1). Misure: apertura di un v9 invariata (0,92 ms contro 0,91), migrazione v2→v9 con backup 2,1 ms una tantum.
 
-### Lotto 1.2 — Versioni sconosciute: mai DROP silenzioso
+### Lotto 1.2 — Versioni sconosciute: mai DROP silenzioso — ✅ FATTO (commit `85778a9`, 2026-11-19)
 - **Obiettivo:** un salvataggio più nuovo (o v0/v1) viene rifiutato senza modifiche, con messaggio all'utente.
 - **File:** `models/database.py` (eccezione `UnsupportedSaveVersion`), `controllers/game_controller.py` (`load_save_slot`, `load_game`), `views/start_screen.py` (messaggio).
 - **Rischio:** basso.
 - **Verifica:** test: `user_version = SCHEMA_VERSION+1` → eccezione, file invariato (hash identico); `read_save_summary` continua a elencarlo.
 - **Accettazione:** il test E2 di `AUDIT.md` non cancella più i dati; il click su uno slot non crasha l'app (smoke test offscreen del controller con slot non supportato).
 - **Dipende da:** 1.1, QUESTIONS 1.
+- **Esito:** E2 è `tests/test_migrations.py::TestUnsupportedVersions::test_e2_unknown_versions_are_refused_not_wiped` (sul codice precedente la partita veniva cancellata: misurato). Smoke test del click: `tests/test_game.py::TestUnsupportedSlotLoading` (processo a parte, esce con -6 senza il fix). Messaggio con `QMessageBox.warning` e traceback in `setDetailedText`; nessun nuovo sottosistema di logging.
 
 ### Lotto 1.3 — Il tick non lascia stato a metà
 - **Obiettivo:** se `advance_week` solleva un'eccezione, lo stato in memoria resta quello precedente e nulla viene salvato.

@@ -1,6 +1,8 @@
 # AUDIT — stato reale del codice (sessione di ricognizione)
 
-Data: 2026-11-19 · branch `main` · working tree pulito all'inizio · **nessun file di codice modificato**.
+Data: 2026-11-19 · branch `main` · working tree pulito all'inizio · **nessun file di codice modificato** (nella sessione di ricognizione).
+
+> **Aggiornamento 2026-11-19 — lotti 1.1 e 1.2:** R1 e R2 sono **chiusi** (commit `5a21154`, `85778a9`); le righe sotto che descrivono migrazioni non atomiche, assenza di backup e `DROP` silenzioso sono lo stato *prima* di quei commit. Nuovi rilievi emersi: §7. Test: 105 (80 + 21 senza Qt + 4 smoke).
 Il codice descrive lo stato attuale; il README è stato confrontato con esso (sezione 4).
 
 ## 0. Come è stato verificato (e cosa no)
@@ -16,7 +18,8 @@ Il codice descrive lo stato attuale; il README è stato confrontato con esso (se
 | Esperimento | `import models.*` con `python3` di sistema senza PyQt6 | tutti OK **tranne** `models.race_export` (R6) |
 | Esperimento | Carriera 36 sett. con budget illimitato: cambi fase, verdetto, gare per fase | vedi Q1/Q2 |
 | Esperimento | Carriera in autopilota (nessuna azione del giocatore) | bancarotta alla sett. 14 (R3) |
-| **NON verificato** | App con mouse/tastiera reali; doppio click reale; comportamento di PyQt6 su eccezione non gestita in uno slot; build PyInstaller (**non eseguita**: scriverebbe `build/`, `dist/`, `.spec`); Godot (non installato nel PATH) | — |
+| Esperimento | Eccezione non gestita in uno slot PyQt6 (pulsante `clicked` → `raise`, offscreen, PyQt6 su Python 3.14.4) | **il processo termina**: traceback poi `Aborted (core dumped)`, exit 134 (SIGABRT). Con `UnsupportedSaveVersion` che esce da `load_save_slot` lo smoke test del lotto 1.2 muore con -6 |
+| **NON verificato** | App con mouse/tastiera reali; doppio click reale; build PyInstaller (**non eseguita**: scriverebbe `build/`, `dist/`, `.spec`); Godot (non installato nel PATH) | — |
 
 Gli esperimenti sono script in `/tmp/claude-1000/.../scratchpad/exp/` (fuori dal repo). `git status` dopo gli esperimenti: pulito.
 
@@ -93,7 +96,7 @@ Legenda: OK · PARZIALE · ASSENTE · DIVERGENTE.
 | Prototipo: 8 settimane, 2 gare, niente promozioni | PARZIALE | `entities.py:934-936`, `tabs.py:429,967-971` | Nulla ferma il gioco dopo la sett. 8: misurate gare alle sett. 12 e 16 (4 gare in 16 sett.) |
 | Dilemmi etici | PARZIALE | `generator.py:662-699`, `game_controller.py:767-836` | Due soli tipi; si bloccano se la finestra viene chiusa (R4); effetti nel controller con cifre scritte a mano; bug debito (R7) |
 | Mercato (agenti liberi) | PARZIALE | `game_controller.py:396-444`, `generator.py:346-372,656-659` | Solo acquisto; nessun incasso dalle cessioni; il pool è in memoria (si rigenera ricaricando) |
-| Migrazioni save v2→v6 | **DIVERGENTE** | `database.py:42,107-115,393-415` | Il codice è a **v9**; migra v2…v8→v9; nessun backup, non atomico, DROP su versioni ignote (R1, R2) |
+| Migrazioni save v2→v6 | **DIVERGENTE** (README) | `database.py:42,107-115`, `_init_schema` | Il codice è a **v9**; migra v2…v8→v9. *Prima dei lotti 1.1/1.2:* nessun backup, non atomico, DROP su versioni ignote. *Ora:* backup verificato + transazione + rifiuto delle versioni ignote (R1, R2 chiusi) |
 
 ## 3. Risposte alle 14 domande
 
@@ -145,8 +148,8 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 
 | # | Cat. | Rischio | Evidenza |
 | --- | --- | --- | --- |
-| R1 | S/C | **Migrazione non atomica**: un ALTER che fallisce a metà lascia colonne aggiunte e `user_version` vecchio; ogni apertura successiva solleva `duplicate column name` → salvataggio perso per l'utente. L'eccezione sale dal click di caricamento (`game_controller.py:260`); il comportamento di PyQt6 su eccezione in uno slot non è stato verificato | `database.py:393-415`; esperimento sintetico E1 |
-| R2 | S | **DROP silenzioso** di un salvataggio con versione non riconosciuta (più nuovo, v0, v1): aprire con un'app più vecchia cancella la partita senza avviso né backup | `database.py:404-415`; esperimento E2 |
+| R1 | S/C | **✅ CHIUSO (lotto 1.1, `5a21154`)** — test `test_migrations.py::TestMigrationSafety` (E1: `test_e1_failed_migration_leaves_original_untouched`, rosso prima, verde dopo). **Era anche un crash**: l'eccezione usciva dal click e PyQt6 termina il processo (exit 134, misurato). **Migrazione non atomica**: un ALTER che fallisce a metà lascia colonne aggiunte e `user_version` vecchio; ogni apertura successiva solleva `duplicate column name` → salvataggio perso per l'utente. L'eccezione sale dal click di caricamento (`game_controller.py:260`); il comportamento di PyQt6 su eccezione in uno slot non è stato verificato | `database.py:393-415`; esperimento sintetico E1 |
+| R2 | S/C | **✅ CHIUSO (lotto 1.2, `85778a9`)** — test `test_migrations.py::TestUnsupportedVersions` (E2) e `test_game.py::TestUnsupportedSlotLoading` (il click non uccide l'app). **Anche un crash**, come R1. **DROP silenzioso** di un salvataggio con versione non riconosciuta (più nuovo, v0, v1): aprire con un'app più vecchia cancella la partita senza avviso né backup | `database.py:404-415`; esperimento E2 |
 | R3 | B | **Economia insostenibile all'avvio**: Carriera −$4.432/sett., Prototipo −$2.291/sett.; in autopilota bancarotta alla sett. 14 (seed 3, una sola esecuzione). Il giocatore deve tagliare atleti per sopravvivere | `simulation.py:1224-1248`, `generator.py:410-413`; misura |
 | R4 | R | **Dilemma bloccato**: chiudere la finestra (Esc) non risolve `pending_dilemma`; nessuna vista lo riapre; `maybe_generate_dilemma` non ne crea altri finché è pendente → dilemmi finiti per sempre (misurato: 0 in 40 sett. contro 12). Resta salvato nel DB | `main_window.py:342-345`, `generator.py:667` |
 | R5 | R | **Non riproducibile**: RNG non seminato né salvato; stesso salvataggio → esiti diversi; si può ricaricare per ritirare i dadi (scouting, mercato, gara) | `game_controller.py:110`; esperimento |
@@ -168,7 +171,7 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 
 | Cosa | Pattern/ricerca | Esito |
 | --- | --- | --- |
-| Backup del `.db` | `backup\|shutil\|\.bak\|copyfile` in `database.py entities.py simulation.py controllers/ views/main_window.py` | nessun risultato |
+| Backup del `.db` | `backup\|shutil\|\.bak\|copyfile` in `database.py entities.py simulation.py controllers/ views/main_window.py` | nessun risultato *(al momento della ricognizione; dal lotto 1.1 c'è `_create_backup`)* |
 | Seed/stato RNG salvato | `rng_state\|getstate\|setstate\|seed` in `database.py entities.py simulation.py controllers/ views/main_window.py` | nessun risultato |
 | Protezione doppio click | `_advancing\|_busy\|debounce\|QTimer.singleShot.*advance` | nessun risultato |
 | Gara 60m | `60 ?m\|\b60m\b` in `models controllers views` | solo un commento a `race_viewer.py:62` |
@@ -180,5 +183,17 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 | Decadimento dei fan | assegnazioni a `fans` | solo `+=` (`simulation.py:901`) |
 | Rinnovo obiettivi a fine stagione | chiamanti di `create_season_objectives` | solo `game_controller.py:172` |
 | Re-apertura dilemma pendente | `pending_dilemma` in `views/` | nessun risultato |
-| Test di fallimento migrazione / backup | `def test_.*(migrat\|backup\|old_save…)` | solo percorsi di successo |
+| Test di fallimento migrazione / backup | `def test_.*(migrat\|backup\|old_save…)` | solo percorsi di successo *(ora: `tests/test_migrations.py`)* |
 | Modulo di bilanciamento | nessun file `balance`/`config` in `models/` | assente |
+
+## 7. Rilievi emersi nei lotti 1.1/1.2 (NON corretti: fuori scope)
+
+| # | Cosa | Dove |
+| --- | --- | --- |
+| N1 | `GameController(auto_create=True)` apre lo slot legacy dentro `__init__` (`_load_or_create_initial_state` → `self.db`) **senza** catturare `UnsupportedSaveVersion`/`SaveMigrationError`: con un legacy non apribile solleverebbe alla costruzione. Oggi non succede perché `main.py` usa `auto_create=False`. Anche `_create_fresh_state` apre `DatabaseManager(slot_path)` per i nuovi slot (file nuovo, rischio basso) | `game_controller.py:~138,~224` |
+| N2 | «File → Carica» (`main_window.py:127` → `controller.load_game`) ora non solleva più, ma mostra l'errore solo nella barra di stato (`status_message`), non in un dialog: il dialog c'è solo dalla start screen | `main_window.py:127` |
+| N3 | I backup di uno slot eliminato restano in `backups/` (orfani) e un nuovo slot con lo stesso nome li erediterebbe nella potatura (pattern per nome slot). Il ripristino è manuale: nessuna funzione nel gioco | `delete_save_slot`, `_prune_backups` |
+| N4 | Nella tabella degli slot il segnaposto «Salvataggio di versione più recente (vN)» / «…danneggiato» è troncato dalla larghezza della colonna; il testo intero è nel tooltip. Solo estetica | `start_screen.py` |
+| N5 | Le fixture di `test_migrations.py` hanno righe sentinella con `''` nelle colonne enum: si aprono con `DatabaseManager` ma **non** si caricano con `load_game` (`'' is not a valid Specialty`). I test di caricamento reale restano quelli di `test_game.py` | `tests/test_migrations.py` |
+| N6 | Comportamento cambiato per coerenza con «`state`/`_db` invariati»: se `load_game` ritorna `False` (slot senza partita salvata) `load_save_slot` ripristina il `_db` precedente; prima restava puntato al nuovo slot | `game_controller.py:load_save_slot` |
+| N7 | Su questa macchina `git` non ha `user.name`/`user.email`: i commit dei lotti 1.1/1.2 sono stati fatti passando l'identità con variabili d'ambiente per il solo comando (nulla scritto in `git config`) | — |

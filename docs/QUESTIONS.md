@@ -4,7 +4,16 @@ Ordinate per quanto bloccano lo sviluppo (la 1 blocca il primo lotto di `PLAN.md
 
 ---
 
-## 1. Che cosa fare di un salvataggio con versione sconosciuta, e quale policy di backup? — *blocca il lotto 1*
+## 1. Che cosa fare di un salvataggio con versione sconosciuta, e quale policy di backup? — ✅ DECISA il 2026-11-19 (lotti 1.1 e 1.2 fatti)
+
+**Decisione presa (risposta dell'utente):**
+- Una `user_version` né corrente né migrabile (più recente di 9, v0, v1) viene **rifiutata**: nessun `DROP`, nessuna scrittura, file intatto. Messaggi distinti: «versione più recente, aggiorna il gioco» e «non riconosciuto o non migrabile». Scartate le alternative A (DROP con conferma) e B (DROP dopo backup).
+- Un file è «DB nuovo» solo se assente o di 0 byte; un file non vuoto senza tabelle utente (`sqlite_%` escluso) si rifiuta.
+- Prima di **ogni** migrazione, backup verificato (apribile, `integrity_check` ok, `user_version` = versione di partenza), sempre nuovo: `saves/backups/<slot>.v{N}.{AAAAmmGG-HHMMSS-µs}.db.bak` (non `nomefile.db.bak-v{N}`, e non uno per versione di partenza). Si conservano i 3 più recenti per slot, eliminando i più vecchi solo dopo una migrazione riuscita; un tentativo fallito non cancella nulla.
+- `read_save_summary` continua a elencare gli slot non supportati (sola lettura, solo metadati affidabili) e un file non SQLite è marcato «danneggiato».
+- Il messaggio all'utente è un `QMessageBox.warning` con il traceback in `setDetailedText` e il percorso del backup se creato.
+
+Testo originale della domanda, per memoria:
 
 Oggi: `user_version` ≠ `SCHEMA_VERSION` e non in `MIGRATIONS` (v0, v1, o più nuova di 9) → `DROP TABLE` silenzioso (`database.py:404-415`, misurato). Hai già deciso «ogni migrazione ha backup + transazione»; non hai deciso i casi limite.
 - **Raccomandazione:** *rifiutare* l'apertura senza toccare il file, con messaggio chiaro («salvataggio di una versione più recente / non riconosciuto»); copia `nomefile.db.bak-v{N}` prima di ogni migrazione, conservandone una per versione di partenza; i v1 si trattano come non migrabili (rifiuto, non DROP). **DA CONFERMARE:** nessun utente ha salvataggi v0/v1 che vuoi ancora azzerare.
