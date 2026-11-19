@@ -34,6 +34,10 @@ const WIDE_CUT_BEFORE_GUN_100M: float = 0.4
 const WIDE_CUT_BEFORE_GUN_OVAL: float = 2.2   # nei 400m lo start largo si vede piu' a lungo
 const START_WIDE_HOLD: float = 1.7        # 100m: la ripresa larga resta fino a questo tempo di gara
 const FINISH_CAM_Z: float = 16.0
+const REPLAY_CAM_AHEAD: float = 7.0      # ralenti: la camera sta cosi' oltre la linea del traguardo
+const REPLAY_CAM_Y: float = 3.0       # alta abbastanza da guardare sopra fotografi e giudici (z 12-17, alti ~1,7 m)
+const REPLAY_CAM_Z: float = 19.0
+const REPLAY_FOV: float = 22.0
 # Inquadratura adattiva del carrello alto:
 const FRAME_WIDTH_BASE: float = 14.4      # larghezza (m) inquadrata dal carrello con fov TRACK_FOV a distanza base
 const FRAME_MARGIN: float = 8.0      # margine: la corsia piu' vicina alla camera appare piu' larga (prospettiva)
@@ -64,6 +68,8 @@ var _o_far: Camera3D
 var _o_curve: Camera3D
 # concorsi (Salto in Lungo)
 var _field_cam: Camera3D
+# ralenti dell'arrivo (corse)
+var _replay_cam: Camera3D
 
 
 func _ready() -> void:
@@ -92,6 +98,9 @@ func _ready() -> void:
 	_o_far = _make_static_cam(Vector3(-s * 0.5, 5.0, 34.0), Vector3(-s * 0.5, 0.8, -78.0), 9.0, 600.0)   # teleobiettivo dall'altro lato
 	_o_curve = _make_static_cam(Vector3(-s - 72.0, 18.0, -36.8), Vector3(-s - 30.0, 0.8, -36.8), 30.0, 150.0)
 	_field_cam = _make_static_cam(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), 34.0, 80.0)
+	# Ralenti: teleobiettivo basso a bordo pista oltre il traguardo, guarda i corridori che arrivano (3/4 frontale).
+	_replay_cam = _make_static_cam(Vector3(TrackGeometry.FINISH_X + REPLAY_CAM_AHEAD, REPLAY_CAM_Y, REPLAY_CAM_Z),
+		Vector3(TrackGeometry.FINISH_X - 20.0, 1.0, TRACK_Z_CENTER), REPLAY_FOV, 120.0)
 
 	RaceController.race_loaded.connect(func(_r: Array[RunnerData], _i: Dictionary) -> void: reset())
 	reset()
@@ -165,7 +174,9 @@ func _process(_delta: float) -> void:
 
 
 func _direct() -> void:
-	if _field:
+	if RaceController.state == RaceController.State.REPLAY and not _field:
+		_direct_replay()
+	elif _field:
 		_direct_field()
 	elif _oval:
 		_direct_oval()
@@ -175,6 +186,12 @@ func _direct() -> void:
 
 func _direct_field() -> void:
 	_apply(_field_cam)
+
+
+## Ralenti: camera fissa bassa vicino al traguardo, mira esatta sul primo (come le altre camere che seguono la gara).
+func _direct_replay() -> void:
+	_replay_cam.look_at(_leader_world_position() + Vector3(0.0, 0.9, 0.0), Vector3.UP)
+	_apply(_replay_cam)
 
 
 ## Regia dei 100m, scelta in base allo stato della gara.
@@ -266,7 +283,7 @@ func _update_side_cam() -> void:
 	var width_needed: float = 2.0 * maxf(a, spread - a) + FRAME_MARGIN
 	var s_goal: float = clampf(sqrt(width_needed / FRAME_WIDTH_BASE), 1.0, FRAME_PULLBACK_MAX)
 	var fov_goal: float = clampf(TRACK_FOV * width_needed / (FRAME_WIDTH_BASE * s_goal), TRACK_FOV, FRAME_FOV_MAX)
-	var weight: float = 1.0 - exp(-3.0 * get_process_delta_time() * RaceController.time_scale)
+	var weight: float = 1.0 - exp(-3.0 * get_process_delta_time() * RaceController.play_speed())
 	_frame_scale = lerpf(_frame_scale, s_goal, weight)
 	_frame_fov = lerpf(_frame_fov, fov_goal, weight)
 	var aim: Vector3 = leader

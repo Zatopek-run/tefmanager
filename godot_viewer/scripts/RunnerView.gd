@@ -197,7 +197,7 @@ func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
 		if _posture_mod != null:
 			_posture_mod.active_weight = 0.0
 		_play(&"Idle")
-		_player.speed_scale = RaceController.time_scale
+		_player.speed_scale = RaceController.play_speed()
 		return
 
 	# Inclinazione in avanti nella fase di spinta fuori dai blocchi: si raddrizza gradualmente sui primi ~16 m.
@@ -228,10 +228,10 @@ func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
 		&"Jog_Fwd": stride = STRIDE_JOG
 		&"Walk": stride = STRIDE_WALK
 	if _current_anim == &"Crouch_Idle" or _current_anim == &"Idle":
-		_player.speed_scale = RaceController.time_scale
+		_player.speed_scale = RaceController.play_speed()
 	else:
 		var length: float = _player.get_animation(_current_anim).length
-		_player.speed_scale = clampf(s / stride * length * RaceController.time_scale, 0.25, 8.0)
+		_player.speed_scale = clampf(s / stride * length * RaceController.play_speed(), 0.25, 8.0)
 
 
 func _play(anim: StringName, blend: float = BLEND_TIME) -> void:

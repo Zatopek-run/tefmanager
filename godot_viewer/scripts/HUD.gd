@@ -71,6 +71,7 @@ var _result_rows: Array[Dictionary] = []  # {box, bg, place_bg, place, stripe, n
 ## Classifica finale a tutto schermo (a gara conclusa), come nelle dirette TV: tutti i corridori, ritirati compresi.
 const FINAL_MAX_ROWS: int = 12
 var _final_panel: PanelContainer
+var _replay_panel: PanelContainer   # etichetta «RALENTI» in alto al centro durante il replay dell'arrivo
 var _final_event: Label
 var _final_title: Label
 var _final_rows: Array[Dictionary] = []  # {box, place_bg, place, stripe, name, team, lane, value}
@@ -85,6 +86,7 @@ func _ready() -> void:
 	_build_banner_pill()
 	_build_controls_bar()
 	_build_tv_graphics()
+	_build_replay_badge()
 	RaceController.race_loaded.connect(_on_race_loaded)
 	_on_race_loaded(RaceController.runners, RaceController.info)
 
@@ -198,6 +200,9 @@ func _update_event_bug() -> void:
 		RaceController.State.RUNNING:
 			_bug_dot.color = MAGENTA
 			_set_text(_bug_state, "LIVE")
+		RaceController.State.REPLAY:
+			_bug_dot.color = AMBER
+			_set_text(_bug_state, "RALENTI")
 		RaceController.State.FINISHED:
 			_bug_dot.color = CYAN
 			_set_text(_bug_state, "FINALE")
@@ -517,6 +522,27 @@ func _build_tv_graphics() -> void:
 	_build_final_board()
 
 
+func _build_replay_badge() -> void:
+	_replay_panel = PanelContainer.new()
+	_replay_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_replay_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_replay_panel.offset_top = 22.0
+	_replay_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_replay_panel.add_theme_stylebox_override("panel", _flat_box(MAGENTA, Color.WHITE, 0, 0, 0, 3, 22, 22, 7, 7, 3))
+	var row: HBoxContainer = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	_replay_panel.add_child(row)
+	var title: Label = _styled_label(24, Color.WHITE, true, true)
+	title.text = "RALENTI"
+	var sub: Label = _styled_label(13, Color(1.0, 0.86, 0.93), true)
+	sub.text = "ARRIVO"
+	sub.size_flags_vertical = Control.SIZE_SHRINK_END
+	row.add_child(title)
+	row.add_child(sub)
+	_replay_panel.visible = false
+	$Root.add_child(_replay_panel)
+
+
 func _build_final_board() -> void:
 	_final_panel = PanelContainer.new()
 	_final_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
@@ -686,6 +712,7 @@ func _update_tv_graphics() -> void:
 	_result_panel.visible = rc.state != rc.State.FINISHED and leader_done and not rc.is_field(rc.event_kind) \
 		and rc.race_time > rc.live_order[0].final_time + 1.0
 	_update_final_board()
+	_replay_panel.visible = rc.state == rc.State.REPLAY
 	if _result_panel.visible:
 		_set_text(_result_title, "RISULTATO NON UFFICIALE" if rc.state == rc.State.RUNNING else "ORDINE D'ARRIVO")
 		var shown: int = 0

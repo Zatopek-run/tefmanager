@@ -62,6 +62,7 @@ func _process(_delta: float) -> bool:
 		_wait -= 1
 		if _wait == 0:
 			rc.time_scale = float(CASES[_case].y)
+			rc.replay_enabled = false   # qui si misura la regia dal vivo; il ralenti ha verify_replay.gd
 			rc.load_race(CASES[_case].x)
 			rc.start()
 		return false

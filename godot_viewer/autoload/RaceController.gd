@@ -14,7 +14,15 @@ signal gun_fired()
 signal runner_finished(runner: RunnerData)
 signal race_finished(results: Array[RunnerData])
 
-enum State { IDLE, LOADED, COUNTDOWN, RUNNING, FINISHED }
+enum State { IDLE, LOADED, COUNTDOWN, RUNNING, REPLAY, FINISHED }
+
+## Ralenti dell'arrivo (solo corse): finita la gara rivede gli ultimi secondi del vincitore a velocita' ridotta, da
+## un'altra inquadratura. E' solo regia: i risultati sono gia' calcolati, il tempo di gara viene riavvolto e le
+## posizioni si rileggono dalla stessa curva (RaceMotion); `finished` e i segnali non vengono toccati durante il replay.
+## Valori allineati al replay della vista PyQt (`REPLAY_LOOKBACK`, `REPLAY_SPEED` in race_viewer.py).
+const REPLAY_SPEED: float = 0.35
+const REPLAY_LOOKBACK: float = 3.0   # secondi di gara prima del traguardo del vincitore da cui riparte
+const REPLAY_AFTER: float = 1.8      # secondi dopo il traguardo del vincitore a cui si ferma
 
 const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo (default)
 ## Preparazione piu' lunga per i 100m, come nella diretta TV: apertura larga, lungo primo piano sui blocchi, sparo.
@@ -61,6 +69,10 @@ var clock: float = 0.0
 var race_time: float = 0.0
 var display_time: float = 0.0           # cronometro: si blocca sul tempo del vincitore
 var time_scale: float = 1.0
+var replay_enabled: bool = true       # false: niente ralenti (test, o chi vuole andare dritto al finale)
+var _skip_replay: bool = false        # "Salta alla fine" salta anche il ralenti
+var _replay_start: float = 0.0
+var _replay_end: float = 0.0
 
 var _finished_count: int = 0
 var _finisher_count: int = 0       # corridori che arrivano al traguardo (esclusi i ritirati)
@@ -129,6 +141,7 @@ func load_race(race_id: int) -> bool:
 	display_time = 0.0
 	_finished_count = 0
 	_announced = false
+	_skip_replay = false
 	state = State.LOADED
 	race_loaded.emit(runners, info)
 	return true
@@ -143,6 +156,10 @@ func start() -> void:
 
 ## Salta alla fine: porta il tempo oltre l'ultimo arrivo (i risultati non cambiano).
 func skip_to_end() -> void:
+	if state == State.REPLAY:
+		_end_replay()
+		return
+	_skip_replay = true   # "Salta alla fine" porta dritti al finale, senza ralenti
 	if state == State.COUNTDOWN:
 		state = State.RUNNING
 		gun_fired.emit()
@@ -194,6 +211,9 @@ func finish_hold() -> float:
 
 
 func _process(delta: float) -> void:
+	if state == State.REPLAY:
+		_process_replay(delta)
+		return
 	if state != State.COUNTDOWN and state != State.RUNNING:
 		return
 	if state == State.COUNTDOWN:
@@ -212,14 +232,27 @@ func _process(delta: float) -> void:
 	_update_order()
 	display_time = minf(race_time, _winner_time) if _finished_count > 0 else race_time
 	if state == State.RUNNING and race_time >= _last_finish_time + AFTER_FINISH_SECONDS:
-		state = State.FINISHED
+		if replay_enabled and not _skip_replay:
+			_begin_replay()
+		else:
+			state = State.FINISHED
+
+
+## Posizione e velocita' di ogni corridore a `race_time` (funzione pura del tempo: si puo' anche riavvolgere).
+func _apply_motion() -> void:
+	for r: RunnerData in runners:
+		var s: Vector2
+		if r.dnf:
+			s = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time, event_kind)
+		else:
+			s = RaceMotion.state_at(race_time, r.reaction_time, r.final_time, event_kind)
+		r.distance = s.x
+		r.speed = s.y
 
 
 func _update_runners() -> void:
+	_apply_motion()
 	for r: RunnerData in runners:
-		var s: Vector2 = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time, event_kind) if r.dnf 			else RaceMotion.state_at(race_time, r.reaction_time, r.final_time, event_kind)
-		r.distance = s.x
-		r.speed = s.y
 		if not r.dnf and not r.finished and race_time >= r.final_time:
 			r.finished = true
 			_finished_count += 1
@@ -227,6 +260,51 @@ func _update_runners() -> void:
 	if not _announced and _finished_count == _finisher_count:
 		_announced = true
 		race_finished.emit(_sorted_by_place())
+
+
+## Velocita' di riproduzione effettiva: quella scelta dall'utente (1x-8x), oppure REPLAY_SPEED nel ralenti.
+## Anche le animazioni dei corridori la usano, altrimenti le gambe andrebbero a ritmo pieno al rallentatore.
+func play_speed() -> float:
+	return REPLAY_SPEED if state == State.REPLAY else time_scale
+
+
+func _begin_replay() -> void:
+	state = State.REPLAY
+	_replay_start = maxf(_winner_time - REPLAY_LOOKBACK, 0.0)
+	_replay_end = _winner_time + REPLAY_AFTER
+	race_time = _replay_start
+	clock = gun_at + race_time
+	_update_replay_frame()
+
+
+func _process_replay(delta: float) -> void:
+	race_time += delta * REPLAY_SPEED
+	clock = gun_at + race_time
+	if race_time >= _replay_end:
+		_end_replay()
+		return
+	_update_replay_frame()
+
+
+## Durante il ralenti `finished` e' solo un riflesso del tempo riavvolto: nessun segnale, nessun contatore.
+func _update_replay_frame() -> void:
+	_apply_motion()
+	for r: RunnerData in runners:
+		r.finished = (not r.dnf) and race_time >= r.final_time
+	_update_order()
+	display_time = minf(race_time, _winner_time) if live_order[0].finished else race_time
+
+
+## Fine del ralenti (naturale o con "Salta alla fine"): si ripristina lo stato definitivo della gara.
+func _end_replay() -> void:
+	race_time = _last_finish_time + AFTER_FINISH_SECONDS
+	clock = gun_at + race_time
+	_apply_motion()
+	for r: RunnerData in runners:
+		r.finished = not r.dnf
+	_update_order()
+	display_time = _winner_time
+	state = State.FINISHED
 
 
 ## Classifica live: chi ha gia' tagliato il traguardo per ordine di arrivo, poi gli altri per distanza.

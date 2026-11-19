@@ -161,6 +161,20 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   polso è `HAND_Y` = 0,20 m perché le dita stanno ~0,17 m oltre l'osso `hand`; le ossa non comandate (clavicole, dita)
   tornano a riposo a ogni aggiornamento. `tests/verify_pose.gd` (headless) legge le ossa **dentro `skeleton_updated`**
   (dopo l'IK: da `_process` si legge la posa pre-IK, che mente).
+- **Ralenti dell'arrivo** (solo corse; `RaceController.State.REPLAY` tra `RUNNING` e `FINISHED`). Finita la gara rivede gli
+  ultimi secondi del vincitore (`REPLAY_LOOKBACK` 3 s prima del traguardo, fino a `REPLAY_AFTER` 1,8 s dopo) a
+  `REPLAY_SPEED` 0,35x, come il replay della vista PyQt. È solo regia: il tempo di gara viene riavvolto e le posizioni si
+  rileggono da `RaceMotion` (funzione pura del tempo); durante il ralenti `finished` è un riflesso del tempo riavvolto,
+  **senza segnali né contatori** (`runner_finished` e `race_finished` restano una volta sola), e a fine ralenti
+  (`_end_replay`) lo stato definitivo è ripristinato. Le animazioni dei corridori usano `RaceController.play_speed()`
+  (non `time_scale`) perché le gambe vadano al rallentatore. Camera dedicata `_replay_cam` in `BroadcastCameras` (alta
+  3 m, z 19, sopra fotografi e giudici che stanno a z 12–17: più bassa o più vicina viene coperta), etichetta «RALENTI» in
+  alto al centro nell'HUD. Esc («Salta alla fine») salta anche il ralenti; `replay_enabled = false` lo disattiva. Gli
+  script di test che aspettano `FINISHED` dal vivo (`verify_race`, `verify_camera`, `screenshots`) lo disattivano:
+  `tests/verify_replay.gd` (headless, passo fisso con `set_process(false)` + `_process(dt)`) lo verifica.
+- **Classifica finale.** A gara conclusa (`FINISHED`) l'HUD Godot mostra a centro schermo la classifica completa
+  (`_update_final_board`); `AUTOQUIT_DELAY` è 8 s perché resti leggibile. Alla chiusura di Godot il dialog PyQt mostra
+  `views/results_board.py` (`ResultsBoardWidget`) invece di una pagina vuota; legge solo gli `EventStanding` del modello.
 - **1500m** (`TrackGeometry.pose_1500m`): partenza in piedi (niente blocchi, `RaceController.uses_blocks`), anello
   unico con coordinata riferita alla corsia 1 (3,75 giri); la corsia sorteggiata dà solo uno scostamento radiale
   iniziale (partenza a linea curva) che rientra alla corda tra 10 e 90 m (`pack_lat` ≤ 2,1 m). Regia con camere

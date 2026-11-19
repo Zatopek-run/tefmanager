@@ -59,6 +59,7 @@ func _start_race(race_id: int) -> bool:
 		_connected = true
 		rc.runner_finished.connect(func(r: RunnerData) -> void: _finish_order.append(r.athlete_name))
 		rc.race_finished.connect(func(_res: Array[RunnerData]) -> void: _announced = true)
+	rc.replay_enabled = false   # il ralenti ha il suo test (verify_replay.gd): qui si verifica la gara dal vivo, piu' in fretta
 	rc.time_scale = 8.0 if rc.is_field(rc.event_kind) else 4.0
 	rc.start()
 	return true

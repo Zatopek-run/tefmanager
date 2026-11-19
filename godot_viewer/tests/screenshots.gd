@@ -23,6 +23,7 @@ func _process(_delta: float) -> bool:
 		if args.size() > 0:
 			_out_dir = args[0]
 		DirAccess.make_dir_recursive_absolute(_out_dir)
+		rc.replay_enabled = false  # gli scatti sono ai tempi di gara dal vivo (state RUNNING)
 		_scene = (load("res://scenes/Stadium.tscn") as PackedScene).instantiate()
 		root.add_child(_scene)
 		if args.size() > 1 and args[1] == "close":  # primo piano per giudicare il modello dei corridori
