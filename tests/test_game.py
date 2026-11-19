@@ -502,6 +502,14 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
         self.assertTrue(all(forms[3][i] >= forms[2][i] for i in common))
         self.assertTrue(any(forms[3][i] > forms[2][i] for i in common))
 
+    def test_start_screen_shows_display_names_of_saved_tiers(self) -> None:
+        from views.start_screen import tier_label
+
+        self.assertEqual(tier_label("Provinciale"), "Fase regionale CdS")
+        self.assertEqual(tier_label("Internazionale"), "Finale Oro / Coppa Europa")
+        self.assertEqual(tier_label("—"), "—")  # salvataggio illeggibile: nessuna eccezione
+        self.assertEqual(tier_label(""), "")
+
     def test_tier_display_names_do_not_change_stored_values(self) -> None:
         """Q18: i nomi visualizzati sono nuovi, ma il `value` (salvato nel DB, chiave dei prezzi) resta quello di prima."""
         from models.entities import TICKET_PRICE
@@ -1540,6 +1548,35 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertIsNone(s.event_lineup[events[2]])
             self.assertEqual(third.currentData(), None)
             tab.close()
+
+    def test_athlete_card_shows_age_band_and_contract(self) -> None:
+        """La scheda atleta mostra «Fascia d'età» e «Contratto» (Q17, Q22) per Prima Squadra, vivaio e scadenza in corso."""
+        from PyQt6.QtWidgets import QLabel
+
+        from views.athlete_dialog import AthleteDetailDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "card.db"), rng=random.Random(6))
+            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            s = ctrl.state
+            senior, expiring, kid = s.main_squad[0], s.main_squad[1], s.main_squad[2]
+            kid.in_youth_squad, kid.contract_end_season, kid.age = True, 0, 16
+            senior.age, senior.contract_end_season = 19, s.season_number + 2
+            expiring.contract_end_season = s.season_number
+            texts = {}
+            for tag, a in (("senior", senior), ("expiring", expiring), ("kid", kid)):
+                dlg = AthleteDetailDialog(ctrl, a.id)
+                dlg.refresh()
+                labels = [w.text() for w in dlg.findChildren(QLabel)]
+                self.assertIn("Fascia d'età", labels, tag)
+                self.assertIn("Contratto", labels, tag)
+                texts[tag] = labels
+                dlg.close()
+            self.assertIn("Juniores", texts["senior"])
+            self.assertIn(f"fino alla stagione {s.season_number + 2}", texts["senior"])
+            self.assertIn(f"fino alla stagione {s.season_number} (rinnovo automatico)", texts["expiring"])
+            self.assertIn("Allievi", texts["kid"])
+            self.assertIn("—", texts["kid"])  # il vivaio non ha contratto
 
 
 class TestRaceExport(unittest.TestCase):

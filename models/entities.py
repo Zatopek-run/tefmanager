@@ -414,6 +414,13 @@ EVENTS: Dict[str, EventDefinition] = {
     ),
 }
 
+# Curva punteggio -> tempo dell'800m (Q16): secondi = a - norm * b, minimo = record del mondo (M Rudisha 2012,
+# F Kratochvilova 1983). Le ancore (score 42/56/84: M 2:05 / 1:58,5 / 1:45,5, F 2:21 / 2:14,7 / 2:02) sono STIME.
+MIDDLE_800M_CURVE: Dict[str, Tuple[float, float, float]] = {  # sesso -> (a, b, minimo)
+    "M": (144.5, 46.4, 100.91),
+    "F": (160.0, 45.2, 113.28),
+}
+
 VERTICAL_SLICE_EVENTS: List[str] = ["100m", "Salto in Lungo", "1500m"]
 
 

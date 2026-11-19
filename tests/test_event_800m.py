@@ -14,7 +14,7 @@ from models.entities import DNF_MARK, EVENTS, Specialty
 from models.simulation import _score_to_mark, body_modifier, simulate_competition, upgrade_legacy_state
 from tests.test_assignments import make_state
 
-WR = {"M": 100.91, "F": 113.28}  # Rudisha 2012, Kratochvílová 1983 (verificati con ricerca web il 2026-11-19)
+WR = {"M": 100.91, "F": 113.28}  # Rudisha 2012, Kratochvílová 1983 (verificati con ricerca web il 2026-11-19); indipendenti dalla costante
 
 
 def mark(score: float, gender: str, event: str = "800m") -> float:

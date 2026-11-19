@@ -197,3 +197,10 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 | N5 | Le fixture di `test_migrations.py` hanno righe sentinella con `''` nelle colonne enum: si aprono con `DatabaseManager` ma **non** si caricano con `load_game` (`'' is not a valid Specialty`). I test di caricamento reale restano quelli di `test_game.py` | `tests/test_migrations.py` |
 | N6 | Comportamento cambiato per coerenza con «`state`/`_db` invariati»: se `load_game` ritorna `False` (slot senza partita salvata) `load_save_slot` ripristina il `_db` precedente; prima restava puntato al nuovo slot | `game_controller.py:load_save_slot` |
 | N7 | Su questa macchina `git` non ha `user.name`/`user.email`: i commit dei lotti 1.1/1.2 sono stati fatti passando l'identità con variabili d'ambiente per il solo comando (nulla scritto in `git config`) | — |
+
+## Difetti annotati il 2026-11-19 (non corretti, convenzione 7)
+
+- **Separatore delle migliaia incoerente.** Le viste formattano con `:,` (`1,200`), i testi del generatore (dilemmi, obiettivi) usano il punto (`€8.000`). Visto durante il passaggio `$` → `€` (Q22), non toccato.
+- **Rimborso spese mai rivisto al rinnovo.** Il rinnovo automatico dei contratti (Q22) non ricalcola `weekly_wage` (resta R14).
+- **Riferimenti `file:riga` di `TICK.md` ormai spostati** dopo le modifiche del 2026-11-19 (`simulation.py` è cresciuto): valgono come ordine dei passi, non come numeri di riga.
+- **`verify_pose.gd` in headless** stampa `ERROR: Parameter "material" is null` (rendering fittizio) dopo «posa ai blocchi: OK»; non confrontato con una versione precedente.

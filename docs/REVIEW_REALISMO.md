@@ -9,7 +9,7 @@ Il gioco è più fedele di quanto sembri: il modello «1 atleta per evento, 8 so
 I difetti reali sono pochi e mirati:
 1. **La periodizzazione «Gara (Picco)» non dà alcun vantaggio in gara** (solo ×0,90 di crescita e +2 fatica): è penalizzante, il contrario del concetto (c).
 2. **Cross e Indoor non hanno contenuto proprio**: niente campestre, niente 60 m; si corre il 100 m indoor (c).
-3. **I concorsi mostrano 4 prove**; con 8 partecipanti il regolamento ne prevede 6 (c, solo vista).
+3. ~~**I concorsi mostrano 4 prove**~~ → **fatto il 2026-11-19**: `FIELD_ROUNDS = 6` (con 8 partecipanti o meno il regolamento prevede 6 prove a testa).
 4. Il set di discipline lascia il **mezzofondo con un solo evento** (manca l'800 m).
 5. «$», «Provinciale» e stipendi da professionisti stonano con una ASD laziale (b/c, costo minimo).
 

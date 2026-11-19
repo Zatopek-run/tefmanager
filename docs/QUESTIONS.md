@@ -164,7 +164,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q18 — Nomi e struttura dei meeting
+## Q18 — Nomi e struttura dei meeting — ✅ FATTA il 2026-11-19
+
+**Fatto:** `TIER_DISPLAY_NAMES` / `CompetitionTier.display_name` in tutti i testi mostrati, schermata di avvio compresa; il `value` dell'enum (salvato nel DB) non cambia. Le voci già scritte nel libro mastro e nelle notizie restano con il nome vecchio.
 
 **Raccomandazione.** Dare nomi reali a ogni slot di gara mappando i livelli: Provinciale → «Fase regionale CdS», Regionale → «Finale Bronzo», Nazionale → «Finale Argento», Internazionale → «Finale Oro / Coppa Europa». Solo stringhe in `entities.TIER_CONFIG`.
 
@@ -174,7 +176,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q19 — Punteggi tabellari WA/FIDAL come valore derivato
+## Q19 — Punteggi tabellari WA/FIDAL come valore derivato — ⏸ RINVIATA il 2026-11-19
+
+**Rinviata su scelta dell'utente:** nessun `models/balance.py` (nome ancora «DA CONFERMARE», QUESTIONS 4) e nessun coefficiente WA finché non si conferma la licenza. Non fatto nemmeno l'allineamento del WR F 1500 m a 3:48,68.
 
 **Raccomandazione.** Tenere la scala interna 42-84 come variabile latente. Aggiungere i punteggi tabellari WA (edizione 2025) come valore derivato, calcolato da una funzione pura `score_to_table_points(event, mark)`. Usarli solo per: spareggio (coincide con Q5), obiettivi stagionali, scheda atleta. NON usarli per i punti squadra (che restano 8...1).
 
@@ -187,7 +191,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q20 — DQ staffette 4x400
+## Q20 — DQ staffette 4x400 — ✅ FATTA il 2026-11-19 (valore PROVVISORIO)
+
+**Fatto:** `RELAY_DQ_MULT` (4x100m ×1,0; 4x400m ×0,5). **Il 0,5 è provvisorio**: da confermare l'entità.
 
 **Raccomandazione.** Ridurre la probabilità di DQ per la 4x400 rispetto alla 4x100. Nella realtà, il cambio fuori zona nella 4x400 è più raro: i frazionisti arrivano più lenti e il cambio non è lanciato come nella 4x100. **DA CONFERMARE:** l'entità della differenza; la zona di cambio è di 20 m in entrambe le staffette (nella 4x100 con in più 10 m di pre-zona), quindi non è una differenza di zona.
 
@@ -197,7 +203,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q21 — Effetto della fase «Gara (Picco)»
+## Q21 — Effetto della fase «Gara (Picco)» — ✅ FATTA il 2026-11-19 (valore PROVVISORIO)
+
+**Fatto:** `PEAK_FORM_BONUS` = +6 al bersaglio di forma, solo nel tick che precede una settimana di gara (la gara usa la forma calcolata lì), senza nuove chiamate all'RNG. **Il +6 è provvisorio** (resta sotto il +9 dello Scarico). Non fatto: il suggerimento in UI del mesociclo.
 
 **Raccomandazione.** Dare a `GARA` un effetto positivo sulla forma in settimana di gara: bonus al bersaglio di forma (non al punteggio direttamente). Oggi la fase «Gara» è penalizzante (solo ×0,90 di crescita e +2 fatica), il contrario del concetto di tapering/picco. Opzionale: suggerire in UI il mesociclo coerente col calendario (2× Specifica → Gara → Scarico).
 

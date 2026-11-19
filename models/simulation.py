@@ -35,6 +35,7 @@ from models.entities import (
     GYM_UPKEEP_PER_LEVEL,
     CONTRACT_MAX_SEASONS,
     INTERNATIONAL_MIN_AGE,
+    MIDDLE_800M_CURVE,
     MAX_INDIVIDUAL_EVENTS,
     PEAK_FORM_BONUS,
     RELAY_DQ_MULT,
@@ -518,13 +519,9 @@ def _score_to_mark(
         return seconds, f"{seconds:.2f}s"
 
     if event_def.name == "800m":
-        # Rette tarate sugli stessi livelli di gioco del 1500m; le ancore sono STIME (nessun dato FIDAL a portata):
-        # M 42 -> 2:05, 56 -> 1:58,5, 84 -> 1:45,5; F 42 -> 2:21, 56 -> 2:14,7, 84 -> 2:02. Tetto: record del mondo.
-        total_seconds = (
-            max(113.28, 160.0 - norm * 45.2)
-            if gender == "F"
-            else max(100.91, 144.5 - norm * 46.4)
-        )
+        # Retta tarata sugli stessi livelli di gioco del 1500m; coefficienti e ancore (STIME) in MIDDLE_800M_CURVE.
+        a, b, floor = MIDDLE_800M_CURVE["F" if gender == "F" else "M"]
+        total_seconds = max(floor, a - norm * b)
         mins = int(total_seconds // 60)
         secs = total_seconds % 60
         return total_seconds, f"{mins}:{secs:05.2f}"

@@ -23,8 +23,16 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.database import SaveSlotInfo
-from models.entities import GAME_MODE_OPTIONS
+from models.entities import GAME_MODE_OPTIONS, CompetitionTier
 from models.generator import LAZIO_PROVINCES
+
+
+def tier_label(raw: str) -> str:
+    """Nome mostrato del livello a partire dal testo salvato nel DB (Q18); un valore sconosciuto resta com'è."""
+    try:
+        return CompetitionTier(raw).display_name
+    except ValueError:
+        return raw
 
 
 class StartScreen(QWidget):
@@ -253,7 +261,7 @@ class StartScreen(QWidget):
             status_tag = " · SOCIETÀ FALLITA" if latest.bankrupt else ""
             self.cont_club.setText(latest.team_name)
             self.cont_meta.setText(
-                f"Cat. {latest.tier}  •  {latest.mode_label}  •  "
+                f"Cat. {tier_label(latest.tier)}  •  {latest.mode_label}  •  "
                 f"Stagione {latest.season_number}, Sett. {latest.week} ({latest.in_game_date:%d %b %Y})  •  "
                 f"Bilancio €{latest.budget:,}  ·  Prestigio {latest.prestige}{status_tag}"
             )
@@ -266,7 +274,7 @@ class StartScreen(QWidget):
             vals = [
                 s.team_name,
                 mode_short,
-                s.tier,
+                tier_label(s.tier),
                 f"S{s.season_number}·W{s.week}",
                 f"€{s.budget:,}",
                 s.updated_at.strftime("%d/%m %H:%M"),
