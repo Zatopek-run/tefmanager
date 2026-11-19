@@ -1753,17 +1753,8 @@ class Track3DWidget(TrackRaceWidget):
         if h_info is not None:
             hx, hy, r, depth = h_info
             if is_player:
-                tri_h = max(9.0, min(16.0, r * 1.45))
-                tri_w = tri_h * 0.9
                 tip_y = hy - r * 1.35 - 4.0
-                p.setPen(QPen(QColor("#0f172a"), 1.3))
-                p.setBrush(QColor("#facc15"))
-                p.drawPolygon(QPolygonF([
-                    QPointF(hx - tri_w, tip_y - tri_h),
-                    QPointF(hx + tri_w, tip_y - tri_h),
-                    QPointF(hx, tip_y),
-                ]))
-                p.setPen(Qt.PenStyle.NoPen)
+                tri_h = 0.0
                 if depth < 85 and self._cam_label not in ("BLOCK-CAM", "BLOCCHI"):
                     font = QFont(self.font())
                     font.setPointSize(9)
