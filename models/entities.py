@@ -147,6 +147,11 @@ ATTITUDE_EFFECTS: Dict[RaceAttitude, Dict[str, float]] = {
     RaceAttitude.AGGRESSIVO: {"score": 2.5, "fatigue": 11, "injury": 0.05, "sigma": 2.0},
 }
 
+# Bonus al bersaglio di forma per la fase «Gara (Picco)», solo nel tick che precede una settimana di gara
+# (la forma usata in gara è quella calcolata nel tick precedente). Minore del +9 dello Scarico: il picco
+# non toglie la fatica, quindi è più debole del tapering vero e proprio.
+PEAK_FORM_BONUS = 6
+
 # Club facilities & youth academy tuning
 YOUTH_SQUAD_MAX = 8
 YOUTH_TRAINING_MULT = 1.5

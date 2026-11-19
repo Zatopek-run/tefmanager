@@ -33,6 +33,7 @@ from models.entities import (
     EVENTS,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
+    PEAK_FORM_BONUS,
     TEAM_POINTS,
     TICKET_PRICE,
     TIER_CONFIG,
@@ -264,8 +265,12 @@ def _recalculate_form(
     tapering: bool,
     has_mental_coach: bool,
     leader_present: bool,
+    peaking: bool = False,
 ) -> int:
-    """Recalculate athlete Form (1-100) from fatigue, sleep, nutrition, and tapering."""
+    """Recalculate athlete Form (1-100) from fatigue, sleep, nutrition, and tapering.
+
+    `peaking`: fase «Gara (Picco)» nel tick che precede una settimana di gara.
+    """
     lifestyle_bonus = ((athlete.sleep_quality + athlete.nutrition) / 2.0 - 70.0) * 0.18
     if athlete.is_injured:
         target_form = max(15, 42 - athlete.fatigue * 0.3)
@@ -280,6 +285,8 @@ def _recalculate_form(
         target_form += 6
     if tapering and not athlete.is_injured:
         target_form += 9
+    if peaking and not athlete.is_injured:
+        target_form += PEAK_FORM_BONUS
     if has_mental_coach:
         target_form += 4
     if leader_present:
@@ -300,12 +307,15 @@ def apply_weekly_training(
     gym_level: int = 0,
     coach: Optional[Coach] = None,
     coach_load: int = 1,
+    pre_meet: bool = False,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
 
     Skill gains depend on the assigned coach's skill in the trained attribute and on how
     many athletes that coach is following; without a suitable coach growth is much slower.
+    `pre_meet` è vero nel tick che precede una settimana di gara: con la fase «Gara (Picco)» dà un
+    bonus al bersaglio di forma (la gara usa la forma calcolata qui).
 
     Returns:
         (stat_gains, injury_note, recovery_note, doping_scandal_note)
@@ -428,7 +438,10 @@ def apply_weekly_training(
     fatigue_add -= recovery_lifestyle
 
     athlete.fatigue = clamp_stat(athlete.fatigue + fatigue_add, 0, 100)
-    athlete.form = _recalculate_form(athlete, rested, tapering, has_mental, leader_present)
+    athlete.form = _recalculate_form(
+        athlete, rested, tapering, has_mental, leader_present,
+        peaking=pre_meet and period == PeriodizationPhase.GARA,
+    )
 
     # Veterans past their peak window slowly lose physical qualities
     years_past_peak = athlete.age - (high_peak + 1)
@@ -1282,6 +1295,7 @@ def advance_week(
     doping_scandals: List[str] = []
 
     loads = {c.id: state.coach_load(c) for c in state.coaches}
+    pre_meet = state.weeks_until_competition == 1  # la settimana dopo è di gara
     for athlete in state.athletes:
         coach = state.coach_of(athlete)
         gains, injury_note, recovery_note, scandal_note = apply_weekly_training(
@@ -1292,6 +1306,7 @@ def advance_week(
             gym_level=state.gym_level,
             coach=coach,
             coach_load=loads.get(coach.id, 1) if coach is not None else 1,
+            pre_meet=pre_meet,
         )
         stat_gains.extend(gains)
         if injury_note:

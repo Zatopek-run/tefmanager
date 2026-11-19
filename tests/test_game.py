@@ -393,6 +393,45 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
         apply_weekly_training(sprinter, rng=random.Random(10))
         self.assertLess(sprinter.fatigue, 55)
 
+    def test_peak_phase_boosts_form_only_before_a_meet(self) -> None:
+        """Q21: la fase Gara dà un bonus al bersaglio di forma solo nel tick che precede la gara."""
+        from models.entities import PEAK_FORM_BONUS
+
+        def trained(phase: PeriodizationPhase, pre_meet: bool) -> int:
+            a = generate_vertical_slice_roster(rng=random.Random(10))[0]
+            a.fatigue, a.form = 30, 60
+            a.training_focus = TrainingFocus.TECHNIQUE
+            a.periodization = phase
+            apply_weekly_training(a, rng=random.Random(10), pre_meet=pre_meet)
+            return a.form
+
+        peak_before = trained(PeriodizationPhase.GARA, True)
+        peak_normal = trained(PeriodizationPhase.GARA, False)
+        self.assertGreater(peak_before, peak_normal)  # stessa fatica, stesso RNG: cambia solo il flag
+        self.assertGreaterEqual(peak_before - peak_normal, round(PEAK_FORM_BONUS * 0.65) - 1)
+        # le altre fasi ignorano il flag
+        for phase in (PeriodizationPhase.PREP_GENERALE, PeriodizationPhase.PREP_SPECIFICA, PeriodizationPhase.SCARICO):
+            self.assertEqual(trained(phase, True), trained(phase, False), phase)
+
+    def test_advance_week_passes_pre_meet_only_on_the_week_before_a_meet(self) -> None:
+        """Il bonus arriva nel tick della settimana 3 (la gara è alla 4), non in quello della settimana 2."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = DatabaseManager(db_path=Path(tmpdir) / "peak.db")
+            base = GameController(db_manager=db, rng=random.Random(5)).state
+        for a in base.athletes:
+            a.periodization = PeriodizationPhase.GARA
+            a.fatigue, a.form = 30, 60
+        forms = {}
+        for week in (2, 3):
+            st = copy.deepcopy(base)
+            st.week = week
+            advance_week(st, rng=random.Random(7))
+            forms[week] = {a.id: a.form for a in st.athletes if not a.is_injured}
+        common = forms[2].keys() & forms[3].keys()
+        self.assertTrue(common)
+        self.assertTrue(all(forms[3][i] >= forms[2][i] for i in common))
+        self.assertTrue(any(forms[3][i] > forms[2][i] for i in common))
+
     def test_two_meets_and_sqlite_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db = DatabaseManager(db_path=Path(tmpdir) / "roundtrip.db")

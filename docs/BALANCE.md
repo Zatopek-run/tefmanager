@@ -106,7 +106,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Fattore età | <picco 1,30; nel picco 1,00; oltre 0,65 | × | `simulation.py:354-359` | |
 | Probabilità miglioramento | `min(0,95; base × età × coach × pers × periodo × palestra × headroom)`; `headroom = max(0,20; (cap−cur)/45)`; salto +2 con 25% | % | `simulation.py:384-391` | |
 | `base_chance` | Resistenza 0,70 (+Resilienza 0,28, Velocità 0,25 per mezzofondisti); Esplosiva 0,56+0,56; Tecnica 0,72 (+Velocità 0,22) | % | `simulation.py:398-409` | |
-| Forma bersaglio | fatica ≥80: `48−(f−70)×1,25`; ≥58: `74−(f−52)×0,75`; altrimenti `86−f×0,32`; +6 riposo, +9 scarico, +4 mentale, +2 leader, +10 doping; fusione 35/65 | pt | `simulation.py:269-292` | |
+| Forma bersaglio | fatica ≥80: `48−(f−70)×1,25`; ≥58: `74−(f−52)×0,75`; altrimenti `86−f×0,32`; +6 riposo, +9 scarico, +6 `PEAK_FORM_BONUS` (solo fase Gara nel tick che precede una gara, `weeks_until_competition == 1`), +4 mentale, +2 leader, +10 doping; fusione 35/65 | pt | `simulation.py:269-292` | |
 | Infortunio da carico | se fatica ≥68: `min(0,50; (f−64)×0,011 × resilienza(≥0,35: 1,35−res/100) × 1,25 Impulsivo × 0,7 Resiliente × 0,55 medico × 1,25 ≤17 anni)`; durata randint(1,3) (−1 fisio); forma −18 | % | `simulation.py:443-462` | |
 | Recupero da infortunio | fatica −randint(22,30) (+8 fisio) | pt | `simulation.py:342` | |
 | Declino età | `years_past_peak × 0,10`, max 0,5, −1 a velocità/resistenza/forza | %/sett. | `simulation.py:434-440` | |

@@ -18,7 +18,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 1 | Se `is_competition_week` (sett. % 4 == 0): `simulate_competition` (sotto-sequenza in §C) | `:1270-1272`; `entities.py:923-926` | sì |
 | 2 | Ruoli staff assunti, presenza di un Leader sano | `:1274-1277` | no |
 | 3 | Carichi allenatore `coach_load` calcolati **una volta** | `:1284` | no |
-| 4 | Per ogni atleta (`state.athletes`, ordine lista): `apply_weekly_training` (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio) | `:1285-1295`; `:295-464` | sì |
+| 4 | Per ogni atleta (`state.athletes`, ordine lista): `apply_weekly_training` (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio). Riceve `pre_meet = (state.weeks_until_competition == 1)`: nel tick che precede la gara la fase «Gara (Picco)» aggiunge `PEAK_FORM_BONUS` al bersaglio di forma (Q21; nessuna chiamata a `r` in più) | `:1285-1295`; `:295-464` | sì |
 | 5 | Note infortunio/recupero al `news_log`; scandalo doping: reputazione −25, prestigio −45 | `:1296-1308` | no |
 | 6 | `weekly_finances(state)` (calcolata **dopo** il passo 5: lo scandalo riduce già lo sponsor di questa settimana) e `budget += net` | `:1311-1312`; `:1224-1248` | no |
 | 7 | Scritture del libro mastro (sponsor, individuali, quote, stipendi, staff, allenatori, palestra) | `:1314-1335` | no |
