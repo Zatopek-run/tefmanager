@@ -40,7 +40,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -105,6 +105,10 @@ V8_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V9_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("relays_f_json", "TEXT NOT NULL DEFAULT '{}'")]
 }
+# Columns added in v10 (athlete contracts: last season of the contract, 0 = none yet).
+V10_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("contract_end_season", "INTEGER NOT NULL DEFAULT 0")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -113,6 +117,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     6: V7_COLUMNS,
     7: V8_COLUMNS,
     8: V9_COLUMNS,
+    9: V10_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -656,7 +661,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     nationality TEXT NOT NULL DEFAULT 'Italia',
     height_cm INTEGER NOT NULL DEFAULT 0,
     weight_kg INTEGER NOT NULL DEFAULT 0,
-    gender TEXT NOT NULL DEFAULT ''
+    gender TEXT NOT NULL DEFAULT '',
+    contract_end_season INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -904,8 +910,9 @@ class DatabaseManager:
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
-                    in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
+                    contract_end_season
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -939,6 +946,7 @@ class DatabaseManager:
                         a.height_cm,
                         a.weight_kg,
                         a.gender,
+                        a.contract_end_season,
                     )
                     for a in state.athletes
                 ],
@@ -1091,6 +1099,7 @@ class DatabaseManager:
                     height_cm=r["height_cm"],
                     weight_kg=r["weight_kg"],
                     gender=r["gender"],
+                    contract_end_season=r["contract_end_season"],
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]

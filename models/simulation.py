@@ -33,6 +33,7 @@ from models.entities import (
     EVENTS,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
+    CONTRACT_MAX_SEASONS,
     INTERNATIONAL_MIN_AGE,
     MAX_INDIVIDUAL_EVENTS,
     PEAK_FORM_BONUS,
@@ -1184,6 +1185,7 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
             state.athletes, event_names=state.active_events, gender="F", tier=state.tier
         )
     state.news_log[0:0] = normalize_assignments(state)
+    ensure_contracts(state)
 
 
 def normalize_assignments(state: GameState) -> List[str]:
@@ -1320,10 +1322,50 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     }
 
 
+def contract_length(athlete_id: Optional[int], season: int) -> int:
+    """Durata (1-3 stagioni) di un contratto firmato o rinnovato nella stagione `season` (Q22).
+
+    Deterministica e senza RNG (né `hash()` su stringhe): dipende solo da id atleta e stagione, così non
+    cambia l'ordine delle chiamate all'RNG del tick.
+    """
+    return 1 + ((athlete_id or 0) + season) % CONTRACT_MAX_SEASONS
+
+
+def assign_contract(state: GameState, athlete: Athlete) -> None:
+    """Firma un contratto che parte dalla stagione in corso."""
+    athlete.contract_end_season = state.season_number + contract_length(athlete.id, state.season_number) - 1
+
+
+def ensure_contracts(state: GameState) -> int:
+    """Dà un contratto a chi in Prima Squadra non ce l'ha (nuova partita, vecchi salvataggi). Restituisce quanti."""
+    missing = [a for a in state.main_squad if a.contract_end_season <= 0]
+    for a in missing:
+        assign_contract(state, a)
+    return len(missing)
+
+
+def renew_expiring_contracts(state: GameState) -> List[str]:
+    """Rinnova in automatico i contratti scaduti con la stagione appena chiusa (Q22). Nessun costo, nessun RNG.
+
+    Il giocatore che non vuole rinnovare un atleta deve svincolarlo prima della fine della stagione.
+    Va chiamata dopo l'incremento di `season_number`.
+    """
+    renewed: List[Athlete] = []
+    for a in state.main_squad:
+        if 0 < a.contract_end_season < state.season_number:
+            assign_contract(state, a)
+            renewed.append(a)
+    if not renewed:
+        return []
+    names = ", ".join(f"{a.name} (fino alla stagione {a.contract_end_season})" for a in renewed)
+    return [f"Sett. {state.week}: contratti rinnovati in automatico: {names}."]
+
+
 def promote_youth_athlete(state: GameState, athlete: Athlete) -> None:
     """Move an academy kid to the main squad: starts being paid, form capped like a debut."""
     athlete.in_youth_squad = False
     athlete.weekly_wage = senior_wage(athlete)
+    assign_contract(state, athlete)
     athlete.form = min(athlete.form, 75)
     auto_assign_coach(state, athlete)  # youth coaches can't follow main-squad athletes
 
@@ -1456,6 +1498,7 @@ def advance_week(
             state.league_table = {}
             for a in state.athletes:
                 a.age += 1
+            state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)
         state.news_log.insert(

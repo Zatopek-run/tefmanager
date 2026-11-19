@@ -171,6 +171,15 @@ class AthleteDetailDialog(QDialog):
         old.addWidget(content)
 
     # ------------------------------------------------------------------ header
+    def _contract_text(self, a: Athlete) -> str:
+        """Scadenza del contratto (Q22): rinnovo automatico a fine stagione, a meno di svincolare l'atleta."""
+        if a.in_youth_squad or a.contract_end_season <= 0:
+            return "—"
+        text = f"fino alla stagione {a.contract_end_season}"
+        if a.contract_end_season <= self.controller.state.season_number:
+            text += " (rinnovo automatico)"
+        return text
+
     @staticmethod
     def _initials(name: str) -> str:
         parts = [p for p in name.replace("-", " ").split() if p]
@@ -265,6 +274,7 @@ class AthleteDetailDialog(QDialog):
             ("Carattere", a.personality.value),
             ("Potenziale", str(a.potential)),
             ("Rimborso spese", f"€{a.weekly_wage:,}/sett."),
+            ("Contratto", self._contract_text(a)),
             ("Fan", f"{a.fans:,}"),
             ("Primato", a.personal_best_display or "—"),
             ("Allenatore", coach.name if coach else "Nessuno"),

@@ -99,7 +99,7 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 9` (`database.py:42`; il valore precedente scritto qui, 7, era obsoleto). Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 10` (`database.py`; v10 = `athletes.contract_end_season`, Q22, 2026-11-19). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni

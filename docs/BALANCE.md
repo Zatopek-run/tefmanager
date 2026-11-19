@@ -103,6 +103,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Fisioterapista | −7 fatica; guarigione ×2 con prob. 0,55 | | `simulation.py:426,340` | |
 | Stile di vita | recupero `(sonno+nutrizione)/2−70)×0,12`; forma `×0,18` | | `simulation.py:427,269` | |
 | Crescita periodizzazione | 1,05 / 1,25 / 0,90 / 0,45 | × | `simulation.py:373-377` | |
+| Contratti | durata `1 + (id + stagione) % CONTRACT_MAX_SEASONS` (1-3 stagioni), rinnovo automatico a fine stagione, nessun costo; il vivaio non ha contratto (Q22) | stagioni | `simulation.py`, `entities.py` | |
 | Tetto gare per atleta | `MAX_INDIVIDUAL_EVENTS` = 2 gare individuali (tra quelle attive) + 1 staffetta (già unica per atleta); FIDAL art. 3.3 e 5.7 | gare | `entities.py` | |
 | Età minima Internazionale | `INTERNATIONAL_MIN_AGE` = 20 (Q17): gli under 20 non gareggiano in «Finale Oro / Coppa Europa» | anni | `entities.py` | |
 | Fattore età | <picco 1,30; nel picco 1,00; oltre 0,65 | × | `simulation.py:354-359` | |
@@ -181,5 +182,5 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Stato iniziale `GameState` | reputazione 70, pista 82, quote 450, budget 12000 | `entities.py:776-785` |
 | Stato iniziale nuova partita | reputazione 75, pista 82, quote 450 | `game_controller.py:182-185` |
 | Limiti log | notizie 70, traguardi 40, transazioni 400 | `simulation.py:1412-1414` |
-| `SCHEMA_VERSION` | 9 | `database.py:42` |
+| `SCHEMA_VERSION` | 10 | `database.py` |
 | `RELAY_DQ_MARK`, `DNF_MARK` | stringhe | `entities.py:258,172` |

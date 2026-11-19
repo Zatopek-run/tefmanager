@@ -205,6 +205,8 @@ AGE_CATEGORY_SENIOR = "Seniores"  # 23 anni e oltre
 MAX_INDIVIDUAL_EVENTS = 2
 # Q17: sotto questa età non si gareggia nel livello «Internazionale» (Finale Oro / Coppa Europa).
 INTERNATIONAL_MIN_AGE = 20
+# Contratti (Q22): durata di 1-3 stagioni, rinnovo automatico alla scadenza; per annullarlo si svincola l'atleta.
+CONTRACT_MAX_SEASONS = 3
 
 
 def age_category(age: int) -> str:
@@ -453,6 +455,7 @@ class Athlete:
     fans: int = 0
     coach_id: Optional[int] = None
     nationality: str = "Italia"
+    contract_end_season: int = 0  # ultima stagione di contratto (inclusa); 0 = nessuno (vivaio) o ancora da assegnare
     height_cm: int = 0  # 0 = not yet generated (old saves)
     weight_kg: int = 0
     gender: str = "M"

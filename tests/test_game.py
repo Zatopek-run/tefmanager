@@ -1276,6 +1276,35 @@ class TestPromotionAndRelegation(unittest.TestCase):
                 self.assertEqual(ctrl.state.league_table, {})
                 self.assertEqual(seen, [report.season_end])
 
+    def test_contracts_are_renewed_automatically_at_season_end(self) -> None:
+        """Q22: a fine stagione i contratti scaduti si rinnovano da soli (una sola notizia); gli altri non si toccano."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._career(tmpdir)
+            s = ctrl.state
+            self.assertTrue(all(a.contract_end_season >= 1 for a in s.main_squad))  # nuova partita: tutti hanno un contratto
+            expiring = s.main_squad[:3]
+            for a in s.main_squad:
+                a.contract_end_season = 3
+            for a in expiring:
+                a.contract_end_season = 1  # scade con questa stagione
+            self._force_position(s, 3)
+            report = self._end_season(ctrl)
+            assert report is not None
+            self.assertEqual(s.season_number, 2)
+            for a in expiring:
+                self.assertGreaterEqual(a.contract_end_season, 2)
+            self.assertTrue(all(a.contract_end_season == 3 for a in s.main_squad if a not in expiring))
+            lines = [n for n in s.news_log if "contratti rinnovati" in n]
+            self.assertEqual(len(lines), 1)
+            self.assertTrue(all(a.name in lines[0] for a in expiring))
+            # il salvataggio conserva le nuove scadenze
+            loaded = ctrl.db.load_game()
+            assert loaded is not None
+            self.assertEqual(
+                {a.id: a.contract_end_season for a in loaded.athletes},
+                {a.id: a.contract_end_season for a in s.athletes},
+            )
+
     def test_third_place_stays(self) -> None:
         from models.entities import SeasonOutcome
 

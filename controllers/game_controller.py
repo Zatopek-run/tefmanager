@@ -72,7 +72,9 @@ from models.simulation import (
     WeekAdvanceReport,
     advance_week,
     auto_assign_coach,
+    assign_contract,
     auto_build_all_relays,
+    ensure_contracts,
     auto_build_relay,
     promote_youth_athlete,
     upgrade_legacy_state,
@@ -214,6 +216,7 @@ class GameController(QObject):
             rival_clubs=create_rival_clubs(rng=self.rng, province=province, team_name=team_name),
         )
         auto_build_all_relays(state)
+        ensure_contracts(state)
         if persist:
             self.db.save_game(state)
         return state
@@ -475,6 +478,8 @@ class GameController(QObject):
             p for p in self.free_agent_pool if p is not prospect and p.name != prospect.name
         ]
         auto_assign_coach(self.state, prospect)
+        if not prospect.in_youth_squad:
+            assign_contract(self.state, prospect)
         self.state.budget -= fee
         # Sponsors dislike squad turnover; young signings hurt fidelity less
         self.state.fidelity = max(0, self.state.fidelity - (6 if prospect.age < 21 else 12))

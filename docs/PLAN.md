@@ -44,10 +44,10 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 ### Lotto 2.1 — Stato RNG salvato nel salvataggio
 - **Obiettivo:** ricaricare e avanzare produce lo stesso risultato.
-- **File:** `models/entities.py` (campo `rng_state` in `GameState`), `models/database.py` (colonna `rng_state_json` con `DEFAULT '{}'` **sia** in `MIGRATIONS` **sia** nel `CREATE TABLE`, `SCHEMA_VERSION = 10`), `controllers/game_controller.py` (init/load/save).
+- **File:** `models/entities.py` (campo `rng_state` in `GameState`), `models/database.py` (colonna `rng_state_json` con `DEFAULT '{}'` **sia** in `MIGRATIONS` **sia** nel `CREATE TABLE`, `SCHEMA_VERSION = 11`: la v10 è già presa da `athletes.contract_end_season`, Q22, 2026-11-19), `controllers/game_controller.py` (init/load/save).
 - **Rischio:** medio (nuova versione di schema; formato di `getstate` tra versioni Python: lo stato è una tupla di interi, JSON-serializzabile, ma da provare su 3.14).
-- **Verifica:** test: stessa partita caricata due volte → 8 tick → stato identico (l'esperimento B2 di `AUDIT.md` deve invertire l'esito); test di migrazione v9→v10 su fixture.
-- **Accettazione:** B2 identico; v9 si migra senza perdita; i test esistenti restano verdi.
+- **Verifica:** test: stessa partita caricata due volte → 8 tick → stato identico (l'esperimento B2 di `AUDIT.md` deve invertire l'esito); test di migrazione v10→v11 su fixture.
+- **Accettazione:** B2 identico; v10 si migra senza perdita; i test esistenti restano verdi.
 - **Dipende da:** 1.1, QUESTIONS 2.
 
 ### Lotto 2.2 — Eliminare `hash()` salato dalle viste

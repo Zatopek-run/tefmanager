@@ -466,5 +466,40 @@ class TestUnsupportedVersions(_TmpCase):
         self.assertEqual(good, by_name["buono.db"].path)
 
 
+class TestMigrationV10Contracts(_TmpCase):
+    """v9 → v10 (Q22): colonna `contract_end_season` negli atleti, con 0 = «da assegnare»."""
+
+    def test_v9_save_gets_the_column_with_default_zero_and_a_verified_backup(self) -> None:
+        self.assertEqual(SCHEMA_VERSION, 10)
+        self.assertIn(9, MIGRATIONS)
+        path = make_save(self.slot("v9"), 9)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("contract_end_season", column_names(conn, "athletes"))  # la fixture è davvero v9
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), 10)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT contract_end_season FROM athletes WHERE id = 1").fetchone(), (0,))
+            self.assertIn(
+                ("contract_end_season", "INTEGER", 1, "0", 0), columns(conn, "athletes"),
+            )
+        sentinel_ok(self, path, 9)
+        backup = self.backups("v9")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 9)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("contract_end_season", column_names(conn, "athletes"))
+        sentinel_ok(self, backup, 9)
+
+    def test_failed_v9_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v9"), 9)
+        before = sha(path)
+        broken = {"athletes": [("contract_end_season", "INTEGER NOT NULL DEFAULT 0"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {9: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 9)
+
+
 if __name__ == "__main__":
     unittest.main()
