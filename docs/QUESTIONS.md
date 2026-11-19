@@ -126,3 +126,90 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 - **Raccomandazione:** consentire più gare per atleta, validare il genere/Prima Squadra nel controller, documentare T5 come voluto. **DA CONFERMARE.**
 - **Alternativa:** un solo evento individuale per atleta e meeting.
 - **Cosa cambia:** `game_controller.set_event_athlete` + test; per l'alternativa anche `build_default_lineup`.
+
+---
+
+## Q16 — Set di discipline e ordine di introduzione
+
+**Raccomandazione.** Aggiungere 800 m come seconda specialità di Mezzofondo, poi Salto in Alto e Disco. Rimandare ostacoli, asta, martello, giavellotto, siepi, marcia, 200 m.
+
+**Alternativa.** Aggiungere solo 800 m e fermarsi; oppure aggiungere tutte le discipline dei CdS regionali (anche ostacoli e concorsi multipli).
+
+**Cosa cambia.**
+- 800 m: `entities.EVENTS` + curva in `simulation._score_to_mark` + tarature + costanti Godot (`GODOT_EVENTS`, `DISTANCES_M`, `GUN_AT_BY_KIND`). Impatto medio.
+- Alto: modello di prove diverso (asticella, eliminatorie per altezza), vista dedicata. Impatto medio-alto.
+- Disco: simile al Peso, costo medio.
+- **Prerequisito**: regola «max 2 gare individuali + 1 staffetta per atleta» (art. 3.3 e 5.7 regolamento FIDAL). Senza questa, aggiungere discipline crea ambiguità.
+- **Dipende dalla Q15** (un atleta può correre più gare nello stesso meeting?): la Q15 raccomanda di consentire più gare **senza tetto**, mentre il regolamento FIDAL pone il tetto «2 individuali + 1 staffetta». Le due raccomandazioni vanno riconciliate: decidere prima la Q15, eventualmente aggiornandola con il tetto reale.
+- **Correlata alla Q10** (Cross e Indoor devono cambiare le discipline?): il 60 m indoor e una gara campestre sono la risposta concreta alla Q10; vanno decisi insieme al set di discipline.
+
+---
+
+## Q17 — Fasce d'età e categorie FIDAL
+
+**Raccomandazione.** Calcolare la fascia d'età da `Athlete.age` (il gioco non ha l'anno di nascita; l'età cresce di 1 a ogni cambio stagione) e mostrarla come etichetta nella scheda atleta, senza salvarla (Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+). Opzionale: Allievi (16-17) convocabili nei meeting, con malus nel Getto del Peso per lo scarto di attrezzo rispetto al peso seniores di 7,26 kg (nel CdS Assoluto si usano gli attrezzi seniores, art. 2.3). **DA CONFERMARE:** il peso dell'attrezzo per categoria (per quanto ricordo, Allievi M 5 kg e Juniores M 6 kg; non verificato sul regolamento FIDAL). Under-20 esclusi dal livello «Internazionale».
+
+**Alternativa.** Lasciare tutto come oggi (tutti seniores) o introdurre le categorie complete con attrezzi differenziati (costo alto, migrazioni).
+
+**Cosa cambia.**
+- Etichetta: solo vista, zero migrazioni. Impatto basso.
+- Convocabilità Allievi: controller + vivaio + malus `body_modifier` per il Peso. Impatto medio.
+- Esclusione under-20 da Internazionale: controller. Impatto basso.
+
+---
+
+## Q18 — Nomi e struttura dei meeting
+
+**Raccomandazione.** Dare nomi reali a ogni slot di gara mappando i livelli: Provinciale → «Fase regionale CdS», Regionale → «Finale Bronzo», Nazionale → «Finale Argento», Internazionale → «Finale Oro / Coppa Europa». Solo stringhe in `entities.TIER_CONFIG`.
+
+**Alternativa.** Lasciare i nomi generici attuali.
+
+**Cosa cambia.** Solo stringhe e `TIER_CONFIG`. Impatto basso. Nessuna migrazione.
+
+---
+
+## Q19 — Punteggi tabellari WA/FIDAL come valore derivato
+
+**Raccomandazione.** Tenere la scala interna 42-84 come variabile latente. Aggiungere i punteggi tabellari WA (edizione 2025) come valore derivato, calcolato da una funzione pura `score_to_table_points(event, mark)`. Usarli solo per: spareggio (coincide con Q5), obiettivi stagionali, scheda atleta. NON usarli per i punti squadra (che restano 8...1).
+
+**Alternativa.** Sostituire completamente la scala interna con i punteggi tabellari (costo alto, richiede ri-taratura di tutte le ancore).
+
+**Cosa cambia.**
+- Funzione pura + test. Impatto medio.
+- **Nota**: verificare licenza/uso dei coefficienti WA prima di implementare.
+- Allineare il WR F 1500 m a 3:48,68 (migliorato nel 2025) quando si farà il modulo di bilanciamento (lotto 5.2).
+
+---
+
+## Q20 — DQ staffette 4x400
+
+**Raccomandazione.** Ridurre la probabilità di DQ per la 4x400 rispetto alla 4x100. Nella realtà, il cambio fuori zona nella 4x400 è più raro: i frazionisti arrivano più lenti e il cambio non è lanciato come nella 4x100. **DA CONFERMARE:** l'entità della differenza; la zona di cambio è di 20 m in entrambe le staffette (nella 4x100 con in più 10 m di pre-zona), quindi non è una differenza di zona.
+
+**Alternativa.** Lasciare la stessa funzione `_relay_dq_chance` per entrambe.
+
+**Cosa cambia.** Costante in `simulation._relay_dq_chance` (es. moltiplicatore 0,5 per la 4x400). Impatto basso. Nessun test da aggiornare se il comportamento resta deterministico.
+
+---
+
+## Q21 — Effetto della fase «Gara (Picco)»
+
+**Raccomandazione.** Dare a `GARA` un effetto positivo sulla forma in settimana di gara: bonus al bersaglio di forma (non al punteggio direttamente). Oggi la fase «Gara» è penalizzante (solo ×0,90 di crescita e +2 fatica), il contrario del concetto di tapering/picco. Opzionale: suggerire in UI il mesociclo coerente col calendario (2× Specifica → Gara → Scarico).
+
+**Alternativa.** Lasciare `GARA` senza effetto (stato attuale) o rimuovere la fase.
+
+**Cosa cambia.**
+- Modifica del tick in `simulation.py` (bersaglio di forma). Aggiornare `docs/TICK.md` e `docs/BALANCE.md`.
+- **Attenzione**: se cambia l'ordine delle chiamate all'RNG, aggiornare i test deterministici.
+- Impatto medio.
+
+---
+
+## Q22 — Valuta, rimborsi e scadenze contratto
+
+**Raccomandazione.** (1) Cambiare `$` → `€` e «stipendio» → «rimborso spese» (solo stringhe). (2) Introdurre contratti con scadenza stagionale (1-3 stagioni) e rinnovo automatico salvo decisione del giocatore. Non aggiungere agenti, diritti d'immagine o sponsor tecnici nominali.
+
+**Alternativa.** Lasciare la valuta in dollari e i contratti perpetui (stato attuale).
+
+**Cosa cambia.**
+- (1) Stringhe: impatto basso, ma verificare l'effetto sui test che cercano `$`.
+- (2) Campo `contract_end_season` in `Athlete`, migrazione, logica di rinnovo nel tick di fine stagione. Impatto medio.
