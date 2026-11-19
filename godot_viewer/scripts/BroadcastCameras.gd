@@ -140,8 +140,8 @@ func reset() -> void:
 		# Traguardo ovale: dall'alto, appena oltre la linea, sul lato esterno (si vede tutto il gruppo).
 		_finish_cam.fov = 38.0
 		_finish_cam.look_at_from_position(Vector3(fx + 3.0, 11.0, 22.0), Vector3(fx - 9.0, 0.4, TRACK_Z_CENTER), Vector3.UP)
-		if RaceController.event_kind == "1500m":
-			var wp: Dictionary = TrackGeometry.runner_pose("1500m", 4, 0.0)
+		if RaceController.event_kind == "1500m" or RaceController.event_kind == "800m":
+			var wp: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, 4, 0.0)
 			var wpos: Vector3 = wp["position"]
 			var wh: Vector2 = wp["heading"]
 			var wright: Vector3 = Vector3(-wh.y, 0.0, wh.x)

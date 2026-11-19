@@ -133,7 +133,7 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ## Q16 — Set di discipline e ordine di introduzione — ✅ 800 m FATTO il 2026-11-19 (Alto e Disco restano da fare)
 
-**Fatto:** 800 m come seconda specialità di Mezzofondo: `EVENTS`, curva `_score_to_mark` (ancore **stimate**), fisico ideale, viste PyQt 2D/3D, vecchi salvataggi (rivali e convocazioni riempiti al caricamento). Prerequisito «max 2 individuali + 1 staffetta» fatto (Q15). **Non fatto:** l'800 m in Godot (resta fuori da `GODOT_EVENTS`: usa la vista PyQt), Salto in Alto, Disco, e la scelta con Q10 (60 m indoor / campestre).
+**Fatto:** 800 m come seconda specialità di Mezzofondo: `EVENTS`, curva `_score_to_mark` (ancore **stimate**), fisico ideale, viste PyQt 2D/3D, vecchi salvataggi (rivali e convocazioni riempiti al caricamento). Prerequisito «max 2 individuali + 1 staffetta» fatto (Q15). L'800 m è anche nel **visualizzatore Godot** (geometria, regia, cadenza stimata, gare demo 13-14). **Non fatto:** Salto in Alto, Disco, e la scelta con Q10 (60 m indoor / campestre).
 
 **Raccomandazione.** Aggiungere 800 m come seconda specialità di Mezzofondo, poi Salto in Alto e Disco. Rimandare ostacoli, asta, martello, giavellotto, siepi, marcia, 200 m.
 
@@ -191,9 +191,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q20 — DQ staffette 4x400 — ✅ FATTA il 2026-11-19 (valore PROVVISORIO)
+## Q20 — DQ staffette 4x400 — ✅ FATTA il 2026-11-19 (valore confermato)
 
-**Fatto:** `RELAY_DQ_MULT` (4x100m ×1,0; 4x400m ×0,5). **Il 0,5 è provvisorio**: da confermare l'entità.
+**Fatto:** `RELAY_DQ_MULT` (4x100m ×1,0; 4x400m ×0,5). **Il 0,5 è stato confermato dall'utente il 2026-11-19.**
 
 **Raccomandazione.** Ridurre la probabilità di DQ per la 4x400 rispetto alla 4x100. Nella realtà, il cambio fuori zona nella 4x400 è più raro: i frazionisti arrivano più lenti e il cambio non è lanciato come nella 4x100. **DA CONFERMARE:** l'entità della differenza; la zona di cambio è di 20 m in entrambe le staffette (nella 4x100 con in più 10 m di pre-zona), quindi non è una differenza di zona.
 
@@ -203,9 +203,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q21 — Effetto della fase «Gara (Picco)» — ✅ FATTA il 2026-11-19 (valore PROVVISORIO)
+## Q21 — Effetto della fase «Gara (Picco)» — ✅ FATTA il 2026-11-19 (valore confermato)
 
-**Fatto:** `PEAK_FORM_BONUS` = +6 al bersaglio di forma, solo nel tick che precede una settimana di gara (la gara usa la forma calcolata lì), senza nuove chiamate all'RNG. **Il +6 è provvisorio** (resta sotto il +9 dello Scarico). Non fatto: il suggerimento in UI del mesociclo.
+**Fatto:** `PEAK_FORM_BONUS` = +6 al bersaglio di forma, solo nel tick che precede una settimana di gara (la gara usa la forma calcolata lì), senza nuove chiamate all'RNG. **Il +6 è stato confermato dall'utente il 2026-11-19** (resta sotto il +9 dello Scarico). Non fatto: il suggerimento in UI del mesociclo.
 
 **Raccomandazione.** Dare a `GARA` un effetto positivo sulla forma in settimana di gara: bonus al bersaglio di forma (non al punteggio direttamente). Oggi la fase «Gara» è penalizzante (solo ×0,90 di crescita e +2 fatica), il contrario del concetto di tapering/picco. Opzionale: suggerire in UI il mesociclo coerente col calendario (2× Specifica → Gara → Scarico).
 

@@ -81,6 +81,11 @@ static func start_offset_1500m() -> float:
 	return 4.0 * loop_length(1) - 1500.0
 
 
+## Coordinata d'anello da cui parte la 800m in corsia 1 (2 giri esatti prima del traguardo: la partenza e' sulla linea d'arrivo).
+static func start_offset_800m() -> float:
+	return 2.0 * loop_length(1) - 800.0
+
+
 ## Posizione (x, z) alla coordinata d'anello `c` (riferita alla corsia 1) con offset radiale esterno `lat` >= 0.
 static func position_at_radial(c: float, lat: float) -> Vector2:
 	var r: float = R1 + lat
@@ -110,6 +115,18 @@ static func pose_1500m(lane: int, distance_run: float) -> Dictionary:
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
 
 
+## Posa 3D nella 800m (come la vista PyQt: semplificazione visiva, la linea di partenza e' allineata invece che sfalsata):
+## prima curva (~115 m) nella corsia sorteggiata, poi rientro graduale alla corda fra 100 e 150 m dalla partenza.
+static func pose_800m(lane: int, distance_run: float) -> Dictionary:
+	var c: float = start_offset_800m() + distance_run
+	var start_lat: float = float(lane - 1) * LANE_WIDTH
+	var pack_lat: float = minf(2.1, float(lane - 1) * 0.30)
+	var lat: float = lerpf(start_lat, pack_lat, smoothstep(100.0, 150.0, distance_run))
+	var p: Vector2 = position_at_radial(c, lat)
+	var h: Vector2 = heading_at(1, c)
+	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
+
+
 ## Posa 3D nella 4x400m: prima frazione in corsia sfalsata (0..400m), poi rientro alla corda dopo la curva.
 static func pose_4x400m(lane: int, distance_run: float) -> Dictionary:
 	if distance_run <= 400.0:
@@ -131,11 +148,14 @@ const START_100M_X: float = -100.0
 ## - 100m: corre dalla linea di partenza (x = -100) al traguardo (x = 0) sul rettilineo, poi prosegue nella curva
 ##   della sua corsia (la "corsa dopo il traguardo" segue la pista, non la attraversa).
 ## - 1500m: partenza a gruppi sulla linea curva e rientro alla corda.
+## - 800m: partenza sulla linea d'arrivo, prima curva in corsia, poi rientro alla corda.
 ## - 4x400m: primo giro in corsia sfalsata, poi rientro alla corda.
 ## - 400m / 4x100m: partenza sfalsata per corsia (vedi pose()).
 static func runner_pose(kind: String, lane: int, distance_run: float) -> Dictionary:
 	if kind == "1500m":
 		return pose_1500m(lane, distance_run)
+	if kind == "800m":
+		return pose_800m(lane, distance_run)
 	if kind == "4x400m":
 		return pose_4x400m(lane, distance_run)
 	if kind != "100m":
@@ -151,6 +171,8 @@ static func runner_pose(kind: String, lane: int, distance_run: float) -> Diction
 
 enum Region { ARC1, BACK, ARC2, HOME }
 
+const REGION_EPS: float = 0.1   # m, vedi region_for() (800m)
+
 
 ## In quale tratto dell'anello si trova un corridore (usato dalla regia ovale): curva 1, rettilineo opposto,
 ## curva 2, rettilineo d'arrivo. Oltre il traguardo si riavvolge sulla curva 1.
@@ -163,6 +185,11 @@ static func region_for(kind: String, lane: int, distance_run: float) -> int:
 	var r: float
 	if kind == "1500m":
 		c = fposmod(start_offset_1500m() + distance_run, loop_length(1))
+		r = R1
+	elif kind == "800m":
+		# +REGION_EPS: la partenza e' esattamente sulla linea d'arrivo (c = 2L - 800 = -0,04 m), che si riavvolge sul
+		# rettilineo d'arrivo: senza tolleranza la regia taglierebbe per un istante sulla ripresa del rettilineo.
+		c = fposmod(start_offset_800m() + distance_run + REGION_EPS, loop_length(1))
 		r = R1
 	elif kind == "4x400m" and distance_run > 400.0:
 		c = fposmod(distance_run - 400.0, loop_length(1))

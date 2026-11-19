@@ -9,6 +9,8 @@ extends RefCounted
 ##   100m  : sale dai primi passi (3,6) al picco (~4,75) entro 25 m, si stabilizza 4,6-4,5 fra 35 e 80 m e cala del 4% a fine
 ##           gara (affaticamento neuromuscolare). L cresce da 1,10 m a oltre 2,30 m nei primi 30 m.
 ##   400m  : 3,9 Hz nei primi 200 m (azione economica), poi cala (acidosi: il contatto si allunga) fino a ~3,35 Hz alla fine.
+##   800m  : STIMA (il file di riferimento non ha dati sull'800m): fra i 400m e i 1500m, 3,85 Hz nei primi 150 m,
+##           ~3,5 Hz a regime, volata fino a ~3,95 Hz negli ultimi 100 m.
 ##   1500m : ~3,2 Hz costanti (risparmio energetico); nella volata degli ultimi 200-300 m sale a ~3,9 Hz.
 ## Altezza: a parita' di tempo l'atleta piu' alto ha una cadenza minore del ~5% ogni 17 cm (1,75 -> 1,92 m) e compensa con
 ## un'ampiezza maggiore (L = v / f la ricava da sola).
@@ -27,10 +29,11 @@ const START_STEP_LENGTH: float = 1.10     # m: primo passo (dai blocchi o da fer
 const CURVES: Dictionary = {
 	"100m": [[0.0, 3.6], [12.0, 4.45], [25.0, 4.75], [35.0, 4.62], [80.0, 4.5], [100.0, 4.32]],
 	"400m": [[0.0, 3.5], [30.0, 3.9], [200.0, 3.9], [300.0, 3.65], [340.0, 3.5], [400.0, 3.35]],
+	"800m": [[0.0, 3.6], [40.0, 3.85], [150.0, 3.7], [650.0, 3.5], [700.0, 3.6], [800.0, 3.95]],
 	"1500m": [[0.0, 3.4], [60.0, 3.2], [1200.0, 3.15], [1300.0, 3.45], [1400.0, 3.75], [1500.0, 3.9]],
 }
 ## Ampiezza di passo a regime (m) per evento: serve solo al pavimento dei primi 30 m.
-const STEP_LENGTH_CRUISE: Dictionary = {"100m": 2.30, "400m": 2.10, "1500m": 1.80}
+const STEP_LENGTH_CRUISE: Dictionary = {"100m": 2.30, "400m": 2.10, "800m": 1.95, "1500m": 1.80}
 
 
 ## La curva da usare: le staffette sono tratti di 100 o 400 m.

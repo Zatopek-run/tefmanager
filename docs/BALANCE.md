@@ -87,7 +87,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Affiatamento iniziale | 30 | 0-100 | `entities.py:531` | |
 | Crescita affiatamento | +4 (+6 se gareggia); +2 (+6) con riserva; −2 se mancano | pt/sett. | `simulation.py:252-257` | |
 | Riserva in gara | `harmony − 15`; DQ +3% | pt, % | `simulation.py:945,224` | |
-| Probabilità DQ | `(max(0, (60 − harmony) × 0,006) + 3% se riserva) × RELAY_DQ_MULT[staffetta]` (4x100m ×1,0; 4x400m ×0,5 **provvisorio**, Q20) | % | `simulation.py:224`, `entities.py` | |
+| Probabilità DQ | `(max(0, (60 − harmony) × 0,006) + 3% se riserva) × RELAY_DQ_MULT[staffetta]` (4x100m ×1,0; 4x400m ×0,5 **confermato dall'utente il 2026-11-19**, Q20) | % | `simulation.py:224`, `entities.py` | |
 | Bonus tempo | `(harmony−50)×0,08 + gauss(0; 2,5)` | pt | `simulation.py:952` | |
 | Staffette rivali | `gauss(skill; 4,0)`; 50 se manca l'atleta | pt | `simulation.py:969-970` | |
 | Definizioni | 4x100 base 50,4 s span 11,2 min 36,8; 4x400 229/50/174 (F 55,0/11,8/40,8 e 250/53/195) | s | `entities.py:230-255` | Mappa punteggio→tempo |

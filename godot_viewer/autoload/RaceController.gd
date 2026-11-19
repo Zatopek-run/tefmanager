@@ -26,7 +26,7 @@ const REPLAY_AFTER: float = 1.8      # secondi dopo il traguardo del vincitore a
 
 const GUN_AT: float = 2.4          # secondi tra "via" al conto alla rovescia e lo sparo (default)
 ## Preparazione piu' lunga per i 100m, come nella diretta TV: apertura larga, lungo primo piano sui blocchi, sparo.
-const GUN_AT_BY_KIND: Dictionary = {"100m": 9.0, "400m": 7.0, "1500m": 4.2, "4x100m": 6.5, "4x400m": 5.0, "Salto in Lungo": 1.6, "Getto del Peso": 1.6}
+const GUN_AT_BY_KIND: Dictionary = {"100m": 9.0, "400m": 7.0, "800m": 4.6, "1500m": 4.2, "4x100m": 6.5, "4x400m": 5.0, "Salto in Lungo": 1.6, "Getto del Peso": 1.6}
 
 
 static func is_relay(kind: String) -> bool:
@@ -38,7 +38,7 @@ static func is_field(kind: String) -> bool:
 
 
 static func uses_blocks(kind: String) -> bool:
-	return kind != "1500m" and not is_field(kind)
+	return kind != "1500m" and kind != "800m" and not is_field(kind)
 
 
 var field_queue: Array[Dictionary] = []

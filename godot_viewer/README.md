@@ -3,7 +3,7 @@
 Modulo di visualizzazione gare in stile "diretta TV" 2010. **Solo View**: i risultati li calcola il motore
 Python (`models/simulation.py`) e finiscono in SQLite; Godot li legge e li mette in scena.
 Ogni corridore taglia il traguardo esattamente a `final_time` (il tempo di reazione è incluso).
-Eventi: 100m, 400m, 1500m, 4x100m, 4x400m, Salto in Lungo, Getto del Peso.
+Eventi: 100m, 400m, 800m, 1500m, 4x100m, 4x400m, Salto in Lungo, Getto del Peso.
 
 ## Requisiti
 

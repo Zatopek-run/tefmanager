@@ -52,6 +52,14 @@ func _process(_delta: float) -> bool:
 		falling = falling and StrideModel.cadence("400m", float(d + 10), h) <= StrideModel.cadence("400m", float(d), h) + 1e-9
 	_check(falling, "400m: dopo i 200 m la cadenza non risale (fatica)")
 
+	var ok_800: bool = true
+	for d in range(60, 640, 20):
+		var f8: float = StrideModel.cadence("800m", float(d), h)
+		ok_800 = ok_800 and f8 >= 3.45 and f8 <= 3.9
+	_check(ok_800, "800m: fino a 640 m fra 3,45 e 3,90 Hz (stima, nessun dato nel file di riferimento)")
+	_check(StrideModel.cadence("800m", 799.0, h) >= 3.8 and StrideModel.cadence("800m", 799.0, h) <= 4.0, "800m: volata finale %.2f Hz (3,8-4,0)" % StrideModel.cadence("800m", 799.0, h))
+	_check(StrideModel.cadence("800m", 780.0, h) > StrideModel.cadence("800m", 680.0, h), "800m: la cadenza sale negli ultimi 100 m")
+
 	var mid_ok: bool = true
 	for d in range(100, 1200, 100):
 		var f15: float = StrideModel.cadence("1500m", float(d), h)
@@ -87,6 +95,12 @@ func _process(_delta: float) -> bool:
 		var l15: float = StrideModel.step_length("1500m", float(d), _speed_at("1500m", 240.0, float(d)), h)
 		l1500 = l1500 and l15 >= 1.75 and l15 <= 2.10
 	_check(l1500, "1500m (4:00): ampiezza fra 1,75 e 2,10 m")
+
+	var l800: bool = true
+	for d in range(100, 700, 100):
+		var l8: float = StrideModel.step_length("800m", float(d), _speed_at("800m", 106.0, float(d)), h)
+		l800 = l800 and l8 >= 1.75 and l8 <= 2.30
+	_check(l800, "800m (1:46): ampiezza fra 1,75 e 2,30 m")
 
 	# --- v = f x L in regime, staffette e concorsi
 	var sp: float = 11.0

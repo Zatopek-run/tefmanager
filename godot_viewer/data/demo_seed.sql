@@ -175,5 +175,33 @@ INSERT OR REPLACE INTO field_attempts (race_id, lane, round_num, mark_m, is_foul
 (12, 3, 1, 17.10, 0), (12, 3, 2, 17.64, 0), (12, 3, 3, 17.30, 1), (12, 3, 4, 17.50, 0), (12, 3, 5, 17.38, 0), (12, 3, 6, 17.20, 0),
 (12, 4, 1, 17.75, 0), (12, 4, 2, 17.90, 0), (12, 4, 3, 18.10, 0), (12, 4, 4, 17.85, 0), (12, 4, 5, 17.83, 0), (12, 4, 6, 17.65, 1);
 
+-- Gara 13: 800m Maschile (2 giri, partenza in piedi sulla linea d'arrivo, rientro alla corda dopo la prima curva).
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (13, '800m', 'Meeting Internazionale di Prova', 800, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(13, 1, 'Dario Conti',      'Atletica Brera',    'M', 0, 0.160, 108.40, 'OK'),
+(13, 2, 'Luca Ferrante',    'Polisportiva Nord', 'M', 0, 0.175, 107.15, 'OK'),
+(13, 3, 'Marco Valenti',    'Club Aurora',       'M', 1, 0.145, 105.92, 'OK'),
+(13, 4, 'Ivo Salvetti',     'Atletica Brera',    'M', 0, 0.180, 109.30, 'OK'),
+(13, 5, 'Tomas Reinholt',   'Nordic Track',      'M', 0, 0.142, 104.85, 'OK'),
+(13, 6, 'Paulo Mendes',     'Clube Atlantico',   'M', 0, 0.165, 106.60, 'OK'),
+(13, 7, 'Kenji Arakawa',    'Sakura AC',         'M', 0, 0.138, 105.40, 'OK'),
+(13, 8, 'Elias Ndlovu',     'Highveld Harriers', 'M', 0, 0.190, 110.75, 'OK');
+
+-- Gara 14: 800m Femminile.
+INSERT OR REPLACE INTO races (race_id, event_name, meet_name, distance_m, wind_ms)
+VALUES (14, '800m', 'Meeting Internazionale di Prova', 800, 0);
+
+INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status) VALUES
+(14, 1, 'Giulia Conti',     'Atletica Brera',    'F', 0, 0.162, 125.80, 'OK'),
+(14, 2, 'Nadia Moretti',    'Polisportiva Nord', 'F', 0, 0.171, 124.30, 'OK'),
+(14, 3, 'Viola Ferri',      'Club Aurora',       'F', 1, 0.148, 122.65, 'OK'),
+(14, 4, 'Elena Fontana',    'Atletica Brera',    'F', 0, 0.182, 126.90, 'OK'),
+(14, 5, 'Astrid Lindqvist', 'Nordic Track',      'F', 0, 0.144, 121.20, 'OK'),
+(14, 6, 'Sofia Carvalho',   'Clube Atlantico',   'F', 0, 0.168, 123.50, 'OK'),
+(14, 7, 'Yuki Tanaka',      'Sakura AC',         'F', 0, 0.140, 122.10, 'OK'),
+(14, 8, 'Amara Diallo',     'Highveld Harriers', 'F', 0, 0.192, 128.40, 'OK');
+
 -- Pettorali di fantasia per il visualizzatore: unici in ogni gara (rowid * 37 e' coprimo con 900).
 UPDATE race_results SET bib = 100 + (rowid * 37) % 900 WHERE bib = 0;

@@ -28,7 +28,7 @@ from models.race_export import export_race
 
 GODOT_PROJECT = Path(__file__).resolve().parent.parent / "godot_viewer"
 SQLITE_PLUGIN = GODOT_PROJECT / "addons" / "godot-sqlite" / "gdsqlite.gdextension"
-GODOT_EVENTS = ("100m", "400m", "1500m", "4x100m", "4x400m", "Salto in Lungo", "Getto del Peso")  # elenco esatto; l'800m non c'è: in Godot mancano curva, geometria, camere e cadenza, quindi usa la vista PyQt
+GODOT_EVENTS = ("100m", "400m", "800m", "1500m", "4x100m", "4x400m", "Salto in Lungo", "Getto del Peso")  # elenco esatto
 
 
 def find_godot() -> Optional[Path]:

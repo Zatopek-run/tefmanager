@@ -8,6 +8,9 @@ const SHOTS_100M: Array[float] = [-8.6, -5.0, -1.0, -0.2, 0.8, 4.0, 8.4, 9.5, 11
 ## 400m: partenza, curva 1, rettilineo opposto, curva 2, rettilineo d'arrivo, fotofinish, dopo l'arrivo
 const SHOTS_400M: Array[float] = [-6.6, -4.0, -1.5, 3.0, 12.0, 25.0, 36.0, 42.0, 44.3, 47.0, 50.0]
 
+## 800m (~105 s): preparazione, curva 1, rettilineo opposto, curva 2, rettilineo d'arrivo (passaggio), 2o giro, volata, arrivo
+const SHOTS_800M: Array[float] = [-3.8, -1.5, 3.0, 18.0, 33.0, 46.0, 62.0, 80.0, 96.0, 102.5, 105.2, 107.0, 110.0]
+
 var _out_dir: String = "user://shots"
 var _stage: int = 0
 var _scene: Node = null
@@ -32,7 +35,7 @@ func _process(_delta: float) -> bool:
 	if rc.state == rc.State.LOADED:
 		rc.start()  # la scena parte da sola dopo 1.5 s: qui forziamo l'avvio subito
 		return false
-	var shots: Array[float] = SHOTS_400M if rc.event_kind == "400m" else SHOTS_100M
+	var shots: Array[float] = SHOTS_400M if rc.event_kind == "400m" else (SHOTS_800M if rc.event_kind == "800m" else SHOTS_100M)
 	if _stage >= shots.size():
 		quit(0)
 		return true

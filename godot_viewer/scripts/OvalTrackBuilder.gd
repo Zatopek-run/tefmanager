@@ -74,6 +74,17 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 			var h: Vector2 = TrackGeometry.heading_at(1, c0)
 			var mark: MeshInstance3D = _box(parent, Vector3(0.1, 0.014, w), Vector3(p.x, 0.008, p.y), line)
 			mark.rotation.y = atan2(-h.y, h.x)
+	elif kind == "800m":
+		# Partenza in piedi sulla linea d'arrivo (corsie 1..8 allineate), senza blocchi; il rientro alla corda e' dopo la
+		# prima curva, dove sta la linea di rientro (linea sul rettilineo opposto, a x = 0).
+		var c0: float = TrackGeometry.start_offset_800m()
+		for lane in range(1, lanes + 1):
+			var lat: float = (float(lane) - 1.0) * w
+			var p: Vector2 = TrackGeometry.position_at_radial(c0, lat)
+			var h: Vector2 = TrackGeometry.heading_at(1, c0)
+			var mark: MeshInstance3D = _box(parent, Vector3(0.1, 0.014, w), Vector3(p.x, 0.008, p.y), line)
+			mark.rotation.y = atan2(-h.y, h.x)
+		_box(parent, Vector3(0.1, 0.014, width), Vector3(0.0, 0.008, -r1 - (inner + outer) * 0.5), line)
 	elif kind == "Salto in Lungo":
 		# Pedana di rincorsa + asse di battuta + fossa di sabbia nel prato interno (z = -14).
 		var pit_z: float = -14.0

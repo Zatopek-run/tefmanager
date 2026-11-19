@@ -288,13 +288,23 @@ class TestRaceViewer(unittest.TestCase):
                     widget.skip_to_end()
                     widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
                     widget.close()
-            # Godot non sa ancora mettere in scena l'800m: resta fuori dall'elenco e l'export lo rifiuta (vista interna)
-            self.assertNotIn("800m", GODOT_EVENTS)
-            self.assertNotIn("800m", DISTANCES_M)
+            # Godot mette in scena anche l'800m: è nell'elenco e l'export scrive la gara a 800 m con i tempi del modello
+            self.assertIn("800m", GODOT_EVENTS)
+            self.assertEqual(DISTANCES_M["800m"], 800)
+            import sqlite3
+            from contextlib import closing
+
             from models.race_export import export_race
 
-            with self.assertRaises(ValueError):
-                export_race(summary, res, Path(tmpdir) / "no800.db")
+            out = Path(tmpdir) / "800.db"
+            race_id = export_race(summary, res, out)
+            with closing(sqlite3.connect(out)) as conn:
+                self.assertEqual(
+                    conn.execute("SELECT event_name, distance_m FROM races WHERE race_id = ?", (race_id,)).fetchone(),
+                    ("800m", 800),
+                )
+                exported = sorted(r[0] for r in conn.execute("SELECT final_time FROM race_results WHERE race_id = ?", (race_id,)))
+            self.assertEqual(exported, sorted(s.mark_value for s in res.standings))
 
     def test_view_toggle_keeps_race_position(self) -> None:
         from views.race_3d import Track3DWidget

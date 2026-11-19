@@ -162,8 +162,8 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Verifica (con Godot installato).** `godot --headless --path godot_viewer -s res://tests/verify_race.gd`
   controlla arrivo esatto, ordine e cronometro (esce con codice 0/1); `tests/screenshots.gd` (senza
   `--headless`) salva immagini della scena reale (`-- cartella [close] --race=2`); `tests/verify_input.gd -- --autoquit`
-  prova tasti e chiusura automatica. `verify_race.gd` scorre le 12 gare del DB demo (1-2 = 100m con un ritirato,
-  3-4 = 400m, 5-6 = 1500m, 7 = 4x100m, 8 = 4x400m con squadra squalificata, 9-10 = lungo, 11-12 = peso), geometria
+  prova tasti e chiusura automatica. `verify_race.gd` scorre le 14 gare del DB demo (1-2 = 100m con un ritirato,
+  3-4 = 400m, 5-6 = 1500m, 7 = 4x100m, 8 = 4x400m con squadra squalificata, 9-10 = lungo, 11-12 = peso, 13-14 = 800m), geometria
   inclusa. `verify_pose.gd` gira in `--headless`; `verify_camera.gd` e `verify_input.gd` aprono una finestra vera (serve
   un display; `verify_camera.gd` dura diversi minuti: lanciarlo in background, non con un timeout breve).
   Testato con Godot 4.7.2 (flatpak `org.godotengine.Godot`) + godot-sqlite 4.9; l'import del progetto alla prima
@@ -285,10 +285,17 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Flatpak.** `/tmp` dentro il sandbox è privato: gli screenshot scritti in `/tmp/...` non compaiono fuori. Salvali
   in una cartella della home. `./TrackAndFieldManager.sh` avvia il gioco con il `.venv` ed espone Godot flatpak
   (wrapper in `~/.track_field_manager/`, `TEF_GODOT`); `--check` mostra cosa userebbe.
-- Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie, **né l'800m**: l'800m usa la vista PyQt
-  (non è in `GODOT_EVENTS` né in `race_export.DISTANCES_M`, `export_race` solleva `ValueError`). Per aggiungerlo servono `RaceMotion.gd`
-  (copia GDScript della curva `800m` di `race_viewer._velocity`), `TrackGeometry`, `OvalTrackBuilder`, `BroadcastCameras`, `StrideModel`,
-  `RaceController` (`GUN_AT_BY_KIND`, `uses_blocks`), seed demo e `verify_*.gd`.
+- Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie.
+- **800m** (Q16, 2026-11-19): `RaceMotion.gd` ha la copia GDScript della curva `800m` di `race_viewer._velocity`; `TrackGeometry.pose_800m`
+  (partenza in piedi **allineata sulla linea d'arrivo**, prima curva in corsia, rientro alla corda fra 100 e 150 m: stessa semplificazione
+  visiva della vista PyQt, l'esito non cambia) e `start_offset_800m`; `region_for("800m")` ha una tolleranza `REGION_EPS` perché la
+  partenza coincide con la linea d'arrivo (senza, la regia taglierebbe un istante sul rettilineo); `RaceController` (`GUN_AT_BY_KIND` 4,6 s,
+  senza blocchi); `OvalTrackBuilder` (linea di partenza e di rientro); regia = quella dell'ovale (come 1500m). **`StrideModel` per l'800m è
+  una STIMA** (il file di riferimento non ha dati sull'800m): 3,85 Hz nei primi 150 m, ~3,5 a regime, volata fino a ~3,95. Gare demo 13-14
+  (M/F) in `demo_seed.sql`; `verify_race.gd` va fino alla 14 e controlla la geometria, `verify_stride.gd` la cadenza.
+  Provato: `verify_race`, `verify_stride`, `verify_replay`, `verify_bib` (TUTTO OK, Godot 4.7.2 flatpak) e screenshot di partenza e gara
+  (`tests/screenshots.gd -- cartella --speed=4 --race=13`); **non** guardati gli scatti dell'arrivo e non provato con una gara esportata
+  da `export_race` (solo con il seed demo; l'export è coperto da un test Python).
 
 ## Test: cosa verificano e cosa no
 
