@@ -172,6 +172,16 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   alto al centro nell'HUD. Esc («Salta alla fine») salta anche il ralenti; `replay_enabled = false` lo disattiva. Gli
   script di test che aspettano `FINISHED` dal vivo (`verify_race`, `verify_camera`, `screenshots`) lo disattivano:
   `tests/verify_replay.gd` (headless, passo fisso con `set_process(false)` + `_process(dt)`) lo verifica.
+- **Cadenza di passo** (`godot_viewer/models/StrideModel.gd`, solo vista). La corsa non ha più una costante di metri per
+  ciclo: `RunnerView._sprint_cycle_length` chiede a `StrideModel` cadenza e ampiezza (v = f × L) per evento, punto di gara e
+  altezza visiva del modello. Dati da `raw/parametri_biomeccanici_atletica.md` (cartella locale, non in git): 100m picco
+  ~4,75 Hz a 25 m, 4,6–4,5 in regime, −4% finale; 400m 3,9 Hz nei primi 200 m poi in calo fino a ~3,35; 1500m ~3,2 Hz con
+  volata fino a ~3,9; l'atleta più alto ha ~5% di cadenza in meno ogni 17 cm; il primo passo è lungo 1,10 m e cresce fino
+  al regime in 30 m (niente «pedalare sul posto»). Le staffette usano la curva dei 100/400 m sul tratto della frazione (dalla
+  2ª con partenza lanciata). **Non cambia tempi, ordine o posizioni**: decide solo a che ritmo si muovono le gambe.
+  L'animazione satura a 8× (`speed_scale` ≤ 8): per misurare la cadenza reale usa `time_scale` ≤ 2.
+  `tests/verify_stride.gd` (headless) confronta il modello con le fasce del file. Non c'è fatica per atleta (non è un dato
+  esportato) e il tempo di contatto al suolo del file non è usato: la clip di animazione ha proporzioni fisse.
 - **Classifica finale.** A gara conclusa (`FINISHED`) l'HUD Godot mostra a centro schermo la classifica completa
   (`_update_final_board`); `AUTOQUIT_DELAY` è 8 s perché resti leggibile. Alla chiusura di Godot il dialog PyQt mostra
   `views/results_board.py` (`ResultsBoardWidget`) invece di una pagina vuota; legge solo gli `EventStanding` del modello.

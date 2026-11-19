@@ -31,8 +31,7 @@ const HAIR_PATHS_F: Array[String] = [
 const FACING_Y: float = PI * 0.5
 
 ## Metri percorsi per ciclo completo (2 passi) di ogni animazione: ricava la cadenza dalla velocita'.
-const STRIDE_SPRINT: float = 4.6
-const STRIDE_DRIVE: float = 2.1       # primi passi fuori dai blocchi: falcata piu' corta e frequenza alta
+## La corsa (Sprint) non ha piu' una costante: la cadenza viene da StrideModel (evento, fase di gara, altezza).
 const STRIDE_JOG: float = 3.2
 const STRIDE_WALK: float = 1.5
 const SPRINT_FROM: float = 7.0   # m/s: da qui in su "Sprint"
@@ -61,6 +60,7 @@ var _head_bone_idx: int = -1
 var _relay_leg: int = -1               # -1 = gara individuale; 0..3 = frazione della staffetta
 var _relay_leg_len: float = 100.0
 var _visual_key: String = ""
+var _height_m: float = StrideModel.REF_HEIGHT   # altezza visiva del modello: regola la cadenza (StrideModel)
 var set_amount_override: float = -1.0  # solo per prove: forza pronti(0)..set(1); -1 = la decide RaceController
 
 
@@ -89,6 +89,7 @@ func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visu
 	var base_h: float = 1.63 if is_female else 1.72
 	var target_height: float = base_h + float(absi(hash(_visual_key + "height")) % 15) / 100.0
 	_model.scale = Vector3.ONE * (target_height / height)
+	_height_m = target_height
 
 	_setup_animation()
 	_posture_mod = SprintPostureModifier.new()
@@ -224,7 +225,7 @@ func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
 
 	var stride: float = 1.0
 	match _current_anim:
-		&"Sprint": stride = lerpf(STRIDE_DRIVE, STRIDE_SPRINT, smoothstep(0.0, 20.0, d))
+		&"Sprint": stride = _sprint_cycle_length(d, s)
 		&"Jog_Fwd": stride = STRIDE_JOG
 		&"Walk": stride = STRIDE_WALK
 	if _current_anim == &"Crouch_Idle" or _current_anim == &"Idle":
@@ -232,6 +233,18 @@ func _update_animation(leg_dist: float = -1.0, leg_speed: float = -1.0) -> void:
 	else:
 		var length: float = _player.get_animation(_current_anim).length
 		_player.speed_scale = clampf(s / stride * length * RaceController.play_speed(), 0.25, 8.0)
+
+
+## Metri per ciclo della corsa: cadenza e ampiezza da StrideModel (evento, punto della gara, altezza). Nelle staffette la
+## frazione e' un tratto di 100/400 m: le frazioni dalla 2a in poi hanno gia' il testimone in corsa (partenza lanciata).
+func _sprint_cycle_length(d: float, speed: float) -> float:
+	var kind: String = RaceController.event_kind
+	var local: float = d
+	if _relay_leg >= 0:
+		local = maxf(0.0, d - float(_relay_leg) * _relay_leg_len) + (StrideModel.FLYING_START_OFFSET if _relay_leg > 0 else 0.0)
+	if not StrideModel.is_supported(kind):
+		return 4.6   # evento senza curva (non dovrebbe succedere: le gare in pista sono tutte coperte)
+	return StrideModel.cycle_length(kind, local, speed, _height_m)
 
 
 func _play(anim: StringName, blend: float = BLEND_TIME) -> void:
