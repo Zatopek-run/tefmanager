@@ -463,6 +463,22 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
         self.assertTrue(all(t.value in TICKET_PRICE for t in CompetitionTier))
         self.assertEqual(get_meet_name(8, CompetitionTier.REGIONALE), "Finale Bronzo Outdoor #2")
 
+    def test_age_categories_follow_fidal_bands(self) -> None:
+        """Q17: la fascia d'età si calcola dall'età (nessun campo salvato)."""
+        from models.entities import age_category
+
+        expected = {
+            14: "Cadetti", 15: "Cadetti", 16: "Allievi", 17: "Allievi", 18: "Juniores", 19: "Juniores",
+            20: "Promesse", 22: "Promesse", 23: "Seniores", 35: "Seniores",
+        }
+        for age, name in expected.items():
+            self.assertEqual(age_category(age), name, age)
+        a = generate_vertical_slice_roster(rng=random.Random(2))[0]
+        a.age = 19
+        self.assertEqual(a.age_category, "Juniores")
+        a.age += 1  # cambio stagione
+        self.assertEqual(a.age_category, "Promesse")
+
     def test_two_meets_and_sqlite_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db = DatabaseManager(db_path=Path(tmpdir) / "roundtrip.db")

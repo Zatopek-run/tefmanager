@@ -191,6 +191,25 @@ TEAM_POINTS: Dict[int, int] = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
 DNF_MARK = "Ritirato"
 
 
+# Fasce d'età FIDAL (Q17): (età massima inclusa, nome). Si calcolano da `Athlete.age`, non si salvano: il gioco non ha
+# l'anno di nascita e l'età cresce di 1 a ogni cambio stagione. Sotto i 14 anni vale la prima fascia.
+AGE_CATEGORIES: List[Tuple[int, str]] = [
+    (15, "Cadetti"),
+    (17, "Allievi"),
+    (19, "Juniores"),
+    (22, "Promesse"),
+]
+AGE_CATEGORY_SENIOR = "Seniores"  # 23 anni e oltre
+
+
+def age_category(age: int) -> str:
+    """Fascia d'età FIDAL: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+."""
+    for max_age, name in AGE_CATEGORIES:
+        if age <= max_age:
+            return name
+    return AGE_CATEGORY_SENIOR
+
+
 def gym_upgrade_cost(current_level: int) -> int:
     return (current_level + 1) * 2500
 
@@ -490,6 +509,10 @@ class Athlete:
                 + self.stamina * 0.06
             )
         return max(1, min(100, round(score)))
+
+    @property
+    def age_category(self) -> str:
+        return age_category(self.age)
 
     @property
     def is_injured(self) -> bool:

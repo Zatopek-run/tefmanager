@@ -257,6 +257,7 @@ class AthleteDetailDialog(QDialog):
         info_rows = [
             ("Categoria", a.gender_label),
             ("Età", f"{a.age} anni"),
+            ("Fascia d'età", a.age_category),
             ("Nazionalità", f"{a.flag} {a.nationality}"),
             ("Altezza", a.height_display),
             ("Peso", a.weight_display),
