@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_bib_column() or not _has_field_attempts_table() or _demo_race_count() < 12):
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_bib_column() or not _has_field_attempts_table() or _demo_race_count() < 12 or _demo_field_rounds() < 6):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()
@@ -53,6 +53,12 @@ func _has_field_attempts_table() -> bool:
 func _demo_race_count() -> int:
 	var rows: Array[Dictionary] = _select("SELECT COUNT(*) AS cnt FROM races;", [])
 	return int(rows[0].get("cnt", 0)) if not rows.is_empty() else 0
+
+
+## Prove per atleta nei concorsi del DB dimostrativo (gare 9-12): un DB creato quando si facevano 4 prove è vecchio.
+func _demo_field_rounds() -> int:
+	var rows: Array[Dictionary] = _select("SELECT MAX(round_num) AS mx FROM field_attempts WHERE race_id BETWEEN 9 AND 12;", [])
+	return int(rows[0].get("mx", 0)) if not rows.is_empty() and rows[0].get("mx") != null else 0
 
 
 func _exit_tree() -> void:
