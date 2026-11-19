@@ -512,7 +512,7 @@ def create_season_objectives(game_mode: str, tier: CompetitionTier) -> List[Seas
         SeasonObjective("positive_budget", "Mantieni il bilancio sopra $10.000"),
         SeasonObjective(
             "promote",
-            f"Ottieni la promozione dalla categoria {tier.value}",
+            f"Ottieni la promozione dalla categoria {tier.display_name}",
         ),
         SeasonObjective("historic_mark", "Abbatti un traguardo storico (es. sub-11.00s nei 100m)"),
     ]
@@ -563,7 +563,7 @@ def get_meet_name(week: int, tier: CompetitionTier, season_phase_label: str = "O
     """Return a realistic meet title for a given week and tier."""
     meet_num = max(1, week // 4)
     phase_short = season_phase_label.split(" ")[0]
-    return f"Meeting {tier.value} {phase_short} #{meet_num}"
+    return f"{tier.display_name} {phase_short} #{meet_num}"
 
 
 def get_rival_teams(tier: CompetitionTier) -> List[str]:

@@ -17,6 +17,11 @@ class CompetitionTier(str, Enum):
     INTERNAZIONALE = "Internazionale"
 
     @property
+    def display_name(self) -> str:
+        """Nome mostrato in interfaccia (il `value` resta quello salvato nel DB e usato come chiave)."""
+        return TIER_DISPLAY_NAMES[self]
+
+    @property
     def order(self) -> int:
         return TIER_ORDER.index(self)
 
@@ -39,6 +44,15 @@ TIER_ORDER: List[CompetitionTier] = [
     CompetitionTier.NAZIONALE,
     CompetitionTier.INTERNAZIONALE,
 ]
+
+# Nomi dei livelli come gli vede il giocatore (Q18: slot dei Campionati di Società). Solo testo: il `value`
+# dell'enum NON si cambia, perché è scritto nei salvataggi e usato come chiave (es. TICKET_PRICE).
+TIER_DISPLAY_NAMES: Dict[CompetitionTier, str] = {
+    CompetitionTier.PROVINCIALE: "Fase regionale CdS",
+    CompetitionTier.REGIONALE: "Finale Bronzo",
+    CompetitionTier.NAZIONALE: "Finale Argento",
+    CompetitionTier.INTERNAZIONALE: "Finale Oro / Coppa Europa",
+}
 
 TIER_CONFIG: Dict[CompetitionTier, Dict[str, int]] = {
     CompetitionTier.PROVINCIALE: {

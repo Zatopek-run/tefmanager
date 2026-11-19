@@ -652,18 +652,18 @@ class SeasonEndDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(18, 18, 18, 18)
 
-        title = QLabel(f"Stagione {result.season} — Lega {result.tier.value}")
+        title = QLabel(f"Stagione {result.season} — Lega {result.tier.display_name}")
         title.setObjectName("AppTitle")
         layout.addWidget(title)
 
         if result.outcome == SeasonOutcome.PROMOTED and result.new_tier is not None:
-            text = f"{result.placement}° posto: PROMOSSI in categoria {result.new_tier.value}!"
+            text = f"{result.placement}° posto: PROMOSSI in categoria {result.new_tier.display_name}!"
         elif result.outcome == SeasonOutcome.RELEGATED and result.new_tier is not None:
-            text = f"Ultimo posto: RETROCESSI in categoria {result.new_tier.value}."
+            text = f"Ultimo posto: RETROCESSI in categoria {result.new_tier.display_name}."
         elif result.outcome == SeasonOutcome.CHAMPION:
-            text = f"1° posto: CAMPIONI della lega {result.tier.value}!"
+            text = f"1° posto: CAMPIONI della lega {result.tier.display_name}!"
         else:
-            text = f"{result.placement}° posto: categoria {result.tier.value} confermata."
+            text = f"{result.placement}° posto: categoria {result.tier.display_name} confermata."
         outcome = QLabel(text)
         outcome.setStyleSheet(
             f"color: {self.OUTCOME_COLORS[result.outcome]}; font-weight: 800; font-size: 15px;"

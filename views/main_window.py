@@ -303,7 +303,7 @@ class MainWindow(QMainWindow):
         self.date_label.setText(
             f"Settimana {state.week} ({state.current_date:%d %b %Y})  •  {mode_tag} · {state.season_phase.value}"
         )
-        self.tier_badge.setText(f"Cat. {state.tier.value}")
+        self.tier_badge.setText(f"Cat. {state.tier.display_name}")
         self.comp_badge.setVisible(state.is_competition_week)
 
         self.hud_budget.setText(f"Bilancio: ${state.budget:,}")

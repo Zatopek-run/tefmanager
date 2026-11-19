@@ -168,7 +168,7 @@ class GameController(QObject):
             budget = 18000
             intro = (
                 f"Sett. 1: Carriera Completa avviata per {team_name}! "
-                "Gestisci stagioni Outdoor, Cross e Indoor fino alla categoria Internazionale."
+                "Gestisci stagioni Outdoor, Cross e Indoor fino alla categoria Finale Oro / Coppa Europa."
             )
 
         lineup = build_default_lineup(roster, event_names=events, gender="M")

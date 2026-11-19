@@ -432,6 +432,19 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
         self.assertTrue(all(forms[3][i] >= forms[2][i] for i in common))
         self.assertTrue(any(forms[3][i] > forms[2][i] for i in common))
 
+    def test_tier_display_names_do_not_change_stored_values(self) -> None:
+        """Q18: i nomi visualizzati sono nuovi, ma il `value` (salvato nel DB, chiave dei prezzi) resta quello di prima."""
+        from models.entities import TICKET_PRICE
+        from models.generator import get_meet_name
+
+        self.assertEqual([t.value for t in CompetitionTier], ["Provinciale", "Regionale", "Nazionale", "Internazionale"])
+        self.assertEqual(
+            [t.display_name for t in CompetitionTier],
+            ["Fase regionale CdS", "Finale Bronzo", "Finale Argento", "Finale Oro / Coppa Europa"],
+        )
+        self.assertTrue(all(t.value in TICKET_PRICE for t in CompetitionTier))
+        self.assertEqual(get_meet_name(8, CompetitionTier.REGIONALE), "Finale Bronzo Outdoor #2")
+
     def test_two_meets_and_sqlite_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db = DatabaseManager(db_path=Path(tmpdir) / "roundtrip.db")

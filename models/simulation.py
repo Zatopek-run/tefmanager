@@ -1095,7 +1095,7 @@ def simulate_competition(
             Transaction(
                 id=None,
                 week=state.week,
-                description=f"Trasferta in pullman ({state.tier.value})",
+                description=f"Trasferta in pullman ({state.tier.display_name})",
                 category="Trasferte",
                 amount=-travel_cost,
             ),
@@ -1193,19 +1193,19 @@ def close_season(state: GameState) -> SeasonEndResult:
         outcome, new_tier = SeasonOutcome.PROMOTED, up
         msg = (
             f"Sett. {week}: PROMOZIONE! {state.team_name} chiude {placement}ª in "
-            f"{tier.value} e sale in categoria {up.value}!"
+            f"{tier.display_name} e sale in categoria {up.display_name}!"
         )
     elif placement == 1 and up is None:
         outcome = SeasonOutcome.CHAMPION
-        msg = f"Sett. {week}: CAMPIONI! {state.team_name} vince la lega {tier.value}!"
+        msg = f"Sett. {week}: CAMPIONI! {state.team_name} vince la lega {tier.display_name}!"
     elif placement > len(table) - RELEGATION_SPOTS and down is not None:
         outcome, new_tier = SeasonOutcome.RELEGATED, down
         msg = (
             f"Sett. {week}: RETROCESSIONE. {state.team_name} chiude ultima in "
-            f"{tier.value} e scende in categoria {down.value}."
+            f"{tier.display_name} e scende in categoria {down.display_name}."
         )
     else:
-        msg = f"Sett. {week}: Stagione chiusa al {placement}° posto in {tier.value}: categoria confermata."
+        msg = f"Sett. {week}: Stagione chiusa al {placement}° posto in {tier.display_name}: categoria confermata."
 
     if new_tier is not None:
         state.tier = new_tier
@@ -1335,7 +1335,7 @@ def advance_week(
         )
 
     ledger(
-        f"Sponsor Società ({state.tier.value}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)",
+        f"Sponsor Società ({state.tier.display_name}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)",
         "Sponsor",
         fin["sponsor"],
     )

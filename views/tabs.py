@@ -374,7 +374,7 @@ class DashboardTab(QWidget):
         weeks_left = state.weeks_to_season_end
         if weeks_left is None:
             self.tier_progress_label.setText(
-                f"Lega {state.tier.value}: {pos}° su {len(standings)} con {pts} pt "
+                f"Lega {state.tier.display_name}: {pos}° su {len(standings)} con {pts} pt "
                 "(promozioni e retrocessioni solo in Carriera)"
             )
             self.tier_progress.setMaximum(8)
@@ -382,15 +382,15 @@ class DashboardTab(QWidget):
             self.tier_progress.setFormat(f"Prototipo: settimana {min(8, state.week)} di 8")
         else:
             if pos <= PROMOTION_SPOTS and state.tier.next_tier is not None:
-                zone = f"zona promozione → {state.tier.next_tier.value}"
+                zone = f"zona promozione → {state.tier.next_tier.display_name}"
             elif pos <= PROMOTION_SPOTS:
                 zone = "in corsa per il titolo" if pos > 1 else "in testa: verso il titolo"
             elif pos > len(standings) - RELEGATION_SPOTS and state.tier.previous_tier is not None:
-                zone = f"zona retrocessione → {state.tier.previous_tier.value}"
+                zone = f"zona retrocessione → {state.tier.previous_tier.display_name}"
             else:
                 zone = "metà classifica"
             self.tier_progress_label.setText(
-                f"Lega {state.tier.value}: {pos}° su {len(standings)} con {pts} pt — {zone}"
+                f"Lega {state.tier.display_name}: {pos}° su {len(standings)} con {pts} pt — {zone}"
             )
             done = 36 - weeks_left
             self.tier_progress.setMaximum(36)
@@ -402,7 +402,7 @@ class DashboardTab(QWidget):
         if state.season_history:
             last = state.season_history[0]
             self.tier_progress.setToolTip(
-                f"Stagione {last.season}: {last.placement}° in {last.tier.value} — {last.outcome.value}"
+                f"Stagione {last.season}: {last.placement}° in {last.tier.display_name} — {last.outcome.value}"
             )
 
         n_m = len(state.club_records)
@@ -1044,10 +1044,10 @@ class CalendarTab(QWidget):
         league_rows = state.league_standings()
         if state.game_mode == "career":
             self.league_title.setText(
-                f"Classifica di Lega — {state.tier.value} (verdetto tra {state.weeks_to_season_end} sett.)"
+                f"Classifica di Lega — {state.tier.display_name} (verdetto tra {state.weeks_to_season_end} sett.)"
             )
         else:
-            self.league_title.setText(f"Classifica di Lega — {state.tier.value}")
+            self.league_title.setText(f"Classifica di Lega — {state.tier.display_name}")
         self.league_table.setRowCount(len(league_rows))
         for row, (team, pts) in enumerate(league_rows):
             for col, text in enumerate((str(row + 1), team, str(pts))):
@@ -1269,7 +1269,7 @@ class StaffTab(QWidget):
         self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")
         self.stand_sub.setText(
             f"Nei meeting in casa niente trasferta e incasso biglietti (${price}/biglietto in "
-            f"{state.tier.value}). Il pubblico cresce con prestigio, categoria e reputazione."
+            f"{state.tier.display_name}). Il pubblico cresce con prestigio, categoria e reputazione."
         )
         if state.stand_seats >= STAND_MAX_SEATS:
             self.stand_btn.setText("Capienza massima")
@@ -2082,7 +2082,7 @@ class RivalsTab(QWidget):
         ]
         mine_avg = sum(mine) / len(mine) if mine else 0.0
         self.summary_label.setText(
-            f"Categoria {state.tier.value} ({gender}): livello medio rivali {avg:.1f} "
+            f"Categoria {state.tier.display_name} ({gender}): livello medio rivali {avg:.1f} "
             f"({_trend_text(trend)} nell'ultimo anno) · la tua formazione {mine_avg:.1f}"
         )
 
@@ -2308,8 +2308,8 @@ class RecordsTab(QWidget):
         for row, h in enumerate(state.season_history):
             outcome_txt = h.outcome.value
             if h.new_tier is not None:
-                outcome_txt = f"{outcome_txt} → {h.new_tier.value}"
-            vals = [f"Stagione {h.season}", h.tier.value, f"{h.placement}°", outcome_txt]
+                outcome_txt = f"{outcome_txt} → {h.new_tier.display_name}"
+            vals = [f"Stagione {h.season}", h.tier.display_name, f"{h.placement}°", outcome_txt]
             color = self.OUTCOME_COLORS.get(h.outcome)
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)

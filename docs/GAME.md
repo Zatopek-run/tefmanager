@@ -36,7 +36,7 @@ un visualizzatore Godot opzionale in stile «diretta TV»).
 | **Prototipo Outdoor** (`vertical_slice`) | 10 atleti, 3 discipline (100m, Salto in Lungo, 1500m), 2 gare ufficiali (sett. 4 e 8), nessuna promozione. Serve a provare il ciclo allenamento/recupero/vento/scouting/staff/dilemmi. Nulla ferma il gioco dopo la sett. 8 (difetto noto). Fondo iniziale 10.000. |
 | **Carriera Completa** (`career`) | Rosa iniziale di 16 atleti (8 M + 8 F), 5 discipline (100m, 400m, 1500m, Salto in Lungo, Getto del Peso) più staffette 4x100m e 4x400m, stagioni cicliche **Outdoor → Cross → Indoor** da 12 settimane l'una (36 sett. a stagione), promozioni/retrocessioni tra 4 categorie. Fondo iniziale 18.000. |
 
-Categorie (`CompetitionTier`): **Provinciale → Regionale → Nazionale → Internazionale**. Ognuna ha livello medio dei rivali,
+Categorie (`CompetitionTier`): **Provinciale → Regionale → Nazionale → Internazionale**. Nell'interfaccia hanno i nomi dei Campionati di Società (`TIER_DISPLAY_NAMES`, Q18): **Fase regionale CdS → Finale Bronzo → Finale Argento → Finale Oro / Coppa Europa**; il `value` dell'enum, salvato nel DB, non cambia. Ognuna ha livello medio dei rivali,
 sponsor settimanale, montepremi, costo di trasferta e prezzo dei biglietti crescenti (§6, §9).
 
 ---
