@@ -46,9 +46,9 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 105 test, OK, ~3,6 s
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 84 test (80 + 4 sugli slot non supportati)
-PYTHONPATH=. python3 -m unittest tests.test_migrations -v                      # 21 test, SENZA PyQt6 (python3 di sistema)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 141 test, OK, ~4 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 93 test (importa PyQt6)
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 48 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
 ```
 
@@ -73,7 +73,8 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (84 test, importa PyQt6)    test_migrations.py   (21 test, senza Qt: migrazioni e slot)
+tests/       test_game.py   (93 test, importa PyQt6)    test_migrations.py   (23 test, senza Qt: migrazioni e slot)
+             test_assignments.py (9, convocazioni)   test_contracts.py (7)   test_event_800m.py (9)   tutti senza Qt
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN
 ```
 
@@ -93,7 +94,7 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
   riempiti) restano neutri.
 - **Curve punteggio → misura** (`_score_to_mark`). Una retta per evento e sesso, tarata sulle ancore di livello:
   score 42 provinciale, 56 regionale, 66 vincitore regionale, 70 nazionale, 84 internazionale; i test
-  `test_*_matches_fidal_ranges` le fissano con fasce larghe. 100m, 400m, 1500m, lungo e peso sono tarati, le
+  `test_*_matches_fidal_ranges` le fissano con fasce larghe. 100m, 400m, **800m (ancore STIMATE, nessun dato FIDAL)**, 1500m, lungo e peso sono tarati, le
   staffette (`_relay_mark`) no. Il tetto è il record del mondo, applicato dopo il vento. Le ancore alte di lungo e
   peso vengono da dati reali (Assoluti 2025, Lazio regionali 2025); provinciale e media regionale di lungo e peso
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
@@ -110,7 +111,7 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
 
 - Si apre da `MainWindow._show_competition_results` prima dei risultati, solo se il meeting ha gare.
 - **Modello di movimento** (funzioni pure, testate): `curve_progress`, `position_fraction`, `reaction_time`.
-  Curva di velocità per gara (100m, 400m, 1500m, staffetta). `position_fraction` vale esattamente 1 a
+  Curva di velocità per gara (100m, 400m, 800m, 1500m, staffetta). `position_fraction` vale esattamente 1 a
   `t = mark_value`; il tempo di reazione (0,12–0,22 s) è incluso nel tempo ufficiale.
 - **Tempo**: `TrackRaceWidget._t` è tempo di animazione (include la partenza, `GUN_AT = 2.4 s`);
   `race_time` è tempo di gara dallo sparo (`× _scale` per comprimere 400m/1500m/staffette). Il cronometro si
@@ -284,7 +285,10 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Flatpak.** `/tmp` dentro il sandbox è privato: gli screenshot scritti in `/tmp/...` non compaiono fuori. Salvali
   in una cartella della home. `./TrackAndFieldManager.sh` avvia il gioco con il `.venv` ed espone Godot flatpak
   (wrapper in `~/.track_field_manager/`, `TEF_GODOT`); `--check` mostra cosa userebbe.
-- Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie.
+- Il visualizzatore Godot **non** copre gli altri concorsi (salto in alto, disco, …) né più di 8 corsie, **né l'800m**: l'800m usa la vista PyQt
+  (non è in `GODOT_EVENTS` né in `race_export.DISTANCES_M`, `export_race` solleva `ValueError`). Per aggiungerlo servono `RaceMotion.gd`
+  (copia GDScript della curva `800m` di `race_viewer._velocity`), `TrackGeometry`, `OvalTrackBuilder`, `BroadcastCameras`, `StrideModel`,
+  `RaceController` (`GUN_AT_BY_KIND`, `uses_blocks`), seed demo e `verify_*.gd`.
 
 ## Test: cosa verificano e cosa no
 

@@ -131,7 +131,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q16 — Set di discipline e ordine di introduzione
+## Q16 — Set di discipline e ordine di introduzione — ✅ 800 m FATTO il 2026-11-19 (Alto e Disco restano da fare)
+
+**Fatto:** 800 m come seconda specialità di Mezzofondo: `EVENTS`, curva `_score_to_mark` (ancore **stimate**), fisico ideale, viste PyQt 2D/3D, vecchi salvataggi (rivali e convocazioni riempiti al caricamento). Prerequisito «max 2 individuali + 1 staffetta» fatto (Q15). **Non fatto:** l'800 m in Godot (resta fuori da `GODOT_EVENTS`: usa la vista PyQt), Salto in Alto, Disco, e la scelta con Q10 (60 m indoor / campestre).
 
 **Raccomandazione.** Aggiungere 800 m come seconda specialità di Mezzofondo, poi Salto in Alto e Disco. Rimandare ostacoli, asta, martello, giavellotto, siepi, marcia, 200 m.
 

@@ -38,8 +38,8 @@ from models.bibs import assign_bibs
 from views.results_board import ResultsBoardWidget
 
 # Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
-TRACK_DISTANCES = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
-TRACK_TARGET_SECONDS = {"100m": None, "400m": 24.0, "1500m": 26.0, "4x100m": 16.0, "4x400m": 28.0}
+TRACK_DISTANCES = {"100m": 100, "400m": 400, "800m": 800, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
+TRACK_TARGET_SECONDS = {"100m": None, "400m": 24.0, "800m": 25.0, "1500m": 26.0, "4x100m": 16.0, "4x400m": 28.0}
 FIELD_ROUNDS = 6  # regolamento: con 8 partecipanti o meno, 6 prove a testa (con più di 8: 3 + 3 ai migliori 8)
 DNF_PROGRESS = 0.42  # un atleta ritirato si ferma a questo punto della gara
 PRE_START_SECONDS = 3.0  # "Ai vostri posti" -> "Pronti" -> sparo
@@ -63,6 +63,8 @@ def _velocity(kind: str, u: float) -> float:
         return (0.22 + 0.78 * (1.0 - math.exp(-u / 0.10))) * (1.0 - 0.07 * max(0.0, (u - 0.6) / 0.4))
     if kind == "400m":  # partenza veloce, calo nella seconda metà
         return (1.0 - math.exp(-u / 0.05)) * (1.0 - 0.16 * u) + 0.02
+    if kind == "800m":  # partenza in corsia veloce, ritmo regolare, volata negli ultimi 100 m
+        return (1.0 - math.exp(-u / 0.03)) * (0.96 + 0.02 * u + 1.1 * max(0.0, u - 0.9) ** 1.4) + 0.02
     if kind == "1500m":  # gruppo compatto, poi volata finale
         return (1.0 - math.exp(-u / 0.02)) * (0.92 + 0.05 * u + 1.3 * max(0.0, u - 0.88) ** 1.4) + 0.02
     # staffette: ogni frazione riparte (cambio al volo), con un po' di calo a fine frazione

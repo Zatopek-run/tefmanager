@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-19, branch `main`, commit `c2256a0` (lotti 1.1 e 1.2 di `PLAN.md` fatti). Suite di test: 105 test OK.
+Stato descritto: 2026-11-19, branch `main`, commit `c2256a0` (lotti 1.1 e 1.2 di `PLAN.md` fatti). Suite di test: 141 test OK (aggiornata dopo i lotti Q15-Q22 e l'800m).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -34,7 +34,7 @@ un visualizzatore Godot opzionale in stile «diretta TV»).
 | Modalità | Contenuto |
 | --- | --- |
 | **Prototipo Outdoor** (`vertical_slice`) | 10 atleti, 3 discipline (100m, Salto in Lungo, 1500m), 2 gare ufficiali (sett. 4 e 8), nessuna promozione. Serve a provare il ciclo allenamento/recupero/vento/scouting/staff/dilemmi. Nulla ferma il gioco dopo la sett. 8 (difetto noto). Fondo iniziale 10.000. |
-| **Carriera Completa** (`career`) | Rosa iniziale di 16 atleti (8 M + 8 F), 5 discipline (100m, 400m, 1500m, Salto in Lungo, Getto del Peso) più staffette 4x100m e 4x400m, stagioni cicliche **Outdoor → Cross → Indoor** da 12 settimane l'una (36 sett. a stagione), promozioni/retrocessioni tra 4 categorie. Fondo iniziale 18.000. |
+| **Carriera Completa** (`career`) | Rosa iniziale di 16 atleti (8 M + 8 F), 6 discipline (100m, 400m, **800m**, 1500m, Salto in Lungo, Getto del Peso) più staffette 4x100m e 4x400m, stagioni cicliche **Outdoor → Cross → Indoor** da 12 settimane l'una (36 sett. a stagione), promozioni/retrocessioni tra 4 categorie. Fondo iniziale 18.000. |
 
 Categorie (`CompetitionTier`): **Provinciale → Regionale → Nazionale → Internazionale**. Nell'interfaccia hanno i nomi dei Campionati di Società (`TIER_DISPLAY_NAMES`, Q18): **Fase regionale CdS → Finale Bronzo → Finale Argento → Finale Oro / Coppa Europa**; il `value` dell'enum, salvato nel DB, non cambia. Ognuna ha livello medio dei rivali,
 sponsor settimanale, montepremi, costo di trasferta e prezzo dei biglietti crescenti (§6, §9).
@@ -57,7 +57,7 @@ views/           interfaccia PyQt6 (nessuna logica che decida esiti)
   start_screen.py main_window.py tabs.py dialogs.py athlete_dialog.py styles.py (tema scuro QSS) results_board.py
   race_viewer.py race_3d.py field_3d.py (gare in diretta)     godot_launcher.py (lancio di Godot)
 godot_viewer/    progetto Godot 4.3+ separato (solo vista), legge risultati da SQLite
-tests/           test_game.py (84 test, usa PyQt6)   test_migrations.py (21 test, senza Qt)
+tests/           test_game.py (93 test, usa PyQt6)   test_migrations.py (23), test_assignments.py (9), test_contracts.py (7), test_event_800m.py (9): senza Qt
 data/            societa_atletica_lazio.csv          docs/   AUDIT, TICK, BALANCE, QUESTIONS, PLAN, GAME
 ```
 
@@ -172,7 +172,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
    **modificatore fisico** (ogni gara ha un fisico ideale in altezza/peso; lo scarto sposta il punteggio tra +1,2 e −4) + atteggiamento + bonus casa (+1) + meteo + doping,
    più una **variabilità giornaliera** gaussiana (σ ≈ 3,8; Perfezionista 3,0; Impulsivo senza mentale 5,6).
 2. Il punteggio diventa una **misura** (tempo o distanza) con una retta per evento e sesso, tarata su ancore: punteggio 42 ≈ livello provinciale, 56 regionale,
-   66 vincitore regionale, 70 nazionale, 84 internazionale. 100m, 400m, 1500m, lungo e peso sono tarati su dati FIDAL/Assoluti 2025 (provinciale e media regionale di lungo e peso sono stime);
+   66 vincitore regionale, 70 nazionale, 84 internazionale. 100m, 400m, 1500m, lungo e peso sono tarati su dati FIDAL/Assoluti 2025 (provinciale e media regionale di lungo e peso sono stime); **800m**: stessa retta per livello del 1500m ma con ancore **stimate** (M 2:05 / 1:58,5 / 1:45,5; F 2:21 / 2:14,7 / 2:02 a score 42 / 56 / 84), tetto WR 1:40,91 e 1:53,28;
    le staffette no. Il tetto è il record del mondo, applicato dopo il vento.
 3. **Vento**: solo 100m (−0,055 s per m/s) e Salto in Lungo (+0,08 m per m/s). Oltre **+2,0 m/s** la prestazione non è omologata: non aggiorna PB, record sociale né momenti storici,
    ma piazzamento, punti squadra, premi, prestigio e fan restano.
@@ -318,8 +318,8 @@ Anche le azioni UI (scouting, mercato) consumano l'RNG del controller. Regola di
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 105 test, ~3,6 s
-PYTHONPATH=. python3 -m unittest tests.test_migrations -v                    # 21 test, SENZA PyQt6
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 141 test, ~4 s
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 48 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).

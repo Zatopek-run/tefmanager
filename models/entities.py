@@ -364,6 +364,18 @@ EVENTS: Dict[str, EventDefinition] = {
         historic_mark_f=52.00,
         historic_label_f="sub-52.00s nei 400m",
     ),
+    "800m": EventDefinition(
+        name="800m",
+        specialty=Specialty.MIDDLE_DISTANCE,
+        unit="min",
+        lower_is_better=True,
+        wind_affected=False,
+        historic_mark=113.0,  # 1:53.00 (stima: stesso score storico del 1500m)
+        historic_label="sub-1:53.00 negli 800m",
+        weights={"stamina": 0.40, "speed": 0.38, "technique": 0.15, "strength": 0.07},
+        historic_mark_f=128.0,  # 2:08.00
+        historic_label_f="sub-2:08.00 negli 800m",
+    ),
     "1500m": EventDefinition(
         name="1500m",
         specialty=Specialty.MIDDLE_DISTANCE,

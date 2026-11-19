@@ -123,6 +123,7 @@ def auto_assign_coach(state: GameState, athlete: Athlete) -> Optional[Coach]:
 BODY_IDEALS: Dict[str, Tuple[int, str, float, str]] = {
     "100m": (183, "near", 22.8, "near"),
     "400m": (181, "near", 21.6, "near"),
+    "800m": (178, "near", 21.0, "near"),  # STIMA: a metà tra 400m e 1500m
     "1500m": (176, "near", 20.4, "near"),
     "Salto in Lungo": (184, "min", 21.6, "near"),
     "Getto del Peso": (189, "min", 27.5, "min"),
@@ -130,6 +131,7 @@ BODY_IDEALS: Dict[str, Tuple[int, str, float, str]] = {
 BODY_IDEALS_F: Dict[str, Tuple[int, str, float, str]] = {
     "100m": (172, "near", 21.3, "near"),
     "400m": (171, "near", 20.3, "near"),
+    "800m": (168, "near", 19.8, "near"),  # STIMA: a metà tra 400m e 1500m
     "1500m": (166, "near", 19.2, "near"),
     "Salto in Lungo": (174, "min", 20.4, "near"),
     "Getto del Peso": (178, "min", 26.0, "min"),
@@ -514,6 +516,18 @@ def _score_to_mark(
             else max(43.10, 60.60 - norm * 17.60)
         )
         return seconds, f"{seconds:.2f}s"
+
+    if event_def.name == "800m":
+        # Rette tarate sugli stessi livelli di gioco del 1500m; le ancore sono STIME (nessun dato FIDAL a portata):
+        # M 42 -> 2:05, 56 -> 1:58,5, 84 -> 1:45,5; F 42 -> 2:21, 56 -> 2:14,7, 84 -> 2:02. Tetto: record del mondo.
+        total_seconds = (
+            max(113.28, 160.0 - norm * 45.2)
+            if gender == "F"
+            else max(100.91, 144.5 - norm * 46.4)
+        )
+        mins = int(total_seconds // 60)
+        secs = total_seconds % 60
+        return total_seconds, f"{mins}:{secs:05.2f}"
 
     if event_def.name == "1500m":
         total_seconds = (
@@ -1180,10 +1194,31 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
                 club.female_athletes[event] = generate_rival_athlete(
                     event, club.tier, club.offset, season=state.season_number, rng=r, gender="F"
                 )
+    # Discipline aggiunte dopo il salvataggio (es. 800m): atleti rivali e convocazioni mancanti
+    for club in state.rival_clubs:
+        for event in EVENTS:
+            if event not in club.athletes:
+                club.athletes[event] = generate_rival_athlete(
+                    event, club.tier, club.offset, season=state.season_number, rng=r, gender="M"
+                )
+            if club.female_athletes and event not in club.female_athletes:
+                club.female_athletes[event] = generate_rival_athlete(
+                    event, club.tier, club.offset, season=state.season_number, rng=r, gender="F"
+                )
     if not state.event_lineup_f and any(a.gender == "F" for a in state.main_squad):
         state.event_lineup_f = build_default_lineup(
             state.athletes, event_names=state.active_events, gender="F", tier=state.tier
         )
+    for gender in ("M", "F"):
+        lineup = state.lineup_for(gender)
+        missing = [e for e in state.active_events if e not in lineup]
+        if missing and any(a.gender == gender for a in state.main_squad):
+            filled = build_default_lineup(
+                state.athletes, event_names=state.active_events, gender=gender, tier=state.tier,
+                fixed={e: aid for e, aid in lineup.items() if aid is not None},
+            )
+            for e in missing:
+                lineup[e] = filled.get(e)
     state.news_log[0:0] = normalize_assignments(state)
     ensure_contracts(state)
 

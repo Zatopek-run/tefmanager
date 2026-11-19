@@ -52,7 +52,7 @@ class TestRaceViewer(unittest.TestCase):
     def test_progress_and_attempts(self) -> None:
         from views.race_viewer import FIELD_ROUNDS, curve_progress, generate_attempts
 
-        for kind in ("100m", "400m", "1500m", "relay"):
+        for kind in ("100m", "400m", "800m", "1500m", "relay"):
             for phase in (0.0, 1.3, 2.7, 4.1, 6.0):
                 prev = -1.0
                 for i in range(0, 1001):
@@ -243,6 +243,58 @@ class TestRaceViewer(unittest.TestCase):
                         painted += 3
                     widget.close()
             self.assertGreater(painted, 40)
+
+    def test_800m_is_staged_on_the_oval_and_crosses_the_line_at_its_mark(self) -> None:
+        """800m (Q16): 2 giri sull'ovale, partenza in piedi, arrivo esatto al tempo ufficiale e disegno in ogni stato."""
+        import copy
+
+        from PyQt6.QtGui import QImage
+
+        from models.race_export import DISTANCES_M
+        from views.godot_launcher import GODOT_EVENTS
+        from views.race_3d import Track3DWidget
+        from views.race_viewer import (
+            TRACK_DISTANCES, TRACK_TARGET_SECONDS, TrackRaceWidget, curve_kind, position_fraction, reaction_time,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rv800.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            res = copy.deepcopy(next(r for r in summary.event_results if r.event_name == "1500m"))
+            res.event_name = "800m"
+            for st in res.standings:
+                st.mark_value = round(st.mark_value * 0.47, 2)
+                m, sec = divmod(st.mark_value, 60)
+                st.mark_display = f"{int(m)}:{sec:05.2f}"
+            self.assertEqual((TRACK_DISTANCES["800m"], curve_kind("800m")), (800, "800m"))
+            self.assertIn("800m", TRACK_TARGET_SECONDS)
+            for st in res.standings:
+                r = reaction_time("seed", st.athlete_name)
+                self.assertAlmostEqual(position_fraction("800m", st.mark_value, st.mark_value, r), 1.0, places=9)
+                self.assertLess(position_fraction("800m", st.mark_value - 0.01, st.mark_value, r), 1.0)
+            withdrawn = copy.deepcopy(res)
+            withdrawn.withdrew_injured = True
+            for cls in (Track3DWidget, TrackRaceWidget):
+                for case in (res, withdrawn):
+                    widget = cls()
+                    widget.resize(960, 520)
+                    widget.set_race("800m", case, "seed")
+                    self.assertEqual(widget._distance, 800)
+                    for step in (0.0, 1.0, 2.0, 1.0, 3.0, 6.0, 400.0):
+                        widget.advance(step)
+                        widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    widget.skip_to_end()
+                    widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    widget.close()
+            # Godot non sa ancora mettere in scena l'800m: resta fuori dall'elenco e l'export lo rifiuta (vista interna)
+            self.assertNotIn("800m", GODOT_EVENTS)
+            self.assertNotIn("800m", DISTANCES_M)
+            from models.race_export import export_race
+
+            with self.assertRaises(ValueError):
+                export_race(summary, res, Path(tmpdir) / "no800.db")
 
     def test_view_toggle_keeps_race_position(self) -> None:
         from views.race_3d import Track3DWidget
@@ -528,7 +580,7 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
             ctrl = GameController(db_manager=db, rng=random.Random(77))
             ctrl.start_new_game(team_name="CUS Test", game_mode="career")
             self.assertEqual(len(ctrl.state.athletes), 16)
-            self.assertEqual(len(ctrl.state.active_events), 5)
+            self.assertEqual(len(ctrl.state.active_events), 6)  # con l'800m
 
             ctrl.toggle_staff(4)  # Hire Physio
             self.assertTrue(any(s.id == 4 and s.hired for s in ctrl.state.staff))
@@ -1723,10 +1775,13 @@ class TestBibsAndLanes(unittest.TestCase):
 
     @staticmethod
     def _meeting(tmp: str):
-        """Il meeting della settimana 4 con seed 15: i 100m maschili hanno due «Gabriele Fontana» (Sora e Tivoli)."""
-        ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmp) / "bib.db"), rng=random.Random(15))
+        """Il meeting della settimana 4 con seed 27: i 100m maschili hanno due «Gabriele Rossi» (Viterbo e Civitavecchia).
+
+        Il seed è cambiato da 15 a 27 con l'aggiunta dell'800m: un evento in più sposta la sequenza dell'RNG dei rivali.
+        """
+        ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmp) / "bib.db"), rng=random.Random(27))
         ctrl.state.week = 4
-        summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+        summary = advance_week(ctrl.state, rng=random.Random(27)).competition_summary
         assert summary is not None
         return summary
 

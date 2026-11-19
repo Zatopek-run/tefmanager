@@ -31,7 +31,7 @@ tefmanager/
 ## Modalità Prototipo (Slice Verticale) & Carriera Completa
 
 - **Prototipo Outdoor**: 10 atleti, 3 discipline (`100m`, `Salto in Lungo`, `1500m`), 2 gare ufficiali (Settimana 4 e Settimana 8) per testare subito il loop di periodizzazione, recupero/fatica, vento (> +2.0 m/s non omologato), scouting studentesco, staff e dilemmi etici.
-- **Carriera Completa**: stagioni cicliche `Outdoor -> Cross -> Indoor`, 5 discipline (inclusi `400m` e `Getto del Peso`) e scalata da `Provinciale` a `Internazionale` con promozioni e retrocessioni di fine stagione.
+- **Carriera Completa**: stagioni cicliche `Outdoor -> Cross -> Indoor`, 6 discipline (inclusi `400m`, `800m` e `Getto del Peso`) e scalata da `Provinciale` a `Internazionale` con promozioni e retrocessioni di fine stagione.
 
 ## Gestione del Club (v3)
 

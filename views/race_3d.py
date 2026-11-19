@@ -822,8 +822,8 @@ class Track3DWidget(TrackRaceWidget):
         return self._distance > 100
 
     def _is_pack_race(self) -> bool:
-        """Gare con rientro alla corda e gruppo compatto (1500m, o 4x400m dopo la prima curva)."""
-        return self._distance >= 1500
+        """Gare con rientro alla corda, gruppo compatto e partenza in piedi (800m, 1500m; 4x400m dopo la prima curva)."""
+        return self._distance >= 1500 or self._event == "800m"
 
     def _is_evening_final(self) -> bool:
         """Meeting nazionali/internazionali hanno atmosfera serale sotto i riflettori."""
@@ -932,6 +932,20 @@ class Track3DWidget(TrackRaceWidget):
                     target_z += 0.58
                 lat_zs[idx] = min(self._track_width() - 0.4, target_z)
                 placed.append((m, lat_zs[idx]))
+        elif self._event == "800m":
+            # prima curva in corsia (circa 100 m), poi rientro graduale alla corda. Semplificazione visiva: la linea di
+            # partenza è allineata (come nei 1500m) invece che sfalsata per corsia; l'esito non cambia, ogni atleta
+            # taglia il traguardo al suo `mark_value`.
+            order = sorted(range(n), key=lambda i: -meters[i])
+            placed = []
+            for idx in order:
+                m = meters[idx]
+                merge = _clamp((m - 100.0) / 50.0, 0.0, 1.0)
+                target_z = _lerp(self._lane_z(idx), 0.52, merge)
+                while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
+                    target_z += 0.58
+                lat_zs[idx] = min(self._track_width() - 0.4, target_z)
+                placed.append((m, lat_zs[idx]))
         elif self._event == "4x400m":
             # prima frazione (fino a 500 m) in corsia, poi rientro graduale alla corda
             order = sorted(range(n), key=lambda i: -meters[i])
@@ -949,7 +963,7 @@ class Track3DWidget(TrackRaceWidget):
                 placed.append((m, lat_zs[idx]))
 
         poses = []
-        ref_lat = 0.52 if self._event == "1500m" else None
+        ref_lat = 0.52 if self._event in ("800m", "1500m") else None
         for i, m in enumerate(meters):
             rl = 0.55 if (self._event == "4x400m" and m > 400.0) else ref_lat
             poses.append(oval_pose(d - m, lat_zs[i], ref_lat=rl))
@@ -1423,9 +1437,9 @@ class Track3DWidget(TrackRaceWidget):
                     [(sx0 + 0.45, 0.014, zc - 0.32), (sx0 + 1.05, 0.014, zc - 0.32), (sx0 + 1.05, 0.014, zc + 0.32), (sx0 + 0.45, 0.014, zc + 0.32)],
                     self._lane_num_pm(i + 1),
                 )
-        elif self._event == "1500m":
-            # linea di partenza a cascata dei 1500m (300m prima del traguardo = in controrettilineo)
-            pts_w = [oval_pose(1500.0, i * LANE_W, ref_lat=0.52)[:2] for i in range(n + 1)]
+        elif self._event in ("800m", "1500m"):
+            # linea di partenza dei 1500m a cascata (300m prima del traguardo = in controrettilineo); 800m: allineata
+            pts_w = [oval_pose(float(self._distance), i * LANE_W, ref_lat=0.52)[:2] for i in range(n + 1)]
             for k in range(n):
                 self._line3(p, cam, (pts_w[k][0], 0.014, pts_w[k][1]), (pts_w[k + 1][0], 0.014, pts_w[k + 1][1]), 0.04, QColor("#ffffff"))
 
