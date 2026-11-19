@@ -341,10 +341,10 @@ class GameController(QObject):
         self.status_message.emit(f"Tutti gli atleti sani impostati su {phase.value}.")
 
     def apply_recovery_session(self, athlete_id: int) -> bool:
-        """Pay $250 for targeted physiotherapy, sleep & nutrition recovery."""
+        """Pay €250 for targeted physiotherapy, sleep & nutrition recovery."""
         cost = 250
         if self.state.budget < cost:
-            self.status_message.emit("Budget insufficiente per la seduta di recupero ($250).")
+            self.status_message.emit("Budget insufficiente per la seduta di recupero (€250).")
             return False
         athlete = next((a for a in self.state.athletes if a.id == athlete_id), None)
         if athlete is None:
@@ -370,10 +370,10 @@ class GameController(QObject):
         return True
 
     def maintain_track(self) -> bool:
-        """Spend $900 to refurbish the tartan track surface."""
+        """Spend €900 to refurbish the tartan track surface."""
         cost = 900
         if self.state.budget < cost:
-            self.status_message.emit("Budget insufficiente per manutenzione pista ($900).")
+            self.status_message.emit("Budget insufficiente per manutenzione pista (€900).")
             return False
         self.state.budget -= cost
         self.state.track_condition = clamp_stat(self.state.track_condition + 25, 0, 100)
@@ -445,7 +445,7 @@ class GameController(QObject):
         fee = get_recruitment_fee(prospect)
         if self.state.budget < fee:
             self.status_message.emit(
-                f"Fondi insufficienti per tesserare {prospect.name} (servono ${fee:,})."
+                f"Fondi insufficienti per tesserare {prospect.name} (servono €{fee:,})."
             )
             return False
 
@@ -482,7 +482,7 @@ class GameController(QObject):
 
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
-        self.status_message.emit(f"Tesserato {prospect.name} per ${fee:,}.")
+        self.status_message.emit(f"Tesserato {prospect.name} per €{fee:,}.")
         return True
 
     def release_athlete(self, athlete_id: int) -> bool:
@@ -530,7 +530,7 @@ class GameController(QObject):
             )
             return []
         if fee > self.state.budget:
-            self.status_message.emit(f"Fondi insufficienti per la ricerca (${fee:,}).")
+            self.status_message.emit(f"Fondi insufficienti per la ricerca (€{fee:,}).")
             return []
 
         allowed = (
@@ -563,7 +563,7 @@ class GameController(QObject):
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
         self.status_message.emit(
-            f"Gli osservatori hanno segnalato {len(kids)} ragazzi (-{points} punti, -${fee:,})."
+            f"Gli osservatori hanno segnalato {len(kids)} ragazzi (-{points} punti, -€{fee:,})."
         )
         return kids
 
@@ -603,13 +603,13 @@ class GameController(QObject):
         self.state.milestones.insert(0, msg)
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
-        self.status_message.emit(f"{athlete.name} promosso (stipendio ${athlete.weekly_wage}/sett).")
+        self.status_message.emit(f"{athlete.name} promosso (rimborso spese €{athlete.weekly_wage}/sett).")
         return True
 
     # ------------------------------------------------------------------ facilities
     def _pay(self, cost: int, description: str, category: str) -> bool:
         if self.state.budget < cost:
-            self.status_message.emit(f"Budget insufficiente: servono ${cost:,}.")
+            self.status_message.emit(f"Budget insufficiente: servono €{cost:,}.")
             return False
         self.state.budget -= cost
         self.state.transactions.insert(
@@ -693,7 +693,7 @@ class GameController(QObject):
         )
         self.db.save_game(state)
         self.state_changed.emit(state)
-        self.status_message.emit(f"Assunto {coach.name} (${coach.weekly_wage}/sett).")
+        self.status_message.emit(f"Assunto {coach.name} (€{coach.weekly_wage}/sett).")
         return True
 
     def fire_coach(self, coach_id: int) -> bool:
@@ -861,7 +861,7 @@ class GameController(QObject):
                 )
                 self.state.news_log.insert(
                     0,
-                    f"Sett. {self.state.week}: Sforzo extra per lo sponsor (+$1.000, fatica aumentata).",
+                    f"Sett. {self.state.week}: Sforzo extra per lo sponsor (+€1.000, fatica aumentata).",
                 )
             else:
                 self.state.budget = max(0, self.state.budget - 300)
@@ -880,7 +880,7 @@ class GameController(QObject):
     def advance_week(self) -> Optional[WeekAdvanceReport]:
         if self.state.bankrupt:
             self.status_message.emit(
-                f"Società fallita (debito oltre ${-BANKRUPTCY_THRESHOLD:,}): avvia una nuova partita."
+                f"Società fallita (debito oltre €{-BANKRUPTCY_THRESHOLD:,}): avvia una nuova partita."
             )
             return None
         report = advance_week(self.state, rng=self.rng)
@@ -894,7 +894,7 @@ class GameController(QObject):
             self.competition_completed.emit(report.competition_summary)
             self.status_message.emit(
                 f"Gara Sett. {report.completed_week} completata! "
-                f"+${report.competition_summary.total_prize_money:,} | "
+                f"+€{report.competition_summary.total_prize_money:,} | "
                 f"+{report.competition_summary.total_prestige_gained} Prestigio"
             )
         else:

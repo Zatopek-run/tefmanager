@@ -255,7 +255,7 @@ class StartScreen(QWidget):
             self.cont_meta.setText(
                 f"Cat. {latest.tier}  •  {latest.mode_label}  •  "
                 f"Stagione {latest.season_number}, Sett. {latest.week} ({latest.in_game_date:%d %b %Y})  •  "
-                f"Bilancio ${latest.budget:,}  ·  Prestigio {latest.prestige}{status_tag}"
+                f"Bilancio €{latest.budget:,}  ·  Prestigio {latest.prestige}{status_tag}"
             )
         else:
             self.continue_card.setVisible(False)
@@ -268,7 +268,7 @@ class StartScreen(QWidget):
                 mode_short,
                 s.tier,
                 f"S{s.season_number}·W{s.week}",
-                f"${s.budget:,}",
+                f"€{s.budget:,}",
                 s.updated_at.strftime("%d/%m %H:%M"),
             ]
             if not s.is_supported:  # solo i metadati affidabili: file, data, versione

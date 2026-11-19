@@ -169,7 +169,7 @@ def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = Non
 
     if not state.bankrupt and state.budget < 0:
         sev = "danger" if state.budget <= BANKRUPTCY_THRESHOLD // 2 else "warn"
-        items.append((f"Bilancio in rosso: ${state.budget:,}", sev, 7))
+        items.append((f"Bilancio in rosso: €{state.budget:,}", sev, 7))
 
     if free_agent_pool is not None and not free_agent_pool:
         items.append(("Mercato: nuovi svincolati da valutare questa settimana", "ok", 1))
@@ -353,17 +353,17 @@ class DashboardTab(QWidget):
     def refresh(self, state: GameState) -> None:
         net = weekly_finances(state)["net"]
 
-        self.budget_val.setText(f"${state.budget:,}")
+        self.budget_val.setText(f"€{state.budget:,}")
         self.budget_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
         sign = "+" if net >= 0 else ""
         if state.bankrupt:
             self.budget_sub.setText("SOCIETÀ FALLITA — avvia una nuova partita")
         elif state.budget < 0:
             self.budget_sub.setText(
-                f"In rosso: 5% interessi/sett, fallimento sotto -${-BANKRUPTCY_THRESHOLD:,}"
+                f"In rosso: 5% interessi/sett, fallimento sotto -€{-BANKRUPTCY_THRESHOLD:,}"
             )
         else:
-            self.budget_sub.setText(f"Flusso netto {sign}${net:,}/sett")
+            self.budget_sub.setText(f"Flusso netto {sign}€{net:,}/sett")
 
         self.prestige_val.setText(f"{state.prestige} pt")
         self.prestige_sub.setText(f"Reputazione Etica: {state.reputation}%")
@@ -531,7 +531,7 @@ class RosterTab(QWidget):
         self.btn_detail.clicked.connect(self._open_detail_selected)
         toolbar.addWidget(self.btn_detail)
 
-        self.btn_recover = QPushButton("Recupero Selezionato ($250)")
+        self.btn_recover = QPushButton("Recupero Selezionato (€250)")
         self.btn_recover.clicked.connect(self._recover_selected)
         toolbar.addWidget(self.btn_recover)
 
@@ -1087,7 +1087,7 @@ class CalendarTab(QWidget):
                 f"Casa ({comp.spectators:,})" if comp.is_home else "Trasferta",
                 comp.weather.value,
                 f"{team_place}ª" if team_place else "—",
-                f"${comp.total_prize_money + comp.ticket_income:,}",
+                f"€{comp.total_prize_money + comp.ticket_income:,}",
                 f"+{comp.total_prestige_gained}",
             ]
             for col, text in enumerate(vals):
@@ -1140,7 +1140,7 @@ class StaffTab(QWidget):
         track_layout.addWidget(self.track_label)
         track_layout.addStretch()
 
-        maint_btn = QPushButton("Manutenzione Pista Tartan ($900)")
+        maint_btn = QPushButton("Manutenzione Pista Tartan (€900)")
         maint_btn.setObjectName("PrimaryButton")
         maint_btn.clicked.connect(self.controller.maintain_track)
         track_layout.addWidget(maint_btn)
@@ -1256,19 +1256,19 @@ class StaffTab(QWidget):
         self.gym_label.setText(f"Palestra — livello {lvl}/{GYM_MAX_LEVEL}")
         self.gym_sub.setText(
             f"+{int(lvl * GYM_TRAINING_BONUS_PER_LEVEL * 100)}% probabilità di miglioramento in allenamento · "
-            f"gestione ${lvl * GYM_UPKEEP_PER_LEVEL}/sett"
+            f"gestione €{lvl * GYM_UPKEEP_PER_LEVEL}/sett"
         )
         if lvl >= GYM_MAX_LEVEL:
             self.gym_btn.setText("Livello massimo")
             self.gym_btn.setEnabled(False)
         else:
-            self.gym_btn.setText(f"Amplia a livello {lvl + 1} (${gym_upgrade_cost(lvl):,})")
+            self.gym_btn.setText(f"Amplia a livello {lvl + 1} (€{gym_upgrade_cost(lvl):,})")
             self.gym_btn.setEnabled(True)
 
         price = TICKET_PRICE[state.tier.value]
         self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")
         self.stand_sub.setText(
-            f"Nei meeting in casa niente trasferta e incasso biglietti (${price}/biglietto in "
+            f"Nei meeting in casa niente trasferta e incasso biglietti (€{price}/biglietto in "
             f"{state.tier.display_name}). Il pubblico cresce con prestigio, categoria e reputazione."
         )
         if state.stand_seats >= STAND_MAX_SEATS:
@@ -1276,7 +1276,7 @@ class StaffTab(QWidget):
             self.stand_btn.setEnabled(False)
         else:
             self.stand_btn.setText(
-                f"+{STAND_EXPANSION_SEATS} posti (${stand_expansion_cost(state.stand_seats):,})"
+                f"+{STAND_EXPANSION_SEATS} posti (€{stand_expansion_cost(state.stand_seats):,})"
             )
             self.stand_btn.setEnabled(True)
         n_spec = sum(1 for c in state.coaches if not c.is_youth_coach)
@@ -1313,7 +1313,7 @@ class StaffTab(QWidget):
                 coach.kind_label,
                 *[str(coach.skills.get(stat, 0)) for stat in COACH_STATS],
                 f"{load}/{COACH_COMFORT_LOAD}",
-                f"${coach.weekly_wage}",
+                f"€{coach.weekly_wage}",
             ]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
@@ -1334,7 +1334,7 @@ class StaffTab(QWidget):
                 s.name,
                 s.role.value,
                 "★" * s.skill,
-                f"${s.weekly_cost}",
+                f"€{s.weekly_cost}",
                 s.description,
             ]
             for col, text in enumerate(vals):
@@ -1442,28 +1442,28 @@ class FinancesTab(QWidget):
         fin = weekly_finances(state)
         net = fin["net"]
 
-        self.balance_val.setText(f"${state.budget:,}")
+        self.balance_val.setText(f"€{state.budget:,}")
         self.balance_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
         self.balance_sub.setText(
             f"Fedeltà sponsor {state.fidelity}% (scende con acquisti/cessioni)"
             if state.budget >= 0
-            else f"In rosso: 5% interessi/sett · fallimento sotto -${-BANKRUPTCY_THRESHOLD:,}"
+            else f"In rosso: 5% interessi/sett · fallimento sotto -€{-BANKRUPTCY_THRESHOLD:,}"
         )
 
-        self.sponsor_val.setText(f"+${fin['income']:,}")
+        self.sponsor_val.setText(f"+€{fin['income']:,}")
         self.sponsor_sub.setText(
-            f"Società ${fin['sponsor']:,} + Individuali ${fin['individual_sponsors']:,} "
-            f"+ Quote ${fin['member_fees']:,}"
+            f"Società €{fin['sponsor']:,} + Individuali €{fin['individual_sponsors']:,} "
+            f"+ Quote €{fin['member_fees']:,}"
         )
 
-        self.payroll_val.setText(f"-${fin['expenses']:,}")
+        self.payroll_val.setText(f"-€{fin['expenses']:,}")
         self.payroll_sub.setText(
-            f"Atleti ${fin['athlete_wages']:,} + Allenatori ${fin['coach_cost']:,} "
-            f"+ Staff ${fin['staff_cost']:,} + Palestra ${fin['gym_upkeep']:,}"
+            f"Atleti €{fin['athlete_wages']:,} + Allenatori €{fin['coach_cost']:,} "
+            f"+ Staff €{fin['staff_cost']:,} + Palestra €{fin['gym_upkeep']:,}"
         )
 
         sign = "+" if net >= 0 else ""
-        self.net_val.setText(f"{sign}${net:,}")
+        self.net_val.setText(f"{sign}€{net:,}")
         self.net_val.setStyleSheet("color: #34d399;" if net >= 0 else "color: #f87171;")
         self.net_sub.setText("Esclusi premi, biglietti e trasferte")
 
@@ -1485,7 +1485,7 @@ class FinancesTab(QWidget):
             )
         self.table.setRowCount(len(transactions))
         for row, tx in enumerate(transactions):
-            amt_text = f"+${tx.amount:,}" if tx.amount >= 0 else f"-${abs(tx.amount):,}"
+            amt_text = f"+€{tx.amount:,}" if tx.amount >= 0 else f"-€{abs(tx.amount):,}"
             vals = [f"Sett. {tx.week}", tx.category, tx.description, amt_text]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
@@ -1543,7 +1543,7 @@ class YouthTab(QWidget):
         squad_layout.addLayout(head)
 
         hint = QLabel(
-            "I ragazzi del vivaio (14-17 anni) non gareggiano e non prendono stipendio, ma si allenano "
+            "I ragazzi del vivaio (14-17 anni) non gareggiano e non prendono rimborsi spese, ma si allenano "
             "il 50% più in fretta. A 18 anni passano in Prima Squadra in automatico."
         )
         hint.setObjectName("SubTitle")
@@ -1653,7 +1653,7 @@ class YouthTab(QWidget):
         filters = (1 if spec is not None else 0) + (1 if high else 0)
         points, fee = scouting_search_cost(state.scouting_points_used, filters)
         enough = points <= state.scouting_points_left
-        self.cost_label.setText(f"Costo: {points} punti · ${fee:,}")
+        self.cost_label.setText(f"Costo: {points} punti · €{fee:,}")
         self.search_btn.setEnabled(enough and len(state.youth_squad) < YOUTH_SQUAD_MAX)
 
     def refresh(self, state: GameState) -> None:

@@ -92,9 +92,9 @@ class CompetitionResultsDialog(QDialog):
         layout.addWidget(conditions)
 
         gate = (
-            f"Biglietti: +${self.summary.ticket_income:,}"
+            f"Biglietti: +€{self.summary.ticket_income:,}"
             if self.summary.is_home
-            else f"Trasferta Pullman: -${self.summary.travel_cost:,}"
+            else f"Trasferta Pullman: -€{self.summary.travel_cost:,}"
         )
         team_place = self.summary.team_placement
         team_txt = (
@@ -103,7 +103,7 @@ class CompetitionResultsDialog(QDialog):
             else ""
         )
         totals = QLabel(
-            f"{team_txt}Premi Totali: ${self.summary.total_prize_money:,}   |   "
+            f"{team_txt}Premi Totali: €{self.summary.total_prize_money:,}   |   "
             f"{gate}   |   Prestigio: +{self.summary.total_prestige_gained}"
         )
         totals.setObjectName("SectionHeader")
@@ -165,7 +165,7 @@ class CompetitionResultsDialog(QDialog):
                     "RIT." if res.withdrew_injured
                     else ("SQ." if res.disqualified else f"#{res.placement} / {res.total_competitors}")
                 ),
-                QTableWidgetItem(f"${res.prize_money:,}"),
+                QTableWidgetItem(f"€{res.prize_money:,}"),
                 QTableWidgetItem(note_str),
             ]
             for col, item in enumerate(items):
@@ -278,7 +278,7 @@ class RecruitAthleteDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(18, 18, 18, 18)
 
-        header = QLabel(f"Mercato Settimanale (Budget Disponibile: ${self.budget:,})")
+        header = QLabel(f"Mercato Settimanale (Budget Disponibile: €{self.budget:,})")
         header.setObjectName("SectionHeader")
         layout.addWidget(header)
 
@@ -326,8 +326,8 @@ class RecruitAthleteDialog(QDialog):
                 potential_band_display(a),
                 str(a.resilience),
                 a.personality.value,
-                f"${a.weekly_wage}",
-                f"${fee:,}",
+                f"€{a.weekly_wage}",
+                f"€{fee:,}",
                 note,
             ]
             for col, text in enumerate(vals):
@@ -391,9 +391,9 @@ class RecruitAthleteDialog(QDialog):
                 f"Pot {potential_band_display(prospect)}"
             )
         budget_txt = (
-            f"Budget dopo tesseramento: ${after:,}"
+            f"Budget dopo tesseramento: €{after:,}"
             if after >= 0
-            else f"Fondi insufficienti (mancano ${-after:,})"
+            else f"Fondi insufficienti (mancano €{-after:,})"
         )
         self.compare_label.setText(f"{comp}   |   {budget_txt}")
 
@@ -407,7 +407,7 @@ class RecruitAthleteDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Budget Insufficiente",
-                f"Servono ${fee:,} per tesserare {prospect.name}, ma hai ${self.budget:,}.",
+                f"Servono €{fee:,} per tesserare {prospect.name}, ma hai €{self.budget:,}.",
             )
             return
         self.selected_prospect = prospect
@@ -575,7 +575,7 @@ class HireCoachDialog(QDialog):
         for tier in range(1, COACH_MAX_TIER + 1):
             prim, sec = coach_hire_skills(tier)
             self.tier_combo.addItem(
-                f"Livello {tier} — principale {prim}, secondaria {sec} — ${coach_hire_cost(tier):,}",
+                f"Livello {tier} — principale {prim}, secondaria {sec} — €{coach_hire_cost(tier):,}",
                 tier,
             )
         form.addRow("Ingaggio:", self.tier_combo)
@@ -626,8 +626,8 @@ class HireCoachDialog(QDialog):
             skills[self.secondary] = sec
         cost = coach_hire_cost(self.tier)
         self.preview.setText(
-            f"Costo ingaggio ${cost:,} · stipendio ${coach_weekly_wage(skills):,}/sett "
-            f"(budget ${self.budget:,})"
+            f"Costo ingaggio €{cost:,} · stipendio €{coach_weekly_wage(skills):,}/sett "
+            f"(budget €{self.budget:,})"
         )
         self.hire_btn.setEnabled(cost <= self.budget)
 

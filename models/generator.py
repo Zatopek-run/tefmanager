@@ -88,7 +88,7 @@ LAZIO_PROVINCES: Tuple[str, ...] = ("Roma", "Latina", "Frosinone", "Rieti", "Vit
 LAZIO_CSV_PATH = Path(__file__).resolve().parent.parent / "data" / "societa_atletica_lazio.csv"
 _LEGAL_PREFIX = re.compile(r"^(?:A\.?S\.?D\.?|S\.?S\.?D\.?|A\.?P\.?D\.?|U\.?S\.?)\s+", re.IGNORECASE)
 _LEGAL_SUFFIX = re.compile(
-    r"(?:\s+(?:S\.?S\.?D\.?|A\.?S\.?D\.?|S\.?R\.?L\.?|A\s*R\.?L\.?|A\.?P\.?S\.?|A\.?S\.?U\.?|S\.?P\.?A\.?|SSDRL|ARL))+$",
+    r"(?:\s+(?:S\.?S\.?D\.?|A\.?S\.?D\.?|S\.?R\.?L\.?|A\s*R\.?L\.?|A\.?P\.?S\.?|A\.?S\.?U\.?|S\.?P\.?A\.?|SSDRL|ARL))+€",
     re.IGNORECASE,
 )
 _KEEP_UPPER = {"ASD", "CUS", "GS", "CS", "GA", "SS", "US", "GSBR", "LUISS", "LBM", "ACSI", "CBS", "EUR", "ASI", "AL.PA."}
@@ -504,12 +504,12 @@ def create_season_objectives(game_mode: str, tier: CompetitionTier) -> List[Seas
     """Create season goals for the club."""
     if game_mode == "vertical_slice":
         return [
-            SeasonObjective("positive_budget", "Chiudi la stagione con bilancio sopra $8.000"),
+            SeasonObjective("positive_budget", "Chiudi la stagione con bilancio sopra €8.000"),
             SeasonObjective("win_event", "Vinci almeno una gara ufficiale"),
             SeasonObjective("club_record", "Stabilisci un nuovo Record Sociale omologato (vento <= 2.0 m/s)"),
         ]
     return [
-        SeasonObjective("positive_budget", "Mantieni il bilancio sopra $10.000"),
+        SeasonObjective("positive_budget", "Mantieni il bilancio sopra €10.000"),
         SeasonObjective(
             "promote",
             f"Ottieni la promozione dalla categoria {tier.display_name}",
@@ -678,12 +678,12 @@ def maybe_generate_dilemma(
             title="Scorciatoia Farmacologica?",
             description=(
                 f"Uno sponsor ambizioso ti offre un integratore 'sperimentale' non ancora "
-                f"tracciato per {star.name} in vista della prossima gara, insieme a un bonus di $1.800.\n\n"
+                f"tracciato per {star.name} in vista della prossima gara, insieme a un bonus di €1.800.\n\n"
                 "Accettare garantisce prestazioni immediate, ma espone il club a squalifiche e crollo "
                 "della reputazione. Rifiutare protegge l'etica del club ma fa perdere lo sponsor."
             ),
-            accept_label="Accetta scorciatoia (+Forma & +$1.800, alto rischio squalifica)",
-            reject_label="Rifiuta con fermezza (+Reputazione, perdi $600 di sponsor)",
+            accept_label="Accetta scorciatoia (+Forma & +€1.800, alto rischio squalifica)",
+            reject_label="Rifiuta con fermezza (+Reputazione, perdi €600 di sponsor)",
             athlete_id=star.id,
         )
     return EthicalDilemma(
@@ -693,7 +693,7 @@ def maybe_generate_dilemma(
             f"La stampa locale vuole vedere subito in gara il tuo atleta {star.name} al massimo carico, "
             "anche se il medico suggerisce prudenza per proteggere la sua crescita a lungo termine."
         ),
-        accept_label="Spremi l'atleta per visibilità (+$1.000 sponsor, +22 Fatica)",
-        reject_label="Proteggi la crescita (+8 Resilienza & Forma, -$300 incasso)",
+        accept_label="Spremi l'atleta per visibilità (+€1.000 sponsor, +22 Fatica)",
+        reject_label="Proteggi la crescita (+8 Resilienza & Forma, -€300 incasso)",
         athlete_id=star.id,
     )

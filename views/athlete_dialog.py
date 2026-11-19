@@ -130,7 +130,7 @@ class AthleteDetailDialog(QDialog):
         btn_release = QPushButton("✕ SVINCOLA")
         btn_release.setObjectName("DangerButton")
         btn_release.clicked.connect(self._release)
-        btn_recover = QPushButton("RECUPERO ($250)")
+        btn_recover = QPushButton("RECUPERO (€250)")
         btn_recover.setStyleSheet(
             "background-color: #0e7490; color: #f8fafc; border: 1px solid #0de0cc; font-weight: 700;"
         )
@@ -263,7 +263,7 @@ class AthleteDetailDialog(QDialog):
             ("Disciplina", a.specialty.value),
             ("Carattere", a.personality.value),
             ("Potenziale", str(a.potential)),
-            ("Stipendio", f"${a.weekly_wage:,}/sett."),
+            ("Rimborso spese", f"€{a.weekly_wage:,}/sett."),
             ("Fan", f"{a.fans:,}"),
             ("Primato", a.personal_best_display or "—"),
             ("Allenatore", coach.name if coach else "Nessuno"),

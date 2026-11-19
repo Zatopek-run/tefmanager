@@ -3,35 +3,35 @@
 **Metodo.** (1) Costanti di modulo estratte con `ast` da `entities.py`, `simulation.py`, `generator.py`, `database.py`, `game_controller.py` (esaustivo per quei file). (2) Letterali dentro le funzioni di `simulation.py`, `game_controller.py`, `generator.py` e `entities.py` letti riga per riga e raccolti qui sotto; i letterali di 0/1 usati come indici o clamp banali sono omessi. La lista (2) è **fatta a mano dalla lettura**, non da un'estrazione automatica: non garantisco di non averne saltato qualcuno nelle parti di `generator.py` non lette per intero (elenchi di nomi, parsing del CSV).
 **Esclusi esplicitamente:** costanti di presentazione di `views/` (colori, dimensioni, tempi di animazione, curve di movimento di `race_viewer.py`/`race_3d.py`/`field_3d.py`) e di `godot_viewer/`. Non influenzano il risultato di gioco.
 **Nessun modulo di bilanciamento esiste**: tutto sotto è sparso nei file indicati.
-Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt** = punti (punteggio gara/classifica) · **$** = denaro · **una tantum**.
+Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt** = punti (punteggio gara/classifica) · **€** = denaro · **una tantum**.
 
 ## A. Entrate e uscite (con formula)
 
 | Voce | Formula | Costanti | Unità | File:riga |
 | --- | --- | --- | --- | --- |
-| Sponsor società (entrata) | `weekly_sponsor × (0,65 + rep/100 × 0,55) × (0,8 + 0,2 × fedeltà/100)` | `TIER_CONFIG[...]["weekly_sponsor"]` 600/1250/2500/4800 | $/sett. | `simulation.py:1227-1229`; `entities.py:43-68` |
-| Sponsor individuali (entrata) | `Σ fans // 4` per atleta ≥18 anni, Prima Squadra | divisore 4, età 18 | $/sett. | `simulation.py:1230` |
-| Quote tesserati (entrata) | `member_fees_weekly` | 450 (mai modificato) | $/sett. | `entities.py:785`, `game_controller.py:185` |
-| Stipendi atleti (uscita) | `Σ weekly_wage` Prima Squadra, infortunati inclusi | `senior_wage = clamp(100|80 + overall×4,2; 95; 950)` | $/sett. | `simulation.py:1231`; `generator.py:410-413` |
-| Staff medico/mentale (uscita) | `Σ weekly_cost` degli assunti | Fisio 300, Medico 340, Mentale 220 | $/sett. | `simulation.py:1232`; `generator.py:470-500` |
-| Stipendi allenatori (uscita) | `40 + round(Σ max(0, v−40) × 2,2)` | 40, 40, 2,2 | $/sett. | `entities.py:211-212`; `simulation.py:1233` |
-| Gestione palestra (uscita) | `livello × 40` | 40 | $/sett. | `entities.py:159`; `simulation.py:1234` |
+| Sponsor società (entrata) | `weekly_sponsor × (0,65 + rep/100 × 0,55) × (0,8 + 0,2 × fedeltà/100)` | `TIER_CONFIG[...]["weekly_sponsor"]` 600/1250/2500/4800 | €/sett. | `simulation.py:1227-1229`; `entities.py:43-68` |
+| Sponsor individuali (entrata) | `Σ fans // 4` per atleta ≥18 anni, Prima Squadra | divisore 4, età 18 | €/sett. | `simulation.py:1230` |
+| Quote tesserati (entrata) | `member_fees_weekly` | 450 (mai modificato) | €/sett. | `entities.py:785`, `game_controller.py:185` |
+| Rimborsi spese atleti (uscita; campo `weekly_wage`) | `Σ weekly_wage` Prima Squadra, infortunati inclusi | `senior_wage = clamp(100|80 + overall×4,2; 95; 950)` | €/sett. | `simulation.py:1231`; `generator.py:410-413` |
+| Staff medico/mentale (uscita) | `Σ weekly_cost` degli assunti | Fisio 300, Medico 340, Mentale 220 | €/sett. | `simulation.py:1232`; `generator.py:470-500` |
+| Stipendi allenatori (uscita) | `40 + round(Σ max(0, v−40) × 2,2)` | 40, 40, 2,2 | €/sett. | `entities.py:211-212`; `simulation.py:1233` |
+| Gestione palestra (uscita) | `livello × 40` | 40 | €/sett. | `entities.py:159`; `simulation.py:1234` |
 | Interessi sul debito (uscita) | `ceil(−budget × 0,05)` se `budget < 0` | 0,05 | %/sett. | `entities.py:168`; `simulation.py:1338-1341` |
-| Premi gara (entrata) | `prize_base × {1:1,0; 2:0,60; 3:0,35; 4:0,15}` per piazzamento (staffette idem) | `prize_base` 1200/2800/6000/12500 | $/gara | `simulation.py:890,897,1010`; `entities.py:43-68` |
-| Biglietti (entrata, solo casa) | `spettatori × TICKET_PRICE`; `spettatori = min(posti, (300 + prestigio×4 + ordine_tier×900) × (0,6 + rep/250) × U(0,85;1,15) [×0,7 pioggia all'aperto])` | prezzi 4/6/9/14 | $/gara | `simulation.py:598-607`; `entities.py:162-167` |
-| Trasferta (uscita, solo fuori) | `travel_cost` | 350/750/1500/3000 | $/gara | `simulation.py:1050`; `entities.py:43-68` |
-| Seduta di recupero (uscita) | fisso | 250 | $ una tantum | `game_controller.py:303` |
-| Manutenzione pista (uscita) | fisso | 900 (+25 condizione) | $ una tantum | `game_controller.py:332,337` |
-| Ingaggio atleta (uscita) | giovane: `max(300, potenziale×9)`; adulto: `max(500, overall×30)` | 300, 9, 500, 30 | $ una tantum | `generator.py:656-659` |
-| Osservatori vivaio (uscita) | `SCOUTING_FEES[dopo] − SCOUTING_FEES[prima]` | tabella 0,0,150,350,600,1000,1500,2200,3000 | $ per ricerca | `entities.py:156`; `game_controller.py:77-82` |
-| Ampliamento palestra (uscita) | `(livello+1) × 2500` | 2500, max 5 | $ una tantum | `entities.py:157,175-176` |
-| Ampliamento tribune (uscita) | `500 × {3 se <5000; 4 se <10000; 6}` `+ 500` | +500 posti, max 20000 | $ una tantum | `entities.py:160-161,179-182` |
-| Ingaggio allenatore (uscita) | `1500 × tier` | tier 1-5 → 1500…7500 | $ una tantum | `entities.py:207-208`; `game_controller.py:631` |
-| Dilemma «doping» accettato | `+1800` | | $ | `game_controller.py:778` |
-| Dilemma «doping» rifiutato | `budget = max(0, budget − 600)` (**azzera il debito**) | 600 | $ | `game_controller.py:798` |
-| Dilemma «giovane» accettato | `+1000` | | $ | `game_controller.py:807` |
-| Dilemma «giovane» rifiutato | `budget = max(0, budget − 300)` (**azzera il debito**) | 300 | $ | `game_controller.py:825` |
-| Fondo iniziale | Prototipo 10000; Carriera 18000 (`GameState` ha 12000 di default) | | $ | `game_controller.py:154,162`; `entities.py:776` |
+| Premi gara (entrata) | `prize_base × {1:1,0; 2:0,60; 3:0,35; 4:0,15}` per piazzamento (staffette idem) | `prize_base` 1200/2800/6000/12500 | €/gara | `simulation.py:890,897,1010`; `entities.py:43-68` |
+| Biglietti (entrata, solo casa) | `spettatori × TICKET_PRICE`; `spettatori = min(posti, (300 + prestigio×4 + ordine_tier×900) × (0,6 + rep/250) × U(0,85;1,15) [×0,7 pioggia all'aperto])` | prezzi 4/6/9/14 | €/gara | `simulation.py:598-607`; `entities.py:162-167` |
+| Trasferta (uscita, solo fuori) | `travel_cost` | 350/750/1500/3000 | €/gara | `simulation.py:1050`; `entities.py:43-68` |
+| Seduta di recupero (uscita) | fisso | 250 | € una tantum | `game_controller.py:303` |
+| Manutenzione pista (uscita) | fisso | 900 (+25 condizione) | € una tantum | `game_controller.py:332,337` |
+| Ingaggio atleta (uscita) | giovane: `max(300, potenziale×9)`; adulto: `max(500, overall×30)` | 300, 9, 500, 30 | € una tantum | `generator.py:656-659` |
+| Osservatori vivaio (uscita) | `SCOUTING_FEES[dopo] − SCOUTING_FEES[prima]` | tabella 0,0,150,350,600,1000,1500,2200,3000 | € per ricerca | `entities.py:156`; `game_controller.py:77-82` |
+| Ampliamento palestra (uscita) | `(livello+1) × 2500` | 2500, max 5 | € una tantum | `entities.py:157,175-176` |
+| Ampliamento tribune (uscita) | `500 × {3 se <5000; 4 se <10000; 6}` `+ 500` | +500 posti, max 20000 | € una tantum | `entities.py:160-161,179-182` |
+| Ingaggio allenatore (uscita) | `1500 × tier` | tier 1-5 → 1500…7500 | € una tantum | `entities.py:207-208`; `game_controller.py:631` |
+| Dilemma «doping» accettato | `+1800` | | € | `game_controller.py:778` |
+| Dilemma «doping» rifiutato | `budget = max(0, budget − 600)` (**azzera il debito**) | 600 | € | `game_controller.py:798` |
+| Dilemma «giovane» accettato | `+1000` | | € | `game_controller.py:807` |
+| Dilemma «giovane» rifiutato | `budget = max(0, budget − 300)` (**azzera il debito**) | 300 | € | `game_controller.py:825` |
+| Fondo iniziale | Prototipo 10000; Carriera 18000 (`GameState` ha 12000 di default) | | € | `game_controller.py:154,162`; `entities.py:776` |
 | **Non esistono** | incasso da cessione, costo tribune, revisione stipendi | | | AUDIT §6 |
 
 ## B. Classifica, tempo, stagione

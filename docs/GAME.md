@@ -24,7 +24,7 @@ un visualizzatore Godot opzionale in stile «diretta TV»).
 - **Stack:** Python 3.14 + PyQt6 + SQLite, architettura MVC. Interfaccia, testi, commenti e documenti in **italiano**;
   identificatori nel codice in **inglese**.
 - **Moneta e tempo:** il tempo avanza a **settimane** (un clic su «Avanza settimana»). Una gara si corre ogni 4 settimane.
-  La moneta è un dollaro generico (`$`).
+  La moneta è l'euro (`€`); le cifre sono ancora formattate con la virgola come separatore delle migliaia (`1,200`) nelle viste e con il punto nei testi del generatore (`8.000`): incoerenza nota, non corretta qui.
 - **Genere:** ogni gara ha due **divisioni**, maschile (M) e femminile (F), con convocazioni, record e staffette separati.
 - **Società e dati reali:** i nomi dei club rivali vengono da `data/societa_atletica_lazio.csv` (239 società per provincia:
   Roma, Latina, Frosinone, Rieti, Viterbo). Atleti, rivali e sponsor sono generati proceduralmente; gli sponsor delle grafiche sono di fantasia.
@@ -125,7 +125,7 @@ sceglie l'atteggiamento, compone le staffette, spende soldi (staff, impianti, sc
 1. Se la settimana è **di gara** (`settimana % 4 == 0`): simula il meeting (meteo, vento, punteggi di tutti, classifica, premi, record, staffette, punti squadra, biglietti/trasferta).
 2. Per ogni atleta: allenamento settimanale (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio).
 3. Note di infortunio; eventuale scandalo doping (reputazione −25, prestigio −45).
-4. Finanze settimanali: entrate (sponsor, individuali, quote) e uscite (stipendi, staff, allenatori, palestra); libro mastro.
+4. Finanze settimanali: entrate (sponsor, individuali, quote) e uscite (rimborsi spese atleti, staff, allenatori, palestra); libro mastro.
 5. Se `budget < 0`: interessi 5% a settimana; sotto −20.000 la società **fallisce** (`bankrupt`: blocca i tick successivi).
 6. Decadimento abilità degli allenatori; affiatamento staffette; **evoluzione dei rivali**; usura della pista.
 7. Fedeltà sponsor +2; azzera i punti scouting; **`week += 1`**.
@@ -161,7 +161,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 - **Fatica** sale con l'allenamento (a seconda del focus) e scende con Riposo, Scarico, fisioterapista, sonno e nutrizione. La **forma** converge a un bersaglio
   che dipende dalla fatica (fatica alta → forma bassa), con bonus per Riposo/Scarico, preparatore mentale, Leader, doping.
 - **Infortunio da carico** possibile con fatica ≥68 (più alto per fatica elevata e bassa resilienza; ridotto da Resiliente, medico, Fisioterapista; più alto per ≤17 anni).
-  Durata 1-3 settimane; da infortunato non si gareggia e si prende comunque lo stipendio.
+  Durata 1-3 settimane; da infortunato non si gareggia e si prende comunque il rimborso spese.
 - **Declino con l'età**: dopo il picco della specialità si perdono gradualmente velocità, resistenza e forza.
 - Azioni manuali: **seduta di recupero** per atleta (fatica −20, sonno/nutrizione +10, forma +6, costo 250); **manutenzione pista** (costo 900, +25 condizione).
 - **Doping** esiste solo come scelta di un dilemma etico: +6,5 punti in gara e +10 forma, ma 24%/settimana di controllo positivo (4 settimane di stop) e scandalo.
@@ -206,14 +206,14 @@ ambiziose e crescono più in fretta; quelle che ti staccano molto si rilassano. 
 ### 5.7 Economia
 
 Entrate settimanali: **sponsor società** (funzione di categoria, reputazione e fedeltà), **sponsor individuali** (fan/4 per atleta maggiorenne in prima squadra), **quote tesserati** (450 fisse).
-Uscite settimanali: **stipendi atleti** (prima squadra, infortunati inclusi, mai rivisti), **staff** (Fisioterapista 300, Medico 340, Preparatore Mentale 220), **stipendi allenatori**
+Uscite settimanali: **rimborsi spese atleti** (prima squadra, infortunati inclusi, mai rivisti), **staff** (Fisioterapista 300, Medico 340, Preparatore Mentale 220), **stipendi allenatori**
 (`40 + 2,2 × Σ max(0, abilità−40)`), **gestione palestra** (40 × livello). Per gara: premi e biglietti (casa) o trasferta (fuori). Una tantum: ingaggi (atleti, allenatori), scouting, recupero, pista, ampliamenti.
 **Debito**: con saldo negativo interessi del 5% a settimana; sotto −20.000 fallimento. Misura chiave: all'avvio la società perde soldi ogni settimana (Carriera ≈ −4.432, Prototipo ≈ −2.291), quindi il giocatore
 deve tagliare/gestire (difetto/decisione di bilanciamento aperta, `QUESTIONS.md` 3). Cifre complete: `BALANCE.md`.
 
 ### 5.8 Vivaio e scouting
 
-Il **vivaio** ospita fino a 8 ragazzi di 14-17 anni che non gareggiano e non costano stipendio, ma si allenano ×1,5. A 18 anni passano da soli in prima squadra (in Carriera, perché l'età cresce solo al cambio stagione);
+Il **vivaio** ospita fino a 8 ragazzi di 14-17 anni che non gareggiano e non costano rimborsi spese, ma si allenano ×1,5. A 18 anni passano da soli in prima squadra (in Carriera, perché l'età cresce solo al cambio stagione);
 prima si possono promuovere a mano. Ogni settimana si hanno **8 punti scouting**: una ricerca costa 2 punti (+1 per filtro: disciplina, potenziale ≥85) e un costo in denaro crescente con i punti già spesi.
 I ragazzi segnalati e non presi se ne vanno a fine settimana.
 

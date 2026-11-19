@@ -112,7 +112,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        self.hud_budget = QLabel("Bilancio: $0")
+        self.hud_budget = QLabel("Bilancio: €0")
         self.hud_budget.setObjectName("HudBudgetPill")
         self.hud_prestige = QLabel("Prestigio: 0")
         self.hud_prestige.setObjectName("HudPrestigePill")
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
         self.tier_badge.setText(f"Cat. {state.tier.display_name}")
         self.comp_badge.setVisible(state.is_competition_week)
 
-        self.hud_budget.setText(f"Bilancio: ${state.budget:,}")
+        self.hud_budget.setText(f"Bilancio: €{state.budget:,}")
         self.hud_prestige.setText(f"Prestigio: {state.prestige}")
 
         self.advance_btn.setEnabled(not state.bankrupt)

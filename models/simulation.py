@@ -1128,7 +1128,7 @@ def simulate_competition(
         0,
         f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}, {venue}) — "
         f"società {team_place}ª con {team_points[state.team_name]} pt, "
-        f"+${total_prize:,} premi, +{total_prestige} prestigio.",
+        f"+€{total_prize:,} premi, +{total_prestige} prestigio.",
     )
     _evaluate_objectives(state, summary)
     return summary
@@ -1342,7 +1342,7 @@ def advance_week(
     if fin["individual_sponsors"] > 0:
         ledger("Sponsor Individuali Atleti (in base ai fan)", "Sponsor", fin["individual_sponsors"])
     ledger("Quote Tesserati & Contributi", "Quote Sociali", fin["member_fees"])
-    ledger(f"Stipendi Atleti ({len(state.main_squad)})", "Stipendi Atleti", -fin["athlete_wages"])
+    ledger(f"Rimborsi spese atleti ({len(state.main_squad)})", "Rimborsi Atleti", -fin["athlete_wages"])
     if fin["staff_cost"] > 0:
         hired_count = sum(1 for s in state.staff if s.hired)
         ledger(f"Compensi Staff ({hired_count} specialisti)", "Staff", -fin["staff_cost"])
@@ -1357,13 +1357,13 @@ def advance_week(
         state.budget -= interest
         ledger("Interessi passivi sul debito (5%)", "Interessi", -interest)
         state.news_log.insert(
-            0, f"Sett. {completed_week}: Conto in rosso! Pagati ${interest:,} di interessi."
+            0, f"Sett. {completed_week}: Conto in rosso! Pagati €{interest:,} di interessi."
         )
         if state.budget < BANKRUPTCY_THRESHOLD and not state.bankrupt:
             state.bankrupt = True
             msg = (
                 f"Sett. {completed_week}: FALLIMENTO! Il debito ha superato "
-                f"${-BANKRUPTCY_THRESHOLD:,}: la società viene messa in liquidazione."
+                f"€{-BANKRUPTCY_THRESHOLD:,}: la società viene messa in liquidazione."
             )
             state.news_log.insert(0, msg)
             state.milestones.insert(0, msg)
