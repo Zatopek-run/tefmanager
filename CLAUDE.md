@@ -3,13 +3,49 @@
 Gestionale di atletica desktop in **Python + PyQt6 + SQLite**, architettura **MVC**. Interfaccia, testi e
 commenti sono in **italiano**: mantieni la lingua (nomi di variabili e codice in inglese).
 
+## Convenzioni vincolanti (leggere prima di scrivere codice)
+
+Sono regole per le sessioni future. Il codice **oggi non le rispetta tutte**: per ciascuna c'è lo stato attuale e il
+lotto di `docs/PLAN.md` che la realizza. Mappa dei documenti: `docs/AUDIT.md` (stato e rischi), `docs/TICK.md`
+(ordine del tick), `docs/BALANCE.md` (costanti), `docs/QUESTIONS.md` (decisioni aperte), `docs/PLAN.md` (lotti).
+
+1. **`models/` non importa PyQt6**, né direttamente né tramite `views/` o `controllers/`.
+   *Stato attuale: non conforme* — `models/race_export.py:22` importa `views.race_viewer` (che importa PyQt6) → lotto 5.3.
+2. **Nessuna costante di gioco scritta a mano fuori dal modulo di bilanciamento.** Il modulo **non esiste ancora**
+   (nome `models/balance.py` DA CONFERMARE, QUESTIONS 4). Finché non c'è: nuove costanti nei blocchi di costanti di
+   `models/entities.py`, mai letterali dentro le funzioni, e aggiornare `docs/BALANCE.md`.
+   *Stato attuale: non conforme* — letterali sparsi in `simulation.py`, `generator.py`, `game_controller.py` → lotto 5.2.
+3. **RNG deterministico con seed/stato nel salvataggio.** Ogni funzione di simulazione riceve un `rng` e non crea
+   `random.Random()` da sola per le regole di gioco; niente `hash()` su stringhe per ricavare seed (è salato per
+   processo). *Stato attuale: non conforme* — il controller usa `random.Random()` non seminato e nulla è salvato
+   (`game_controller.py:110`), `views/dialogs.py:55` usa `hash()` → lotti 2.1, 2.2.
+4. **Ogni migrazione ha backup + transazione + test su fixture**; mai `DROP` di dati su una versione sconosciuta.
+   *Stato attuale: non conforme* — ALTER in autocommit, nessun backup, `DROP TABLE` su versioni ignote
+   (`database.py:393-415`) → lotti 1.1, 1.2.
+5. **L'ordine del tick settimanale è quello di `docs/TICK.md`** e non si cambia senza aggiornare il documento (anche
+   l'ordine delle chiamate all'RNG ne fa parte). *Stato attuale: conforme* (il documento descrive il codice di oggi).
+6. **I test di simulazione girano senza Qt**; gli smoke test GUI usano `QT_QPA_PLATFORM=offscreen`.
+   *Stato attuale: non conforme* — l'intera suite sta in `tests/test_game.py` e importa PyQt6 a riga 15 → lotto 5.1.
+7. **Niente modifiche non richieste in altre cartelle**: niente refactor, rename o «già che ci sono»; un difetto
+   trovato per strada si annota in `docs/AUDIT.md`, non si corregge di nascosto. Una decisione di design resta
+   all'utente (`docs/QUESTIONS.md`).
+8. **Lingua**: interfaccia, testi, commenti e documenti in italiano; identificatori in inglese.
+
 ## Comandi
 
+Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
+
 ```bash
-pip install -r requirements.txt            # PyQt6, pyinstaller
-python main.py                             # avvia l'app
-python -m unittest tests.test_game         # tutta la suite (offscreen, ~3 s)
+.venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
+.venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 80 test, OK, ~3,1 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # equivalente (verificato, 80 test)
+pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
 ```
+
+- `python` **non è nel PATH** in questo ambiente: usare `.venv/bin/python`. Il `python3` di sistema non ha PyQt6
+  (utile per controllare che `models/` si importi senza Qt: `PYTHONPATH=. python3 -c "import models.simulation"`).
+- Percorsi di salvataggio: `~/.track_field_manager/saves/` (slot) e `~/.track_field_manager/savegame.db` (legacy).
 
 - I test impostano `QT_QPA_PLATFORM=offscreen`. In un container Linux pulito PyQt6 può mancare di librerie di
   sistema: servono `libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` (`apt-get update` prima).
@@ -19,14 +55,17 @@ python -m unittest tests.test_game         # tutta la suite (offscreen, ~3 s)
 ## Struttura
 
 ```text
-models/      entities.py (GameState, Athlete, eventi, enum)   generator.py (atleti, corpo, nazionalità)
-             simulation.py (allenamento, gare, punteggi)       database.py (SQLite, migrazioni)
-controllers/ game_controller.py   segnali Qt che collegano modello e viste
-views/       main_window.py  tabs.py  dialogs.py  styles.py (QSS scuro)
-             athlete_dialog.py  Scheda Atleta
+main.py      entry point (`GameController(auto_create=False)` + `MainWindow`)
+models/      entities.py (GameState, Athlete, eventi, enum, molte costanti)   generator.py (atleti, rivali, dilemmi)
+             simulation.py (allenamento, gare, tick `advance_week`)           database.py (SQLite, migrazioni)
+             race_export.py (export per Godot)   bibs.py (pettorali)
+controllers/ game_controller.py   segnali Qt; contiene anche regole e cifre di gioco (vedi docs/AUDIT.md Q13)
+views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QSS scuro)
+             athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
-             race_3d.py         vista 3D software delle corse in pista
-tests/       test_game.py
+             race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
+tests/       test_game.py   (unico file, 80 test, importa PyQt6)
+data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN
 ```
 
 ## Decisioni e regole da rispettare
@@ -51,7 +90,7 @@ tests/       test_game.py
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 7`. Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 9` (`database.py:42`; il valore precedente scritto qui, 7, era obsoleto). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta).
