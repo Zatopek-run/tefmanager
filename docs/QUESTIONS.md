@@ -220,7 +220,7 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ## Q22 — Valuta, rimborsi e scadenze contratto — ✅ FATTA il 2026-11-19
 
-**Fatto:** (1) `$` → `€` e «rimborso spese» per gli atleti (gli allenatori restano «stipendio»). (2) `contract_end_season` (schema v10), durata 1-3 stagioni deterministica, **rinnovo automatico** a fine stagione senza costo (scelta dell'utente: non «mai rinnovato in automatico»); per non rinnovare un atleta lo si svincola prima della fine stagione. **Non fatto:** un pulsante «non rinnovare», un costo di rinnovo, l'adeguamento del rimborso spese al rinnovo (resta R14).
+**Fatto:** (1) `$` → `€` e «rimborso spese» per gli atleti (gli allenatori restano «stipendio»). (2) `contract_end_season` (schema v10), durata 1-3 stagioni deterministica, **rinnovo automatico** a fine stagione senza costo (scelta dell'utente: non «mai rinnovato in automatico»); pulsante **«Non rinnovare»** nella scheda atleta (`contract_no_renew`, schema v11): a scadenza l'atleta lascia la società senza la penale di fedeltà dello svincolo (−8); l'ultimo atleta della Prima Squadra si rinnova comunque; formazione e staffette si ricompongono da sole. **Non fatto:** un costo di rinnovo, l'adeguamento del rimborso spese al rinnovo (resta R14).
 
 **Raccomandazione.** (1) Cambiare `$` → `€` e «stipendio» → «rimborso spese» (solo stringhe). (2) Introdurre contratti con scadenza stagionale (1-3 stagioni) e rinnovo automatico salvo decisione del giocatore. Non aggiungere agenti, diritti d'immagine o sponsor tecnici nominali.
 

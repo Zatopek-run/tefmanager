@@ -40,7 +40,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -109,6 +109,10 @@ V9_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V10_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("contract_end_season", "INTEGER NOT NULL DEFAULT 0")],
 }
+# Columns added in v11 (athlete contract: 1 = do not renew at expiry, the athlete leaves the club).
+V11_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("contract_no_renew", "INTEGER NOT NULL DEFAULT 0")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -118,6 +122,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     7: V8_COLUMNS,
     8: V9_COLUMNS,
     9: V10_COLUMNS,
+    10: V11_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -662,7 +667,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     height_cm INTEGER NOT NULL DEFAULT 0,
     weight_kg INTEGER NOT NULL DEFAULT 0,
     gender TEXT NOT NULL DEFAULT '',
-    contract_end_season INTEGER NOT NULL DEFAULT 0
+    contract_end_season INTEGER NOT NULL DEFAULT 0,
+    contract_no_renew INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -911,8 +917,8 @@ class DatabaseManager:
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
                     in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
-                    contract_end_season
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contract_end_season, contract_no_renew
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -947,6 +953,7 @@ class DatabaseManager:
                         a.weight_kg,
                         a.gender,
                         a.contract_end_season,
+                        1 if a.contract_no_renew else 0,
                     )
                     for a in state.athletes
                 ],
@@ -1100,6 +1107,7 @@ class DatabaseManager:
                     weight_kg=r["weight_kg"],
                     gender=r["gender"],
                     contract_end_season=r["contract_end_season"],
+                    contract_no_renew=bool(r["contract_no_renew"]),
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]

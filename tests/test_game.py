@@ -1578,6 +1578,39 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertIn("Allievi", texts["kid"])
             self.assertIn("—", texts["kid"])  # il vivaio non ha contratto
 
+    def test_no_renew_button_toggles_flag_and_persists(self) -> None:
+        """Il pulsante «non rinnovare» segna l'atleta, si può annullare, sparisce per il vivaio e resta salvato."""
+        from PyQt6.QtWidgets import QLabel
+
+        from views.athlete_dialog import AthleteDetailDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "norenew.db"
+            ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(6))
+            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            s = ctrl.state
+            senior, kid = s.main_squad[0], s.main_squad[1]
+            kid.in_youth_squad, kid.contract_end_season = True, 0
+            self.assertFalse(ctrl.set_contract_no_renew(kid.id, True))  # il vivaio non ha contratto
+            self.assertFalse(kid.contract_no_renew)
+            dlg = AthleteDetailDialog(ctrl, senior.id)
+            self.assertEqual(dlg.btn_no_renew.text(), "NON RINNOVARE")
+            dlg._toggle_no_renew()
+            self.assertTrue(senior.contract_no_renew)
+            self.assertEqual(dlg.btn_no_renew.text(), "ANNULLA NON RINNOVO")
+            self.assertIn(f"fino alla stagione {senior.contract_end_season} (non verrà rinnovato)",
+                          [w.text() for w in dlg.findChildren(QLabel)])
+            dlg.close()
+            loaded = DatabaseManager(db_path=path).load_game()
+            self.assertTrue(next(a for a in loaded.athletes if a.id == senior.id).contract_no_renew)
+            dlg = AthleteDetailDialog(ctrl, senior.id)
+            dlg._toggle_no_renew()
+            self.assertFalse(senior.contract_no_renew)
+            dlg.close()
+            kid_dlg = AthleteDetailDialog(ctrl, kid.id)
+            self.assertTrue(kid_dlg.btn_no_renew.isHidden())
+            kid_dlg.close()
+
 
 class TestRaceExport(unittest.TestCase):
     """Esportazione dei 100m verso il visualizzatore Godot (godot_viewer/)."""

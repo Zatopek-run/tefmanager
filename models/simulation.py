@@ -1377,20 +1377,54 @@ def ensure_contracts(state: GameState) -> int:
 
 
 def renew_expiring_contracts(state: GameState) -> List[str]:
-    """Rinnova in automatico i contratti scaduti con la stagione appena chiusa (Q22). Nessun costo, nessun RNG.
+    """Chiude i contratti scaduti con la stagione appena chiusa (Q22). Nessun costo, nessun RNG.
 
-    Il giocatore che non vuole rinnovare un atleta deve svincolarlo prima della fine della stagione.
-    Va chiamata dopo l'incremento di `season_number`.
+    Rinnovo automatico (1-3 stagioni), salvo per chi il giocatore ha segnato «non rinnovare»: quell'atleta lascia
+    la società a parametro zero (nessuna penale di fedeltà, a differenza dello svincolo). L'ultimo atleta della
+    Prima Squadra non può andarsene: viene rinnovato comunque. Va chiamata dopo l'incremento di `season_number`.
     """
     renewed: List[Athlete] = []
-    for a in state.main_squad:
-        if 0 < a.contract_end_season < state.season_number:
+    left: List[Athlete] = []
+    expired = [a for a in state.main_squad if 0 < a.contract_end_season < state.season_number]
+    squad_size = len(state.main_squad)
+    for a in expired:
+        if a.contract_no_renew and squad_size - len(left) > 1:
+            left.append(a)
+        else:
+            a.contract_no_renew = False
             assign_contract(state, a)
             renewed.append(a)
-    if not renewed:
-        return []
-    names = ", ".join(f"{a.name} (fino alla stagione {a.contract_end_season})" for a in renewed)
-    return [f"Sett. {state.week}: contratti rinnovati in automatico: {names}."]
+    notes: List[str] = []
+    if renewed:
+        names = ", ".join(f"{a.name} (fino alla stagione {a.contract_end_season})" for a in renewed)
+        notes.append(f"Sett. {state.week}: contratti rinnovati in automatico: {names}.")
+    if left:
+        notes.extend(_remove_athletes_from_assignments(state, left))
+    return notes
+
+
+def _remove_athletes_from_assignments(state: GameState, leaving: List[Athlete]) -> List[str]:
+    """Toglie dalla società gli atleti a fine contratto e ricompone formazione e staffette rimaste scoperte."""
+    gone = {a.id for a in leaving}
+    state.athletes = [a for a in state.athletes if a.id not in gone]
+    notes = [
+        f"Sett. {state.week}: {a.name} ha lasciato la società a fine contratto (non rinnovato)."
+        for a in leaving
+    ]
+    for gender in ("M", "F"):
+        lineup = state.lineup_for(gender)
+        vacated = [e for e, aid in lineup.items() if aid in gone]
+        if vacated:
+            keep = {e: aid for e, aid in lineup.items() if aid not in gone}
+            refill = build_default_lineup(
+                state.athletes, event_names=state.active_events, gender=gender, tier=state.tier, fixed=keep
+            )
+            for event in vacated:
+                lineup[event] = refill.get(event)
+        for name, relay in state.relays_for(gender).items():
+            if gone & set(relay.all_ids()):
+                auto_build_relay(state, name, gender=gender)
+    return notes
 
 
 def promote_youth_athlete(state: GameState, athlete: Athlete) -> None:

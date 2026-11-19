@@ -87,18 +87,76 @@ class TestContractRules(unittest.TestCase):
         notes = renew_expiring_contracts(state)
         self.assertNotIn(gone.name, notes[0])
 
+    def test_flagged_athlete_leaves_at_expiry_without_fidelity_penalty(self) -> None:
+        state = make_state(4)
+        for a in state.athletes:
+            a.contract_end_season = state.season_number
+        leaver = next(a for a in state.main_squad if a.gender == "M" and a.id in state.event_lineup.values())
+        leaver.contract_no_renew = True
+        fidelity = state.fidelity
+        state.season_number += 1
+        notes = renew_expiring_contracts(state)
+        self.assertNotIn(leaver.id, [a.id for a in state.athletes])
+        self.assertTrue(any(leaver.name in n and "lasciato" in n for n in notes))
+        self.assertEqual(state.fidelity, fidelity)  # a differenza dello svincolo immediato
+        self.assertNotIn(leaver.id, state.event_lineup.values())  # nessun id orfano in formazione...
+        self.assertNotIn(leaver.id, [i for r in state.relays.values() for i in r.all_ids()])  # ...né in staffetta
+        others = [a for a in state.main_squad]
+        self.assertTrue(all(a.contract_end_season >= state.season_number for a in others))  # gli altri rinnovati
+
+    def test_flag_is_ignored_before_expiry_and_cleared_on_renewal(self) -> None:
+        state = make_state(4)
+        for a in state.athletes:
+            a.contract_end_season = state.season_number + 1
+            a.contract_no_renew = True
+        state.season_number += 1  # contratto ancora valido
+        self.assertEqual(renew_expiring_contracts(state), [])
+        self.assertEqual(len(state.athletes), len(make_state(4).athletes))
+
+    def test_last_athlete_is_renewed_even_if_flagged(self) -> None:
+        state = make_state(4)
+        state.athletes = state.athletes[:1]
+        a = state.athletes[0]
+        a.contract_end_season, a.contract_no_renew = state.season_number, True
+        state.season_number += 1
+        renew_expiring_contracts(state)
+        self.assertEqual(state.athletes, [a])
+        self.assertFalse(a.contract_no_renew)
+        self.assertGreaterEqual(a.contract_end_season, state.season_number)
+
+    def test_everyone_flagged_keeps_at_least_one(self) -> None:
+        state = make_state(4)
+        for a in state.athletes:
+            a.contract_end_season, a.contract_no_renew = state.season_number, True
+        state.season_number += 1
+        renew_expiring_contracts(state)
+        self.assertEqual(len(state.main_squad), 1)
+
+    def test_no_rng_is_consumed(self) -> None:
+        """Il tick non deve cambiare l'ordine delle chiamate all'RNG: nessuna chiamata a `random`."""
+        import random as _random
+        from unittest import mock
+
+        state = make_state(4)
+        for a in state.athletes:
+            a.contract_end_season, a.contract_no_renew = state.season_number, a.id % 2 == 0
+        state.season_number += 1
+        with mock.patch.object(_random.Random, "random", side_effect=AssertionError("RNG usato")):
+            renew_expiring_contracts(state)
+
     def test_roundtrip_through_sqlite_keeps_the_contract(self) -> None:
         state = make_state(4)
         for i, a in enumerate(state.athletes):
             a.contract_end_season = 1 + i % 3
+            a.contract_no_renew = i % 2 == 0
         with tempfile.TemporaryDirectory() as tmp:
             db = DatabaseManager(db_path=Path(tmp) / "c.db")
             db.save_game(state)
             loaded = db.load_game()
         assert loaded is not None
         self.assertEqual(
-            [(a.id, a.contract_end_season) for a in loaded.athletes],
-            [(a.id, a.contract_end_season) for a in state.athletes],
+            [(a.id, a.contract_end_season, a.contract_no_renew) for a in loaded.athletes],
+            [(a.id, a.contract_end_season, a.contract_no_renew) for a in state.athletes],
         )
 
 

@@ -105,7 +105,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Crescita periodizzazione | 1,05 / 1,25 / 0,90 / 0,45 | × | `simulation.py:373-377` | |
 | 800m (Q16) | retta `T = a − norm×b` da `MIDDLE_800M_CURVE` (M 144,5 / 46,4, F 160,0 / 45,2), tetto WR 100,91 s / 113,28 s; ancore **STIMATE** a score 42/56/66/70/84; pesi `stamina 0,40, speed 0,38, technique 0,15, strength 0,07`; fisico ideale M 178 cm BMI 21,0, F 168 cm BMI 19,8 (stime); traguardo storico M 1:53,00 / F 2:08,00 | s | `simulation.py` `_score_to_mark`, `BODY_IDEALS*`; `entities.py` | |
 | Effetti collaterali dell'800m | una gara in più per divisione: più premi per meeting e più punti squadra in palio; un modo in più di completare l'obiettivo «traguardo storico» | | | |
-| Contratti | durata `1 + (id + stagione) % CONTRACT_MAX_SEASONS` (1-3 stagioni), rinnovo automatico a fine stagione, nessun costo; il vivaio non ha contratto (Q22) | stagioni | `simulation.py`, `entities.py` | |
+| Contratti | durata `1 + (id + stagione) % CONTRACT_MAX_SEASONS` (1-3 stagioni), rinnovo automatico a fine stagione, nessun costo, salvo «non rinnovare» (l'atleta se ne va, senza penale di fedeltà); il vivaio non ha contratto (Q22) | stagioni | `simulation.py`, `entities.py` | |
 | Tetto gare per atleta | `MAX_INDIVIDUAL_EVENTS` = 2 gare individuali (tra quelle attive) + 1 staffetta (già unica per atleta); FIDAL art. 3.3 e 5.7 | gare | `entities.py` | |
 | Età minima Internazionale | `INTERNATIONAL_MIN_AGE` = 20 (Q17): gli under 20 non gareggiano in «Finale Oro / Coppa Europa» | anni | `entities.py` | |
 | Fattore età | <picco 1,30; nel picco 1,00; oltre 0,65 | × | `simulation.py:354-359` | |

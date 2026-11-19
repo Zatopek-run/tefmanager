@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-19, branch `main`, commit `c2256a0` (lotti 1.1 e 1.2 di `PLAN.md` fatti). Suite di test: 143 test OK (aggiornata dopo i lotti Q15-Q22 e l'800m).
+Stato descritto: 2026-11-19, branch `main`, commit `c2256a0` (lotti 1.1 e 1.2 di `PLAN.md` fatti). Suite di test: 151 test OK (aggiornata dopo i lotti Q15-Q22 e l'800m).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -57,7 +57,7 @@ views/           interfaccia PyQt6 (nessuna logica che decida esiti)
   start_screen.py main_window.py tabs.py dialogs.py athlete_dialog.py styles.py (tema scuro QSS) results_board.py
   race_viewer.py race_3d.py field_3d.py (gare in diretta)     godot_launcher.py (lancio di Godot)
 godot_viewer/    progetto Godot 4.3+ separato (solo vista), legge risultati da SQLite
-tests/           test_game.py (95 test, usa PyQt6)   test_migrations.py (23), test_assignments.py (9), test_contracts.py (7), test_event_800m.py (9): senza Qt
+tests/           test_game.py (96 test, usa PyQt6)   test_migrations.py (25), test_assignments.py (9), test_contracts.py (12), test_event_800m.py (9): senza Qt
 data/            societa_atletica_lazio.csv          docs/   AUDIT, TICK, BALANCE, QUESTIONS, PLAN, GAME
 ```
 
@@ -264,7 +264,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 10`**, `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 11`**, `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -318,8 +318,8 @@ Anche le azioni UI (scouting, mercato) consumano l'RNG del controller. Regola di
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 143 test, ~4 s
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 48 test, SENZA PyQt6
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 151 test, ~4 s
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).

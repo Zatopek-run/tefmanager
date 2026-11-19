@@ -46,9 +46,9 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 143 test, OK, ~4 s
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 95 test (importa PyQt6)
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 48 test, SENZA PyQt6 (python3 di sistema)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 151 test, OK, ~4 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
 ```
 
@@ -73,8 +73,8 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (95 test, importa PyQt6)    test_migrations.py   (23 test, senza Qt: migrazioni e slot)
-             test_assignments.py (9, convocazioni)   test_contracts.py (7)   test_event_800m.py (9)   tutti senza Qt
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (25 test, senza Qt: migrazioni e slot)
+             test_assignments.py (9, convocazioni)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN
 ```
 
@@ -100,7 +100,7 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 10` (`database.py`; v10 = `athletes.contract_end_season`, Q22, 2026-11-19). Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 11` (`database.py`; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni

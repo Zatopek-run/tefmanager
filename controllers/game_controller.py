@@ -536,6 +536,24 @@ class GameController(QObject):
         self.status_message.emit(f"Svincolato {target.name}.")
         return True
 
+    def set_contract_no_renew(self, athlete_id: int, no_renew: bool) -> bool:
+        """Segna (o annulla) «non rinnovare»: alla scadenza del contratto l'atleta lascia la società senza penali (Q22)."""
+        target = next((a for a in self.state.athletes if a.id == athlete_id), None)
+        if target is None or target.in_youth_squad:
+            return False
+        if bool(target.contract_no_renew) == bool(no_renew):
+            return True
+        target.contract_no_renew = bool(no_renew)
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        if no_renew:
+            self.status_message.emit(
+                f"{target.name}: contratto non rinnovato, lascerà la società a fine stagione {target.contract_end_season}."
+            )
+        else:
+            self.status_message.emit(f"{target.name}: il contratto verrà di nuovo rinnovato in automatico.")
+        return True
+
     # ------------------------------------------------------------------ race attitude
     def set_event_attitude(self, event_name: str, attitude: RaceAttitude) -> None:
         self.state.event_attitude[event_name] = attitude.value

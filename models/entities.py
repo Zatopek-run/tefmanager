@@ -478,6 +478,7 @@ class Athlete:
     height_cm: int = 0  # 0 = not yet generated (old saves)
     weight_kg: int = 0
     gender: str = "M"
+    contract_no_renew: bool = False  # il giocatore non vuole rinnovarlo: alla scadenza lascia la società
 
     @property
     def gender_label(self) -> str:

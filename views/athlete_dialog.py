@@ -130,6 +130,11 @@ class AthleteDetailDialog(QDialog):
         btn_release = QPushButton("✕ SVINCOLA")
         btn_release.setObjectName("DangerButton")
         btn_release.clicked.connect(self._release)
+        self.btn_no_renew = QPushButton("NON RINNOVARE")
+        self.btn_no_renew.setToolTip(
+            "A fine contratto l'atleta lascia la società senza penali. Con lo svincolo subito si perde fedeltà."
+        )
+        self.btn_no_renew.clicked.connect(self._toggle_no_renew)
         btn_recover = QPushButton("RECUPERO (€250)")
         btn_recover.setStyleSheet(
             "background-color: #0e7490; color: #f8fafc; border: 1px solid #0de0cc; font-weight: 700;"
@@ -138,7 +143,7 @@ class AthleteDetailDialog(QDialog):
         btn_close = QPushButton("✓ CHIUDI")
         btn_close.setObjectName("PrimaryButton")
         btn_close.clicked.connect(self.accept)
-        for b in (btn_release, btn_recover, btn_close):
+        for b in (btn_release, self.btn_no_renew, btn_recover, btn_close):
             actions.addWidget(b)
         actions.addStretch()
         root.addLayout(actions)
@@ -154,6 +159,7 @@ class AthleteDetailDialog(QDialog):
         if athlete is None:
             return
         self._build_header(athlete)
+        self._update_no_renew_button(athlete)
         self._rebuild(self.overview_page, self._build_overview(athlete))
         self._rebuild(self.training_page, self._build_training(athlete))
         self._rebuild(self.results_page, self._build_results(athlete))
@@ -176,7 +182,9 @@ class AthleteDetailDialog(QDialog):
         if a.in_youth_squad or a.contract_end_season <= 0:
             return "—"
         text = f"fino alla stagione {a.contract_end_season}"
-        if a.contract_end_season <= self.controller.state.season_number:
+        if a.contract_no_renew:
+            text += " (non verrà rinnovato)"
+        elif a.contract_end_season <= self.controller.state.season_number:
             text += " (rinnovo automatico)"
         return text
 
@@ -435,6 +443,17 @@ class AthleteDetailDialog(QDialog):
     # ------------------------------------------------------------------ azioni
     def _recover(self) -> None:
         self.controller.apply_recovery_session(self.athlete_id)
+        self.refresh()
+
+    def _update_no_renew_button(self, athlete: Athlete) -> None:
+        self.btn_no_renew.setVisible(not athlete.in_youth_squad)
+        self.btn_no_renew.setText("ANNULLA NON RINNOVO" if athlete.contract_no_renew else "NON RINNOVARE")
+
+    def _toggle_no_renew(self) -> None:
+        athlete = self._athlete()
+        if athlete is None:
+            return
+        self.controller.set_contract_no_renew(self.athlete_id, not athlete.contract_no_renew)
         self.refresh()
 
     def _release(self) -> None:
