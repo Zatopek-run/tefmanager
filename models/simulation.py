@@ -34,6 +34,7 @@ from models.entities import (
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
     PEAK_FORM_BONUS,
+    RELAY_DQ_MULT,
     TEAM_POINTS,
     TICKET_PRICE,
     TIER_CONFIG,
@@ -221,8 +222,9 @@ def auto_build_all_relays(state: GameState, gender: Optional[str] = None) -> Non
                 relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
 
 
-def _relay_dq_chance(harmony: int, substituted: bool) -> float:
-    return max(0.0, (60 - harmony) * 0.006) + (0.03 if substituted else 0.0)
+def _relay_dq_chance(harmony: int, substituted: bool, relay_name: str = "4x100m") -> float:
+    base = max(0.0, (60 - harmony) * 0.006) + (0.03 if substituted else 0.0)
+    return base * RELAY_DQ_MULT.get(relay_name, 1.0)
 
 
 def _relay_mark(rdef: RelayDefinition, score: float, gender: str = "M") -> Tuple[float, str]:
@@ -956,7 +958,7 @@ def simulate_competition(
                 continue
 
             harmony = relay.harmony - (15 if substituted else 0)
-            disqualified = r.random() < _relay_dq_chance(harmony, substituted)
+            disqualified = r.random() < _relay_dq_chance(harmony, substituted, rdef.name)
             if disqualified:
                 p_val, p_disp = 9999.0, RELAY_DQ_MARK
             else:

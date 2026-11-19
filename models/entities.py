@@ -260,6 +260,9 @@ RELAYS: Dict[str, RelayDefinition] = {
 }
 RELAY_LEG_WEIGHTS: List[float] = [0.24, 0.24, 0.24, 0.28]  # the anchor leg counts a bit more
 RELAY_CHANGE_COOLDOWN_WEEKS = 4
+# Moltiplicatore della probabilità di squalifica per staffetta (Q20). Nella 4x400 il cambio non è lanciato e
+# i frazionisti sono più lenti: il cambio fuori zona è più raro. Valore PROVVISORIO (da confermare).
+RELAY_DQ_MULT: Dict[str, float] = {"4x100m": 1.0, "4x400m": 0.5}
 RELAY_DQ_MARK = "Squalificata"
 
 

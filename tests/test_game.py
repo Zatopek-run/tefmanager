@@ -919,6 +919,13 @@ class TestCoachesAndRelays(unittest.TestCase):
             self.assertEqual(relay.harmony, start + 14)
         self.assertGreater(sim._relay_dq_chance(0, False), 0.3)
         self.assertEqual(sim._relay_dq_chance(80, False), 0.0)
+        # Q20: nella 4x400 la squalifica è meno probabile (a parità di armonia e riserva)
+        for harmony, substituted in ((0, False), (40, False), (45, True)):
+            self.assertAlmostEqual(
+                sim._relay_dq_chance(harmony, substituted, "4x400m"),
+                sim._relay_dq_chance(harmony, substituted, "4x100m") * 0.5,
+            )
+        self.assertEqual(sim._relay_dq_chance(0, False), sim._relay_dq_chance(0, False, "4x100m"))
 
     def test_relay_race_uses_reserve_and_spares_individual_form(self) -> None:
         from models import simulation as sim
