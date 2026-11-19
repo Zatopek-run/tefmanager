@@ -38,7 +38,8 @@ func _start_race(race_id: int) -> bool:
 		_check_1500m_geometry(rc)
 	if rc.is_field(rc.event_kind):
 		_check(not rc.field_queue.is_empty(), "concorso con %d salti in coda" % rc.field_queue.size())
-		_check(rc.runners.all(func(r: RunnerData) -> bool: return r.dnf or r.attempts.size() == 4), "4 prove per concorrente")
+		_check(rc.runners.all(func(r: RunnerData) -> bool: return r.dnf or r.attempts.size() == rc.field_rounds), "%d prove per concorrente" % rc.field_rounds)
+		_check(rc.field_rounds == 6, "6 prove (3 + 3) come FIELD_ROUNDS di views/race_viewer.py")
 	else:
 		for r: RunnerData in rc.runners:
 			if r.dnf:

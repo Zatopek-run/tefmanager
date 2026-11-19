@@ -42,6 +42,10 @@ static func uses_blocks(kind: String) -> bool:
 
 
 var field_queue: Array[Dictionary] = []
+## Prove per atleta nei concorsi (3 + 3 con 8 partecipanti o meno). Si ricava dalle prove lette dal DB; senza dati vale
+## FIELD_ROUNDS_DEFAULT, che deve coincidere con `FIELD_ROUNDS` di views/race_viewer.py.
+const FIELD_ROUNDS_DEFAULT := 6
+var field_rounds: int = FIELD_ROUNDS_DEFAULT
 var field_idx: int = 0
 var field_step_t: float = 0.0
 var active_jumper: RunnerData = null
@@ -342,8 +346,16 @@ func _init_field_queue(race_id: int) -> void:
 				{"round": 2, "mark": snappedf(r.final_time * 0.98, 0.01), "foul": false},
 				{"round": 3, "mark": r.final_time, "foul": false},
 				{"round": 4, "mark": snappedf(r.final_time * 0.97, 0.01), "foul": false},
+				{"round": 5, "mark": snappedf(r.final_time * 0.985, 0.01), "foul": false},
+				{"round": 6, "mark": snappedf(r.final_time * 0.975, 0.01), "foul": false},
 			]
-	for rnd in range(1, 5):
+	field_rounds = 0
+	for r: RunnerData in runners:
+		for att: Dictionary in r.attempts:
+			field_rounds = maxi(field_rounds, int(att.get("round", 0)))
+	if field_rounds == 0:
+		field_rounds = FIELD_ROUNDS_DEFAULT
+	for rnd in range(1, field_rounds + 1):
 		for r: RunnerData in runners:
 			if r.dnf:
 				continue
@@ -360,7 +372,7 @@ func _init_field_queue(race_id: int) -> void:
 					})
 	if not field_queue.is_empty():
 		active_jumper = field_queue[0]["runner"]
-		field_caption = "PROVA 1/4 · %s" % active_jumper.surname()
+		field_caption = "PROVA 1/%d · %s" % [field_rounds, active_jumper.surname()]
 		field_value_text = "IN PEDANA"
 
 
@@ -398,7 +410,7 @@ func _process_field(dt: float) -> void:
 	var foul: bool = bool(step["foul"])
 	var dur: float = float(step["dur"])
 	active_jumper = r
-	field_caption = "PROVA %d/4 · %s" % [rnd, r.surname()]
+	field_caption = "PROVA %d/%d · %s" % [rnd, field_rounds, r.surname()]
 
 	if field_step_t == 0.0:
 		field_landed_foul = false

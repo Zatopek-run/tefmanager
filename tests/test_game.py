@@ -67,6 +67,24 @@ class TestRaceViewer(unittest.TestCase):
             self.assertIn(7.25, att)
             self.assertTrue(all(a is None or a <= 7.25 for a in att))
 
+    def test_field_events_have_six_attempts_for_up_to_eight_athletes(self) -> None:
+        """Con 8 partecipanti o meno tutti fanno 6 prove (3 + 3), senza taglio ai migliori 8."""
+        from views.race_viewer import FIELD_ROUNDS, FieldEventWidget, generate_attempts
+
+        self.assertEqual(FIELD_ROUNDS, 6)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "fr.db"), rng=random.Random(3)).state
+        for tier in CompetitionTier:
+            # un atleta per società: i partecipanti di un concorso sono i rivali della categoria + il club
+            self.assertLessEqual(len(state.rivals_in(tier)) + 1, 8, tier)
+        for seed in range(50):
+            att = generate_attempts(18.40, random.Random(seed))
+            self.assertEqual(len(att), 6)
+            self.assertEqual(att.count(18.40), 1)  # il risultato finale compare in una sola prova
+        widget = FieldEventWidget()  # va tenuto in vita: il tabellone è un suo figlio
+        self.assertEqual(widget.board.columnCount(), 1 + FIELD_ROUNDS + 2)
+        widget.close()
+
     def test_runners_cross_the_line_exactly_at_their_mark(self) -> None:
         """La messa in scena non cambia l'esito: tempo di arrivo = tempo ufficiale, stesso ordine."""
         from views.race_viewer import position_fraction, reaction_time, is_field_event
@@ -1483,7 +1501,7 @@ class TestRaceExport(unittest.TestCase):
             ).fetchone()[0]
             conn.close()
             self.assertEqual((ev_lj, dist_lj), ("Salto in Lungo", 0))
-            self.assertEqual(attempts_cnt, 16)
+            self.assertEqual(attempts_cnt, 4 * 6)  # 4 atleti × 6 prove (FIELD_ROUNDS)
 
             result.event_name = "Getto del Peso"
             for st, m in zip(result.standings, [19.42, 18.60, 17.85, 17.40]):
@@ -1498,7 +1516,7 @@ class TestRaceExport(unittest.TestCase):
             ).fetchone()[0]
             conn.close()
             self.assertEqual((ev_sp, dist_sp), ("Getto del Peso", 0))
-            self.assertEqual(attempts_sp, 16)
+            self.assertEqual(attempts_sp, 4 * 6)
 
             result.event_name = "Lancio del Disco"
             with self.assertRaises(ValueError):

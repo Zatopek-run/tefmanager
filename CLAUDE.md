@@ -257,7 +257,7 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
 - **Staffette** (`4x100m`, `4x400m`): una riga per squadra, 4 frazioni sulla stessa curva, testimone che passa di
   mano (`RunnerView._leg_state`); la 4x400m parte in corsia sfalsata e rientra alla corda dopo il primo giro
   (`pose_4x400m`). Una squadra del giocatore squalificata ha `status = 'DQ'` (HUD «SQ.»).
-- **Concorsi** (`Salto in Lungo`, `Getto del Peso`): 4 prove per atleta in `field_attempts`, ricavate da
+- **Concorsi** (`Salto in Lungo`, `Getto del Peso`): 6 prove per atleta in `field_attempts` (`FIELD_ROUNDS`, 3 + 3: con ≤ 8 partecipanti tutti le fanno tutte), ricavate da
   `generate_attempts` con lo stesso seed della vista PyQt (nullo = `is_foul`). `RaceController.field_queue` le mette
   in scena una dopo l'altra; `verify_race.gd` controlla che il miglior salto del vincitore coincida con il suo
   `mark_value` (solo il vincitore, non gli altri).

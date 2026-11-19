@@ -40,7 +40,7 @@ from views.results_board import ResultsBoardWidget
 # Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
 TRACK_DISTANCES = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
 TRACK_TARGET_SECONDS = {"100m": None, "400m": 24.0, "1500m": 26.0, "4x100m": 16.0, "4x400m": 28.0}
-FIELD_ROUNDS = 4
+FIELD_ROUNDS = 6  # regolamento: con 8 partecipanti o meno, 6 prove a testa (con più di 8: 3 + 3 ai migliori 8)
 DNF_PROGRESS = 0.42  # un atleta ritirato si ferma a questo punto della gara
 PRE_START_SECONDS = 3.0  # "Ai vostri posti" -> "Pronti" -> sparo
 GUN_AT = 2.4  # istante dello sparo nella sequenza di partenza
