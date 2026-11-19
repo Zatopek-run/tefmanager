@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -963,6 +963,17 @@ class CalendarTab(QWidget):
         lower_row.addWidget(hist_panel, stretch=3)
         root.addLayout(lower_row, stretch=1)
 
+    def _pick_lineup_athlete(self, event_name: str, gender: str, combo: QComboBox) -> None:
+        """Convoca l'atleta scelto; se il controller rifiuta (tetto di gare, età) rimette la scelta di prima."""
+        ok = self.controller.set_event_athlete(event_name, combo.currentData(), gender=gender)
+        if not ok:
+            current = self.controller.state.lineup_for(gender).get(event_name)
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(0, combo.findData(current)))
+            combo.blockSignals(False)
+        # le altre tendine devono riflettere il nuovo tetto di gare: si ricostruiscono fuori dal segnale in corso
+        QTimer.singleShot(0, lambda: self.refresh(self.controller.state))
+
     def refresh(self, state: GameState) -> None:
         if state.is_vertical_slice_complete:
             self.cycle_label.setText(
@@ -1018,14 +1029,15 @@ class CalendarTab(QWidget):
                 for a in state.main_squad:
                     if a.is_injured or a.gender != gender:
                         continue
+                    # chi non è ammesso (tetto di 2 gare individuali, età minima) non si offre, salvo il già convocato
+                    if a.id != assigned_id and state.lineup_problem(a, event_name, gender) is not None:
+                        continue
                     label = f"{a.name} ({a.specialty.value}, OVR {a.overall}, Forma {a.form})"
                     combo.addItem(label, a.id)
                 idx = combo.findData(assigned_id)
                 combo.setCurrentIndex(idx if idx >= 0 else 0)
                 combo.currentIndexChanged.connect(
-                    lambda _i, en=event_name, g=gender, c=combo: self.controller.set_event_athlete(
-                        en, c.currentData(), gender=g
-                    )
+                    lambda _i, en=event_name, g=gender, c=combo: self._pick_lineup_athlete(en, g, c)
                 )
                 self._event_combos[f"{event_name}:{gender}"] = combo
                 self.lineup_table.setCellWidget(row, 3, combo)

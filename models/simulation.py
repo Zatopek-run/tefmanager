@@ -33,6 +33,8 @@ from models.entities import (
     EVENTS,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
+    INTERNATIONAL_MIN_AGE,
+    MAX_INDIVIDUAL_EVENTS,
     PEAK_FORM_BONUS,
     RELAY_DQ_MULT,
     TEAM_POINTS,
@@ -185,6 +187,7 @@ def auto_build_relay(
     pool = [
         a for a in state.main_squad
         if a.gender == gender and a.id is not None and not a.is_injured and a.id not in taken
+        and a.can_race_in(state.tier)
     ]
     pool.sort(key=lambda a: relay_leg_score(a, rdef), reverse=True)
     best = pool[:5] if with_reserve else pool[:4]
@@ -217,6 +220,7 @@ def auto_build_all_relays(state: GameState, gender: Optional[str] = None) -> Non
             spare = [
                 a for a in state.main_squad
                 if a.gender == g and a.id is not None and not a.is_injured and a.id not in taken
+                and a.can_race_in(state.tier)
             ]
             if spare:
                 relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
@@ -733,8 +737,10 @@ def simulate_competition(
         else ("Tartan Standard" if state.track_condition >= 55 else "Tartan Usurato")
     )
 
+    # Chi non può gareggiare in questo livello (under 20 in Internazionale, Q17) resta fuori anche se è ancora
+    # in formazione o in una staffetta: `normalize_assignments` lo sostituisce, qui è una rete di sicurezza.
     athlete_by_id: Dict[int, Athlete] = {
-        a.id: a for a in state.main_squad if a.id is not None
+        a.id: a for a in state.main_squad if a.id is not None and a.can_race_in(state.tier)
     }
     fan_mult = {0: 3, 1: 6, 2: 12, 3: 25}[state.tier.order]
 
@@ -1175,8 +1181,59 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
                 )
     if not state.event_lineup_f and any(a.gender == "F" for a in state.main_squad):
         state.event_lineup_f = build_default_lineup(
-            state.athletes, event_names=state.active_events, gender="F"
+            state.athletes, event_names=state.active_events, gender="F", tier=state.tier
         )
+    state.news_log[0:0] = normalize_assignments(state)
+
+
+def normalize_assignments(state: GameState) -> List[str]:
+    """Sostituisce le convocazioni che oggi non sono ammesse: oltre il tetto di gare individuali o under 20 in
+    Internazionale (Q17), in formazione e nelle staffette. Non usa l'RNG. Restituisce le note per le notizie.
+
+    Serve per i vecchi salvataggi (prima non c'era il tetto) e a ogni cambio stagione (età +1, nuovo livello).
+    Le convocazioni di atleti sconosciuti o di un'altra divisione non si toccano: non sono oggetto di queste regole.
+    """
+    notes: List[str] = []
+    by_id = {a.id: a for a in state.main_squad if a.id is not None}
+    for gender in ("M", "F"):
+        lineup = state.lineup_for(gender)
+        entries: Dict[int, int] = {}
+        keep: Dict[str, Optional[int]] = {}
+        bad: List[str] = []
+        for event in state.active_events:
+            aid = lineup.get(event)
+            athlete = by_id.get(aid) if aid is not None else None
+            if aid is None:
+                continue
+            if athlete is not None and athlete.gender == gender and (
+                not athlete.can_race_in(state.tier) or entries.get(aid, 0) >= MAX_INDIVIDUAL_EVENTS
+            ):
+                bad.append(event)
+                continue
+            keep[event] = aid
+            if athlete is not None:
+                entries[aid] = entries.get(aid, 0) + 1
+        if bad:
+            refill = build_default_lineup(
+                state.athletes, event_names=state.active_events, gender=gender, tier=state.tier, fixed=keep
+            )
+            for event in bad:
+                old = by_id.get(lineup.get(event))
+                lineup[event] = refill.get(event)
+                new = by_id.get(lineup[event]) if lineup[event] is not None else None
+                notes.append(
+                    f"Sett. {state.week}: convocazione di {old.name if old else '?'} in {event} ({gender}) "
+                    f"non ammessa, al suo posto {new.name if new else 'nessuno'}."
+                )
+        for name, relay in state.relays_for(gender).items():
+            ids = relay.all_ids()
+            if any(a.id in ids and not a.can_race_in(state.tier) for a in state.main_squad):
+                auto_build_relay(state, name, gender=gender)
+                notes.append(
+                    f"Sett. {state.week}: staffetta {name} ({gender}) ricomposta: "
+                    f"in {state.tier.display_name} gareggiano solo atleti dai {INTERNATIONAL_MIN_AGE} anni."
+                )
+    return notes
 
 
 def close_season(state: GameState) -> SeasonEndResult:
@@ -1413,6 +1470,9 @@ def advance_week(
             state.news_log.insert(
                 0, f"Sett. {state.week}: {a.name} compie 18 anni e passa in Prima Squadra dal vivaio."
             )
+
+    # Cambio stagione: età +1 e nuovo livello possono rendere non ammesse alcune convocazioni (Q17)
+    state.news_log[0:0] = normalize_assignments(state)
 
     if state.is_competition_week:
         venue = "IN CASA" if state.next_meet_is_home else "in trasferta"

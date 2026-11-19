@@ -921,6 +921,40 @@ class TestCoachesAndRelays(unittest.TestCase):
             s.season_phase = SeasonPhase.INDOOR
             self.assertEqual(s.active_relays, ["4x400m"])
 
+    def test_controller_refuses_invalid_callups(self) -> None:
+        """Max 2 gare individuali + 1 staffetta (FIDAL 3.3 e 5.7) e under 20 fuori da Internazionale (Q17)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = self._ctrl(tmpdir, seed=6, mode="career")
+            s = ctrl.state
+            events = s.active_events
+            star = next(a for a in s.main_squad if a.gender == "M")
+            for e in events:
+                s.event_lineup[e] = None
+            messages: list = []
+            ctrl.status_message.connect(messages.append)
+            self.assertTrue(ctrl.set_event_athlete(events[0], star.id, gender="M"))
+            self.assertTrue(ctrl.set_event_athlete(events[1], star.id, gender="M"))
+            self.assertFalse(ctrl.set_event_athlete(events[2], star.id, gender="M"))  # il terzo evento individuale
+            self.assertIsNone(s.event_lineup[events[2]])
+            self.assertIn("Convocazione non valida", messages[-1])
+            self.assertTrue(ctrl.set_event_athlete(events[0], star.id, gender="M"))  # riconfermare è lecito
+            self.assertTrue(ctrl.set_event_athlete(events[2], None, gender="M"))  # svuotare è sempre lecito
+            woman = next(a for a in s.main_squad if a.gender == "F")
+            self.assertFalse(ctrl.set_event_athlete(events[2], woman.id, gender="M"))  # divisione sbagliata
+            self.assertFalse(ctrl.set_event_athlete(events[2], 99999, gender="M"))  # atleta sconosciuto
+            self.assertFalse(ctrl.set_event_athlete("Salto con l'Asta", star.id, gender="M"))  # evento sconosciuto
+
+            # under 20: fuori da Internazionale, dentro agli altri livelli
+            kid = next(a for a in s.main_squad if a.gender == "M" and a.id != star.id)
+            kid.age = 19
+            self.assertTrue(ctrl.set_event_athlete(events[2], kid.id, gender="M"))
+            s.tier = CompetitionTier.INTERNAZIONALE
+            self.assertFalse(ctrl.set_event_athlete(events[3], kid.id, gender="M"))
+            self.assertIn("20 anni", messages[-1])
+            slot_before = list(s.relays["4x100m"].member_ids)
+            self.assertFalse(ctrl.set_relay_slot("4x100m", 0, kid.id, gender="M"))
+            self.assertEqual(s.relays["4x100m"].member_ids, slot_before)
+
     def test_relay_changes_order_cooldown_and_exclusivity(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             ctrl = self._ctrl(tmpdir, seed=6, mode="career")
@@ -1395,6 +1429,36 @@ class TestPyQtViewsV2(unittest.TestCase):
             season_dlg.close()
 
             win.close()
+
+    def test_calendar_tab_hides_ineligible_athletes_and_resets_refused_picks(self) -> None:
+        from views.tabs import CalendarTab
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "cal.db"), rng=random.Random(6))
+            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            s = ctrl.state
+            events = s.active_events
+            star = next(a for a in s.main_squad if a.gender == "M")
+            for e in events:
+                s.event_lineup[e] = None
+            s.event_lineup[events[0]] = star.id
+            s.event_lineup[events[1]] = star.id
+            tab = CalendarTab(ctrl)
+            tab.refresh(s)
+            third = tab._event_combos[f"{events[2]}:M"]
+            self.assertEqual(third.findData(star.id), -1)  # già a 2 gare: non si offre per la terza
+            self.assertNotEqual(tab._event_combos[f"{events[0]}:M"].findData(star.id), -1)  # ma resta dov'è
+            # una scelta rifiutata dal controller rimette la tendina com'era
+            s.event_lineup[events[1]] = None
+            tab.refresh(s)
+            third = tab._event_combos[f"{events[2]}:M"]
+            idx = third.findData(star.id)
+            self.assertNotEqual(idx, -1)  # con una sola gara l'atleta è di nuovo offerto
+            s.event_lineup[events[1]] = star.id  # nel frattempo lo stato cambia: ora la terza gara è vietata
+            third.setCurrentIndex(idx)
+            self.assertIsNone(s.event_lineup[events[2]])
+            self.assertEqual(third.currentData(), None)
+            tab.close()
 
 
 class TestRaceExport(unittest.TestCase):

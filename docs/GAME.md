@@ -85,7 +85,7 @@ salva su SQLite ed emette segnali (`state_changed`, `week_advanced`, `competitio
 Contiene: nome società, modalità, `budget`, `week`, `season_number`, `season_phase`, `start_date`, `prestige`, `reputation`,
 `tier`, `track_condition` (0-100, default 82), `member_fees_weekly` (450); la **rosa** (`athletes`), il **vivaio** (`youth_squad`),
 gli **allenatori** (`coaches`) e lo **staff** (`staff`); le **convocazioni** per evento (`event_lineup` M, `event_lineup_f` F, un solo
-atleta per evento e divisione), gli atteggiamenti di gara per evento (`event_attitude`), le **staffette** (`relays` M, `relays_f` F),
+atleta per evento e divisione; ogni atleta al massimo in 2 gare individuali + 1 staffetta, e gli under 20 non gareggiano in «Finale Oro / Coppa Europa»), gli atteggiamenti di gara per evento (`event_attitude`), le **staffette** (`relays` M, `relays_f` F),
 i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagionali**, i traguardi (`milestones`), il registro notizie
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente

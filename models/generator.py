@@ -14,6 +14,7 @@ from models.entities import (
     EVENTS,
     VERTICAL_SLICE_EVENTS,
     RIVAL_SEASON_INFLATION,
+    MAX_INDIVIDUAL_EVENTS,
     TIER_CONFIG,
     Athlete,
     Coach,
@@ -522,12 +523,26 @@ def build_default_lineup(
     athletes: List[Athlete],
     event_names: Optional[List[str]] = None,
     gender: Optional[str] = None,
+    tier: Optional[CompetitionTier] = None,
+    fixed: Optional[Dict[str, Optional[int]]] = None,
 ) -> Dict[str, Optional[int]]:
-    """Auto-assign the strongest available athlete (optionally filtered by gender) to each active event."""
+    """Auto-assign the strongest available athlete (optionally filtered by gender) to each active event.
+
+    Rispetta il tetto di `MAX_INDIVIDUAL_EVENTS` gare per atleta e, se è dato `tier`, l'età minima del livello.
+    `fixed` sono convocazioni da tenere (contano per il tetto); si riempiono solo le altre gare.
+    """
     targets = event_names or list(EVENTS.keys())
     lineup: Dict[str, Optional[int]] = {}
     used_ids: set[int] = set()
+    entries: Dict[int, int] = {}  # gare già assegnate per atleta
+    for event_name, athlete_id in (fixed or {}).items():
+        if event_name in targets and athlete_id is not None:
+            lineup[event_name] = athlete_id
+            used_ids.add(athlete_id)
+            entries[athlete_id] = entries.get(athlete_id, 0) + 1
     for event_name in targets:
+        if event_name in lineup:
+            continue
         event_def = EVENTS[event_name]
         candidates = [
             a
@@ -536,6 +551,8 @@ def build_default_lineup(
             and not a.in_youth_squad
             and a.id is not None
             and (gender is None or a.gender == gender)
+            and entries.get(a.id, 0) < MAX_INDIVIDUAL_EVENTS
+            and (tier is None or a.can_race_in(tier))
         ]
         if not candidates:
             lineup[event_name] = None
@@ -556,6 +573,7 @@ def build_default_lineup(
         lineup[event_name] = best.id
         if best.id is not None:
             used_ids.add(best.id)
+            entries[best.id] = entries.get(best.id, 0) + 1
     return lineup
 
 

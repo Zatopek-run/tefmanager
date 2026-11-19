@@ -25,6 +25,8 @@ from models.entities import (
     COACH_MAX_TIER,
     COACH_STAT_LABELS,
     COACH_STATS,
+    EVENTS,
+    INTERNATIONAL_MIN_AGE,
     MAX_SPECIALIZED_COACHES,
     MAX_YOUTH_COACHES,
     RELAY_CHANGE_COOLDOWN_WEEKS,
@@ -411,16 +413,33 @@ class GameController(QObject):
 
     def set_event_athlete(
         self, event_name: str, athlete_id: Optional[int], gender: str = "M"
-    ) -> None:
+    ) -> bool:
+        """Convoca `athlete_id` (o nessuno) in `event_name` per la divisione `gender`.
+
+        Rifiuta (False, con messaggio) divisione sbagliata, atleta non in Prima Squadra, under 20 in
+        Internazionale e il terzo evento individuale: massimo 2 gare individuali + 1 staffetta (FIDAL 3.3 e 5.7).
+        """
+        if event_name not in EVENTS or gender not in ("M", "F"):
+            return False
+        if athlete_id is not None:
+            athlete = next((a for a in self.state.athletes if a.id == athlete_id), None)
+            problem = (
+                "Atleta sconosciuto." if athlete is None
+                else self.state.lineup_problem(athlete, event_name, gender)
+            )
+            if problem is not None:
+                self.status_message.emit(f"Convocazione non valida: {problem}")
+                return False
         self.state.lineup_for(gender)[event_name] = athlete_id
         self.status_message.emit(f"Formazione aggiornata per {event_name} ({gender}).")
+        return True
 
     def auto_fill_lineup(self) -> None:
         self.state.event_lineup = build_default_lineup(
-            self.state.athletes, event_names=self.state.active_events, gender="M"
+            self.state.athletes, event_names=self.state.active_events, gender="M", tier=self.state.tier
         )
         self.state.event_lineup_f = build_default_lineup(
-            self.state.athletes, event_names=self.state.active_events, gender="F"
+            self.state.athletes, event_names=self.state.active_events, gender="F", tier=self.state.tier
         )
         self.state_changed.emit(self.state)
         self.status_message.emit("Formazione ottimale completata automaticamente.")
@@ -774,6 +793,12 @@ class GameController(QObject):
         if athlete_id is not None:
             athlete = next((a for a in state.main_squad if a.id == athlete_id), None)
             if athlete is None or athlete.gender != gender:
+                return False
+            if not athlete.can_race_in(state.tier):
+                self.status_message.emit(
+                    f"{athlete.name} ha {athlete.age} anni: in {state.tier.display_name} "
+                    f"gareggiano solo atleti dai {INTERNATIONAL_MIN_AGE} anni."
+                )
                 return False
             other = state.relay_of(athlete_id, gender=gender)
             if other is not None and other != event:

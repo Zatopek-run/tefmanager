@@ -120,7 +120,9 @@ README: fedeltà «acquisto o cessione … meno per gli under 21»; codice: cess
 - **Alternativa:** cambiare il codice (sconto under 21 sulla cessione; riserva senza penalità).
 - **Cosa cambia:** o testo, o `game_controller.py:453-454` / `:741-758`.
 
-## 15. Un atleta può correre più gare nello stesso meeting?
+## 15. Un atleta può correre più gare nello stesso meeting? — ✅ DECISA il 2026-11-19 (tetto FIDAL: max 2 gare individuali + 1 staffetta)
+
+**Decisione dell'utente (2026-11-19):** vale il tetto del regolamento FIDAL (art. 3.3 e 5.7), non «più gare senza tetto». Implementato: `MAX_INDIVIDUAL_EVENTS`, `GameState.lineup_problem`, validazione in `set_event_athlete`, `build_default_lineup` e `normalize_assignments` (vecchi salvataggi). La raccomandazione originale qui sotto è superata; la T5 di `TICK.md` (gara e allenamento nella stessa settimana) resta com'è.
 
 Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generator.py:546`), `set_event_athlete` non valida né duplicati né genere (`game_controller.py:370-374`); la fatica da gara si somma e poi si allena nella stessa settimana (`TICK.md` T5).
 - **Raccomandazione:** consentire più gare per atleta, validare il genere/Prima Squadra nel controller, documentare T5 come voluto. **DA CONFERMARE.**
@@ -145,7 +147,9 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 
 ---
 
-## Q17 — Fasce d'età e categorie FIDAL
+## Q17 — Fasce d'età e categorie FIDAL — ✅ in parte FATTA il 2026-11-19
+
+**Fatto (scelta dell'utente: «solo etichetta da `age`»):** `age_category` e riga «Fascia d'età» nella scheda atleta; under 20 esclusi da «Internazionale» (`INTERNATIONAL_MIN_AGE`, formazione, staffette, simulazione). **Non fatto, per scelta:** Allievi convocabili con malus nel Peso (pesi degli attrezzi non verificati) e anno di nascita. Nota: nel gioco i 16-17enni stanno nel vivaio e non gareggiano; un'atleta di 17 anni può però stare già in Prima Squadra.
 
 **Raccomandazione.** Calcolare la fascia d'età da `Athlete.age` (il gioco non ha l'anno di nascita; l'età cresce di 1 a ogni cambio stagione) e mostrarla come etichetta nella scheda atleta, senza salvarla (Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+). Opzionale: Allievi (16-17) convocabili nei meeting, con malus nel Getto del Peso per lo scarto di attrezzo rispetto al peso seniores di 7,26 kg (nel CdS Assoluto si usano gli attrezzi seniores, art. 2.3). **DA CONFERMARE:** il peso dell'attrezzo per categoria (per quanto ricordo, Allievi M 5 kg e Juniores M 6 kg; non verificato sul regolamento FIDAL). Under-20 esclusi dal livello «Internazionale».
 

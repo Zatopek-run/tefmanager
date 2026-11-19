@@ -33,6 +33,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 16 | Se la nuova fase è Outdoor (fine stagione): `close_season` (verdetto), `season_number += 1`, **azzera `league_table`**, età +1 a **tutti** gli atleti, `renew_rivals_for_season` | `:1379-1386`; `close_season :1167-1210` | sì (rinnovo rivali) |
 | 17 | Notizia «Inizia la stagione …» | `:1387-1390` | no |
 | 18 | Promozione automatica dei ragazzi del vivaio con età ≥ 18 (età già incrementata al passo 16) | `:1392-1398` | no |
+| 18b | `normalize_assignments(state)`: sostituisce le convocazioni non ammesse (oltre `MAX_INDIVIDUAL_EVENTS` gare individuali, under 20 in Internazionale: età +1 e nuovo livello sono già applicati) in formazione e staffette; scrive le note in `news_log`. **Non usa `r`** | `simulation.py` | no |
 | 19 | Notizia «Settimana di Gara (casa/trasferta)» se la nuova settimana è di gara | `:1400-1405` | no |
 | 20 | `_evaluate_objectives` (seconda volta: la prima è in `simulate_competition`) | `:1407` | no |
 | 21 | `maybe_generate_dilemma` (con `state.week` **già incrementata**); se `pending_dilemma` è già valorizzato non fa nulla e non consuma RNG | `:1408-1410`; `generator.py:662-699` | sì (se non pendente e settimana ∉ {3,7}) |

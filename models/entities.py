@@ -200,6 +200,11 @@ AGE_CATEGORIES: List[Tuple[int, str]] = [
     (22, "Promesse"),
 ]
 AGE_CATEGORY_SENIOR = "Seniores"  # 23 anni e oltre
+# Convocazioni (regolamento FIDAL art. 3.3 e 5.7): al massimo 2 gare individuali + 1 staffetta per atleta e meeting.
+# La staffetta è già unica per atleta (vedi `GameState.relay_of`); qui il tetto delle gare individuali.
+MAX_INDIVIDUAL_EVENTS = 2
+# Q17: sotto questa età non si gareggia nel livello «Internazionale» (Finale Oro / Coppa Europa).
+INTERNATIONAL_MIN_AGE = 20
 
 
 def age_category(age: int) -> str:
@@ -513,6 +518,10 @@ class Athlete:
     @property
     def age_category(self) -> str:
         return age_category(self.age)
+
+    def can_race_in(self, tier: "CompetitionTier") -> bool:
+        """Gli under 20 non gareggiano nel livello Internazionale (Q17)."""
+        return tier != CompetitionTier.INTERNAZIONALE or self.age >= INTERNATIONAL_MIN_AGE
 
     @property
     def is_injured(self) -> bool:
@@ -914,6 +923,30 @@ class GameState:
                 continue
             out.append(name)
         return out
+
+    def lineup_problem(self, athlete: Athlete, event_name: str, gender: str) -> Optional[str]:
+        """Motivo (in italiano) per cui `athlete` non può essere convocato in `event_name`, o None se può.
+
+        Regole: stessa divisione, Prima Squadra, età minima del livello (Q17) e al massimo
+        `MAX_INDIVIDUAL_EVENTS` gare individuali tra quelle attive (le altre non si disputano).
+        """
+        if athlete.gender != gender:
+            return f"{athlete.name} non può gareggiare nella divisione {gender}."
+        if athlete.in_youth_squad:
+            return f"{athlete.name} è nel vivaio e non gareggia."
+        if not athlete.can_race_in(self.tier):
+            return (
+                f"{athlete.name} ha {athlete.age} anni: in {self.tier.display_name} "
+                f"gareggiano solo atleti dai {INTERNATIONAL_MIN_AGE} anni."
+            )
+        lineup = self.lineup_for(gender)
+        others = [e for e in self.active_events if e != event_name and lineup.get(e) == athlete.id]
+        if len(others) >= MAX_INDIVIDUAL_EVENTS:
+            return (
+                f"{athlete.name} è già iscritto a {len(others)} gare individuali "
+                f"({', '.join(others)}): il massimo è {MAX_INDIVIDUAL_EVENTS} più una staffetta."
+            )
+        return None
 
     def relay_of(self, athlete_id: Optional[int], gender: Optional[str] = None) -> Optional[str]:
         if athlete_id is None:
