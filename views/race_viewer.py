@@ -34,6 +34,7 @@ from models.entities import (
     SeasonPhase,
     WeatherCondition,
 )
+from views.results_board import ResultsBoardWidget
 
 # Distanza percorsa (m) e durata target dell'animazione (s) a velocità 1x: None = tempo reale
 TRACK_DISTANCES = {"100m": 100, "400m": 400, "1500m": 1500, "4x100m": 400, "4x400m": 1600}
@@ -1148,6 +1149,8 @@ class RaceViewerDialog(QDialog):
         self.godot_status.setStyleSheet("font-size: 18px; font-weight: 700; color: #cbd5e1;")
         self.godot_layout.addWidget(self.godot_status)
         self.stack.addWidget(self.godot_page)
+        self.results_board = ResultsBoardWidget()  # classifica in stile TV a Godot chiuso
+        self.stack.addWidget(self.results_board)
         self._godot = None  # QProcess del visualizzatore Godot, se la gara è in corso lì
         self._godot_container = None
         self._godot_hwnd = 0
@@ -1350,6 +1353,10 @@ class RaceViewerDialog(QDialog):
                 self._show_internal_race(res)
             self._clock.start()
             return
+        if 0 <= self._index < len(self.summary.event_results):
+            # Godot si è chiuso: al posto della pagina vuota la classifica completa, come alla TV.
+            self.results_board.set_result(self.summary.event_results[self._index], self.summary.meet_name)
+            self.stack.setCurrentWidget(self.results_board)
         self._on_race_finished()
 
     def _current_widget(self):

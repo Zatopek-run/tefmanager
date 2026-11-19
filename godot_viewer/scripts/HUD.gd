@@ -68,6 +68,13 @@ var _result_event: Label
 var _result_title: Label
 var _result_rows: Array[Dictionary] = []  # {box, bg, place_bg, place, stripe, name, value}
 
+## Classifica finale a tutto schermo (a gara conclusa), come nelle dirette TV: tutti i corridori, ritirati compresi.
+const FINAL_MAX_ROWS: int = 12
+var _final_panel: PanelContainer
+var _final_event: Label
+var _final_title: Label
+var _final_rows: Array[Dictionary] = []  # {box, place_bg, place, stripe, name, team, lane, value}
+
 
 func _ready() -> void:
 	_init_fonts()
@@ -121,6 +128,7 @@ func _on_race_loaded(runners: Array[RunnerData], info: Dictionary) -> void:
 	_bug_category_prefix = "F " if all_f else ("M " if all_m else "")
 	_bug_event.text = "%s%s" % [event_name, cat_label]
 	_result_event.text = "%s  •  %s" % [event_name, meet_name]
+	_final_event.text = "%s%s  •  %s" % [_bug_category_prefix, event_name, meet_name]
 	for i in range(runners.size()):
 		_rows.append(_make_row())
 	_last_timer_text = ""
@@ -506,6 +514,117 @@ func _build_tv_graphics() -> void:
 
 	_result_panel.visible = false
 	$Root.add_child(_result_panel)
+	_build_final_board()
+
+
+func _build_final_board() -> void:
+	_final_panel = PanelContainer.new()
+	_final_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_final_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_final_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_final_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_final_panel.add_theme_stylebox_override("panel", _flat_box(Color.TRANSPARENT, Color.TRANSPARENT, 0, 0, 0, 0, 0, 0, 0, 0))
+
+	var col: VBoxContainer = VBoxContainer.new()
+	col.add_theme_constant_override("separation", 3)
+	_final_panel.add_child(col)
+
+	var top_bar: PanelContainer = PanelContainer.new()
+	top_bar.add_theme_stylebox_override("panel", _flat_box(BG_NAVY, MAGENTA, 6, 0, 0, 0, 16, 18, 8, 8))
+	_final_event = _styled_label(20, Color.WHITE, true, true)
+	top_bar.add_child(_final_event)
+	col.add_child(top_bar)
+
+	var sub_bar: PanelContainer = PanelContainer.new()
+	sub_bar.add_theme_stylebox_override("panel", _flat_box(CYAN, Color.TRANSPARENT, 0, 0, 0, 0, 16, 18, 4, 4))
+	_final_title = _styled_label(15, TEXT_DARK, true, true)
+	sub_bar.add_child(_final_title)
+	col.add_child(sub_bar)
+
+	for i in range(FINAL_MAX_ROWS):
+		var row_bg: PanelContainer = PanelContainer.new()
+		row_bg.add_theme_stylebox_override("panel", _flat_box(BG_NAVY_ALT, Color.TRANSPARENT, 0, 0, 0, 0, 6, 16, 5, 5, 2))
+		var box: HBoxContainer = HBoxContainer.new()
+		box.add_theme_constant_override("separation", 12)
+		row_bg.add_child(box)
+
+		var place_bg: PanelContainer = PanelContainer.new()
+		place_bg.custom_minimum_size = Vector2(38.0, 30.0)
+		var place: Label = _styled_label(20, Color.WHITE, true, true)
+		place.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		place.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		place_bg.add_child(place)
+
+		var stripe: ColorRect = ColorRect.new()
+		stripe.custom_minimum_size = Vector2(5.0, 28.0)
+		stripe.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+		var name_label: Label = _styled_label(22, Color.WHITE, true)
+		name_label.custom_minimum_size = Vector2(300.0, 0.0)
+		var team: Label = _styled_label(14, TEXT_MUTED, true)
+		team.custom_minimum_size = Vector2(170.0, 0.0)
+		team.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var lane: Label = _styled_label(14, TEXT_MUTED, true)
+		lane.custom_minimum_size = Vector2(44.0, 0.0)
+		lane.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var value: Label = _styled_label(24, Color.WHITE, true, true)
+		value.custom_minimum_size = Vector2(110.0, 0.0)
+		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+		for c: Control in [place_bg, stripe, name_label, team, lane, value]:
+			box.add_child(c)
+		col.add_child(row_bg)
+		_final_rows.append({"box": row_bg, "place_bg": place_bg, "place": place, "stripe": stripe, "name": name_label,
+			"team": team, "lane": lane, "value": value})
+
+	_final_panel.visible = false
+	$Root.add_child(_final_panel)
+
+
+## Riempie e mostra la classifica finale solo a gara conclusa (RaceController.State.FINISHED); non decide nulla,
+## legge l'ordine gia' calcolato dal controller.
+func _update_final_board() -> void:
+	var rc: Node = RaceController
+	var show: bool = rc.state == rc.State.FINISHED and not rc.live_order.is_empty()
+	_final_panel.visible = show
+	if not show:
+		return
+	var field: bool = rc.is_field(rc.event_kind)
+	var relay: bool = rc.is_relay(rc.event_kind)
+	_set_text(_final_title, "CLASSIFICA FINALE" if field else "ORDINE D'ARRIVO")
+	var shown: int = 0
+	var place_no: int = 0
+	for r: RunnerData in rc.live_order:
+		if shown >= _final_rows.size():
+			break
+		var out: bool = r.dnf and not field
+		if not out:
+			place_no += 1
+		var row: Dictionary = _final_rows[shown]
+		var value: String
+		if field:
+			value = "%.2f m" % r.best_mark if r.best_mark > 0.0 else "NM"
+		elif out:
+			value = "SQ." if r.dq else "RIT."
+		else:
+			value = rc.format_time(r.final_time)
+		_set_text(row["place"], "-" if out else str(place_no))
+		_set_text(row["name"], r.team_name.to_upper() if relay else r.athlete_name.to_upper())
+		_set_text(row["team"], "" if relay else r.team_name)
+		_set_text(row["lane"], "" if field else "C%d" % r.lane)
+		_set_text(row["value"], value)
+		(row["stripe"] as ColorRect).color = _team_color(r.team_name)
+		var is_first: bool = place_no == 1 and not out
+		(row["place_bg"] as PanelContainer).add_theme_stylebox_override(
+			"panel", _flat_box(CYAN if is_first else Color(0.14, 0.19, 0.38), Color.TRANSPARENT, 0, 0, 0, 0, 4, 4, 1, 1, 2))
+		(row["place"] as Label).add_theme_color_override("font_color", TEXT_DARK if is_first else Color.WHITE)
+		(row["box"] as PanelContainer).add_theme_stylebox_override(
+			"panel", _flat_box(PLAYER_ROW_BG if r.is_player else BG_NAVY_ALT, Color.TRANSPARENT, 0, 0, 0, 0, 6, 16, 5, 5, 2))
+		(row["name"] as Label).add_theme_color_override("font_color", PLAYER_COLOR if r.is_player else (TEXT_MUTED if out else Color.WHITE))
+		(row["value"] as Label).add_theme_color_override("font_color", AMBER if out else Color.WHITE)
+		shown += 1
+	for i in range(_final_rows.size()):
+		(_final_rows[i]["box"] as Control).visible = i < shown
 
 
 func _set_clock_plate_style(official: bool) -> void:
@@ -563,7 +682,10 @@ func _update_tv_graphics() -> void:
 		_set_text(_wind_label, "VENTO  %+.1f m/s%s" % [w, wind_note])
 		_wind_label.add_theme_color_override("font_color", AMBER if w > 2.0 else Color.WHITE)
 
-	_result_panel.visible = (rc.state == rc.State.FINISHED) if rc.is_field(rc.event_kind) else (leader_done and rc.race_time > rc.live_order[0].final_time + 1.0)
+	# A gara conclusa la classifica completa a centro schermo sostituisce il piccolo pannello in basso a sinistra.
+	_result_panel.visible = rc.state != rc.State.FINISHED and leader_done and not rc.is_field(rc.event_kind) \
+		and rc.race_time > rc.live_order[0].final_time + 1.0
+	_update_final_board()
 	if _result_panel.visible:
 		_set_text(_result_title, "RISULTATO NON UFFICIALE" if rc.state == rc.State.RUNNING else "ORDINE D'ARRIVO")
 		var shown: int = 0

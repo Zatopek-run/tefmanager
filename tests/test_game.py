@@ -272,6 +272,59 @@ class TestRaceViewer(unittest.TestCase):
             self.assertEqual(seen, len(summary.event_results))
             dlg.close()
 
+    def test_results_board_after_godot_closes(self) -> None:
+        """A Godot chiuso il dialog mostra la classifica completa (non una pagina vuota); un crash ripiega sulla vista interna."""
+        from PyQt6.QtCore import QObject
+        from views.race_viewer import RaceViewerDialog
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "rvb.db"), rng=random.Random(15))
+            ctrl.state.week = 4
+            summary = advance_week(ctrl.state, rng=random.Random(15)).competition_summary
+            assert summary is not None
+            dlg = RaceViewerDialog(summary)
+            res = summary.event_results[dlg._index]
+
+            dlg._godot = QObject()
+            dlg._godot_killed = False
+            dlg._godot_clock.start()
+            dlg._on_godot_finished(0)
+            self.assertIs(dlg.stack.currentWidget(), dlg.results_board)
+            rows = dlg.results_board.row_texts()
+            self.assertEqual(len(rows), len(res.standings))
+            ordered = sorted(res.standings, key=lambda s: s.placement)
+            self.assertEqual([r[1] for r in rows], [s.athlete_name for s in ordered])  # stesso ordine del modello
+            self.assertEqual([r[3] for r in rows], [s.mark_display for s in ordered])  # stesse misure
+            self.assertTrue(dlg.btn_next.isEnabled())
+            dlg.results_board.resize(1000, 520)
+            self.assertFalse(dlg.results_board.grab().isNull())  # il disegno non solleva eccezioni
+
+            dlg._godot = QObject()
+            dlg._godot_clock.start()
+            dlg._on_godot_finished(1)  # crash immediato: niente classifica, vista interna
+            self.assertIsNot(dlg.stack.currentWidget(), dlg.results_board)
+            dlg.close()
+
+    def test_results_board_marks_withdrawn_and_disqualified(self) -> None:
+        from models.entities import EventResult, EventStanding
+        from views.results_board import ResultsBoardWidget
+
+        def res(**kw) -> EventResult:
+            st = [
+                EventStanding("Rossi", "Club A", False, 10.0, "10.00", 1),
+                EventStanding("Bianchi", "Club B", True, 10.5, "10.50", 2),
+            ]
+            return EventResult("100m", "Bianchi", 2, 2, "10.50", 0, 0, standings=st, gender="M", **kw)
+
+        board = ResultsBoardWidget()
+        board.set_result(res(withdrew_injured=True), "Meeting")
+        self.assertEqual(board.row_texts()[1][:4], ("-", "Bianchi", "Club B", "RIT."))
+        board.set_result(res(disqualified=True), "Meeting")
+        self.assertEqual(board.row_texts()[1][3], "SQ.")
+        self.assertEqual(board.row_texts()[0][0], "1")
+        self.assertEqual(board.title_text(), "M 100M  •  MEETING")
+        self.assertEqual(board.subtitle_text(), "ORDINE D'ARRIVO")
+
 
 class TestBodyBuild(unittest.TestCase):
     """Height and weight change race scores according to the event."""

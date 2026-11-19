@@ -9,7 +9,7 @@ const LANE_WIDTH: float = 1.22
 const LANES: int = 8
 const AUTO_START_DELAY: float = 0.5
 const CROWD_TILE_METERS: float = 32.0  # lato in metri di una ripetizione della texture della folla
-const AUTOQUIT_DELAY: float = 3.0  # con --autoquit: pausa sul risultato prima di chiudere
+const AUTOQUIT_DELAY: float = 8.0  # con --autoquit: pausa sulla classifica finale prima di chiudere
 
 const HUD_SCENE: PackedScene = preload("res://scenes/HUD.tscn")
 const _AdBoards = preload("res://scripts/AdBoards.gd")
