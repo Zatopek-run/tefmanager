@@ -1006,7 +1006,7 @@ class TestMigrationV22StaffAttributes(_TmpCase):
         path = self.slot("v21")
         state = make_state(3)
         state.staff = create_initial_staff()
-        state.staff[1].hired = True
+        next(m for m in state.staff if m.id == 5).hired = True  # il dottor Conti, il medico originale
         DatabaseManager(db_path=path).save_game(state)
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v21: senza la colonna
             conn.execute("ALTER TABLE staff DROP COLUMN attributes_json")
@@ -1014,7 +1014,8 @@ class TestMigrationV22StaffAttributes(_TmpCase):
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v21 → v22
         self.assertEqual(user_version(path), SCHEMA_VERSION)
-        doctor = next(s for s in loaded.staff if s.role == StaffRole.DOCTOR)
+        doctor = next(s for s in loaded.staff if s.id == 5)
+        self.assertEqual(doctor.role, StaffRole.DOCTOR)
         self.assertTrue(doctor.hired)
         self.assertEqual(doctor.attributes, {"diagnosi": STAFF_ATTR_REF, "prevenzione": STAFF_ATTR_REF})
 
@@ -1036,6 +1037,22 @@ class TestMigrationV22StaffAttributes(_TmpCase):
             conn.commit()
         again = DatabaseManager(db_path=path).load_game()
         self.assertEqual(again.staff[2].attributes, {"motivazione": STAFF_ATTR_REF, "pressione": STAFF_ATTR_REF})
+
+    def test_a_save_from_before_the_staff_market_gets_the_other_candidates(self) -> None:
+        from models.generator import create_initial_staff
+        from tests.test_assignments import make_state
+
+        path = self.slot("v21")
+        state = make_state(3)
+        state.staff = [m for m in create_initial_staff() if m.id in (4, 5, 6)]  # i soli 3 candidati di prima
+        state.staff[0].hired = True
+        DatabaseManager(db_path=path).save_game(state)
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(len(loaded.staff), 9)
+        self.assertEqual([m.id for m in loaded.staff if m.hired], [4])  # la scelta fatta resta
+        DatabaseManager(db_path=path).save_game(loaded)  # e il mercato completo si salva e ricarica uguale
+        again = DatabaseManager(db_path=path).load_game()
+        self.assertEqual([m.id for m in again.staff], [m.id for m in loaded.staff])
 
     def test_failed_v21_migration_leaves_the_save_untouched(self) -> None:
         path = make_save(self.slot("v21"), 21)

@@ -30,7 +30,7 @@ from models.entities import (
     StaffRole,
     TrainingFocus,
 )
-from models.generator import create_initial_staff, generate_initial_roster
+from models.generator import STAFF_CATALOGUE, create_initial_staff, ensure_staff_market, generate_initial_roster
 from models.simulation import _recalculate_form, apply_weekly_training
 from models.staff import (
     describe_attributes,
@@ -179,13 +179,69 @@ class TestEffectDirection(unittest.TestCase):
         self.assertGreaterEqual(hi, lo)
 
 
-class TestAttributeData(unittest.TestCase):
-    def test_initial_candidates_carry_their_role_attributes_at_reference(self) -> None:
+class TestStaffMarket(unittest.TestCase):
+    """Mercato dello staff (E.1, Q33): 3 candidati per ruolo, profili e costi diversi, dati fissi."""
+
+    def test_three_candidates_per_clinical_role_with_unique_ids_and_names(self) -> None:
         staff = create_initial_staff()
-        self.assertEqual(len(staff), 3)
-        for member in staff:
-            expected = {key: REF for key, _label in STAFF_ATTRIBUTES[member.role]}
-            self.assertEqual(member.attributes, expected)
+        self.assertEqual(len(staff), 9)
+        self.assertEqual(len({m.id for m in staff}), 9)
+        self.assertEqual(len({m.name for m in staff}), 9)
+        for role in STAFF_ATTRIBUTES:
+            self.assertEqual(sum(1 for m in staff if m.role == role), 3, role)
+        self.assertFalse(any(m.hired for m in staff))
+
+    def test_original_candidates_keep_their_ids_costs_and_reference_attributes(self) -> None:
+        by_id = {m.id: m for m in create_initial_staff()}
+        for sid, role, cost in ((4, StaffRole.PHYSIO, 300), (5, StaffRole.DOCTOR, 340), (6, StaffRole.MENTAL_COACH, 220)):
+            self.assertEqual((by_id[sid].role, by_id[sid].weekly_cost), (role, cost))
+            self.assertEqual(by_id[sid].attributes, {key: REF for key, _label in STAFF_ATTRIBUTES[role]})
+
+    def test_candidates_differ_and_better_attributes_cost_more(self) -> None:
+        staff = create_initial_staff()
+        for role in STAFF_ATTRIBUTES:
+            group = sorted((m for m in staff if m.role == role), key=lambda m: m.weekly_cost)
+            totals = [sum(normalize_attributes(role, m.attributes).values()) for m in group]
+            self.assertEqual(totals, sorted(totals), role)  # chi costa di più è almeno altrettanto bravo
+            self.assertLess(totals[0], totals[-1], role)
+            for m in group:
+                for value in m.attributes.values():
+                    self.assertTrue(STAFF_ATTR_MIN <= value <= STAFF_ATTR_MAX)
+
+    def test_market_is_deterministic_and_instances_are_independent(self) -> None:
+        self.assertEqual(create_initial_staff(), create_initial_staff())
+        self.assertEqual(len(STAFF_CATALOGUE), 9)
+        a, b = create_initial_staff(), create_initial_staff()
+        a[0].hired = True
+        self.assertFalse(b[0].hired)
+
+    def test_ensure_market_adds_missing_candidates_and_keeps_hirings(self) -> None:
+        old = [m for m in create_initial_staff() if m.id in (4, 5, 6)]  # salvataggio precedente al mercato
+        old[1].hired = True
+        old[1].weekly_cost = 999  # il dato salvato non si riscrive
+        self.assertEqual(ensure_staff_market(old), 6)
+        self.assertEqual([m.id for m in old], sorted(m.id for m in old))
+        self.assertEqual(len(old), 9)
+        conti = next(m for m in old if m.id == 5)
+        self.assertTrue(conti.hired)
+        self.assertEqual(conti.weekly_cost, 999)
+        self.assertEqual(ensure_staff_market(old), 0)  # idempotente
+
+    def test_the_senior_candidates_beat_the_junior_ones_where_it_counts(self) -> None:
+        by_id = {m.id: m for m in create_initial_staff()}
+        self.assertLess(
+            physio_heal_step_chance(by_id[7].attributes["competenza"]),
+            physio_heal_step_chance(by_id[8].attributes["competenza"]),
+        )
+        self.assertGreater(
+            doctor_risk_multiplier(by_id[9].attributes["prevenzione"]),
+            doctor_risk_multiplier(by_id[10].attributes["prevenzione"]),
+        )
+        self.assertGreater(impulsive_sigma(True, by_id[11].attributes["pressione"]),
+                           impulsive_sigma(True, by_id[12].attributes["pressione"]))
+
+
+class TestAttributeData(unittest.TestCase):
 
     def test_normalize_fills_missing_and_clamps(self) -> None:
         self.assertEqual(normalize_attributes(StaffRole.PHYSIO), {"competenza": REF, "recupero": REF})

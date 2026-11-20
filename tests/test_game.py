@@ -461,7 +461,7 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
             self.assertEqual(ctrl.state.season_phase, SeasonPhase.OUTDOOR)
             self.assertEqual(len(ctrl.state.athletes), 10)
             self.assertEqual(ctrl.state.active_events, ["100m", "Salto in Lungo", "1500m"])
-            self.assertEqual(len(ctrl.state.staff), 3)  # physio, doctor, mental coach
+            self.assertEqual(len(ctrl.state.staff), 9)  # mercato E.1: 3 candidati per ruolo (fisio, medico, mentale)
             self.assertEqual(len(ctrl.state.coaches), 3)  # one per specialty in the roster
             self.assertEqual(len(ctrl.state.objectives), 3)
 
@@ -1468,7 +1468,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertEqual(win.rivals_tab.roster_table.rowCount(), 3)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)
             self.assertEqual(win.calendar_tab.lineup_table.rowCount(), 6)
-            self.assertEqual(win.staff_tab.table.rowCount(), 3)
+            self.assertEqual(win.staff_tab.table.rowCount(), 9)
             self.assertEqual(win.staff_tab.coach_table.rowCount(), 3)
             self.assertEqual(len(win.relay_tab._slot_combos["4x100m"]), 5)
             self.assertTrue(win.relay_tab._slot_combos["4x100m"][0].isEnabled())

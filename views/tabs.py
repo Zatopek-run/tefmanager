@@ -81,6 +81,7 @@ from models.entities import (
     TrainingFocus,
     gym_upgrade_cost,
     stand_expansion_cost,
+    StaffRole,
 )
 from controllers.game_controller import scouting_search_cost
 from models.staff import describe_attributes
@@ -1468,8 +1469,11 @@ class StaffTab(QWidget):
             fire_btn.clicked.connect(lambda _c=False, cid=coach.id: self._fire_coach(cid))
             self.coach_table.setCellWidget(row, 8, fire_btn)
 
-        self.table.setRowCount(len(state.staff))
-        for row, s in enumerate(state.staff):
+        # Mercato dello staff (E.1): raggruppato per ruolo, dal più economico al più caro
+        role_order = list(StaffRole)
+        staff_rows = sorted(state.staff, key=lambda m: (role_order.index(m.role), m.weekly_cost))
+        self.table.setRowCount(len(staff_rows))
+        for row, s in enumerate(staff_rows):
             vals = [
                 s.name,
                 s.role.value,

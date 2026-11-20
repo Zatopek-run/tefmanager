@@ -322,4 +322,12 @@ Fisioterapista, Medico e Preparatore mentale hanno **due attributi 1-20 ciascuno
 | Preparatore mentale · `motivazione` | bonus al bersaglio di forma `round(4 × motivazione/14)` (`MENTAL_FORM_BONUS`) | idem |
 | Preparatore mentale · `pressione` | deviazione in gara dell'Impulsivo: 5,6 senza preparatore (`IMPULSIVE_SIGMA`); con preparatore `max(3,0; 5,6 − 1,8 × pressione/14)`: 3,8 al riferimento (`CALM_SIGMA`), ≈3,0 a 20 (`MENTAL_SIGMA_FLOOR`) | idem |
 
-Candidati iniziali: tutti gli attributi a 14 (le «stelle» restano solo un'etichetta). Salvataggi vecchi: `staff.attributes_json = '{}'` → tutti a 14. Più specialisti dello stesso ruolo assunti: vale il migliore (somma degli attributi).
+**Mercato dello staff** (scelta dell'utente, 2026-11-20: «sì, ora»): 3 candidati per ruolo, dati fissi in `generator.STAFF_CATALOGUE` (nessun RNG), un solo assunto per ruolo (assumerne uno licenzia l'altro, senza penale). Cifre PROVVISORIE; i tre originali (ids 4, 5, 6) restano a 14/14 e costano come prima.
+
+| Ruolo | Junior | Originale (riferimento) | Senior |
+| --- | --- | --- | --- |
+| Fisioterapista (competenza / recupero) | Greco ★2, 10 / 10, €180 | Neri ★4, 14 / 14, €300 | Rinaldi ★5, 19 / 13, €460 |
+| Medico (diagnosi / prevenzione) | Villa ★2, 10 / 10, €200 | Conti ★4, 14 / 14, €340 | Marchetti ★5, 12 / 19, €520 |
+| Preparatore mentale (motivazione / pressione) | Bellini ★2, 10 / 10, €140 | Ferretti ★3, 14 / 14, €220 | Fabbri ★5, 12 / 19, €340 |
+
+Il costo sale con gli attributi (circa ×0,6 a 10, ×1 a 14, ×1,5 a 18-19). Salvataggi vecchi: `staff.attributes_json = '{}'` → tutti a 14, e al caricamento si aggiungono i candidati del catalogo che mancano (`ensure_staff_market`, per id, senza toccare chi è già assunto). Se per un salvataggio risultano più assunti dello stesso ruolo (non può succedere dal gioco) vale il migliore.

@@ -13,7 +13,7 @@ import random
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from models.generator import generate_body, infer_gender
+from models.generator import ensure_staff_market, generate_body, infer_gender
 from models.staff import normalize_attributes
 from models.entities import (
     AGENT_RELATION_START,
@@ -1349,6 +1349,8 @@ class DatabaseManager:
                 )
                 for r in conn.execute("SELECT * FROM staff ORDER BY id ASC").fetchall()
             ]
+            if staff:  # salvataggi precedenti al mercato dello staff (E.1): solo i 3 candidati originali, gli altri si aggiungono
+                ensure_staff_market(staff)
 
             coaches: List[Coach] = [
                 Coach(

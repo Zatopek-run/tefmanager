@@ -48,7 +48,7 @@ class TestNewGame(_Case):
         self.assertEqual(s.budget, 18000)
         self.assertEqual([(t.category, t.amount) for t in s.transactions], [("Capitale", 18000)])
         self.assertEqual((s.week, s.season_number, s.tier.value), (1, 1, "Provinciale"))
-        self.assertEqual(len(s.staff), 3)  # staff clinico come prima, non assunto
+        self.assertEqual(len(s.staff), 9)  # mercato dello staff clinico (E.1), nessuno assunto
         self.assertEqual(len(s.coaches), 4)  # uno per disciplina, come nell'avvio di sempre
         self.assertEqual(s.member_fees_weekly, 450)
 

@@ -455,9 +455,20 @@ class GameController(QObject):
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: {action} {member.name} ({member.role.value})."
         )
+        replaced: Optional[str] = None
+        if member.hired:  # un solo specialista per ruolo (mercato dello staff, E.1): chi c'era viene sostituito
+            for other in self.state.staff:
+                if other is not member and other.hired and other.role == member.role:
+                    other.hired = False
+                    replaced = other.name
+                    self.state.news_log.insert(
+                        0, f"Sett. {self.state.week}: {other.name} ({other.role.value}) lascia il posto a {member.name}."
+                    )
         self._persist()
         self.state_changed.emit(self.state)
-        self.status_message.emit(f"{action}: {member.name}.")
+        self.status_message.emit(
+            f"{action}: {member.name}." if replaced is None else f"{action}: {member.name} (al posto di {replaced})."
+        )
 
     def set_event_athlete(
         self, event_name: str, athlete_id: Optional[int], gender: str = "M"

@@ -37,7 +37,7 @@ class TestStaffAttributesUi(unittest.TestCase):
 
     def test_the_staff_table_shows_the_attributes_of_every_member(self) -> None:
         table = self.win.staff_tab.table
-        self.assertEqual(table.rowCount(), 3)
+        self.assertEqual(table.rowCount(), 9)
         headers = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
         self.assertIn("Attributi (1-20)", headers)
         col = headers.index("Attributi (1-20)")
@@ -50,12 +50,48 @@ class TestStaffAttributesUi(unittest.TestCase):
         table = self.win.staff_tab.table
         last = table.columnCount() - 1
         self.assertEqual(table.horizontalHeaderItem(last).text(), "Azione")
-        button = table.cellWidget(0, last)
-        self.assertEqual(button.text(), "Assumi")
+        self.assertEqual({table.cellWidget(r, last).text() for r in range(table.rowCount())}, {"Assumi"})
         staff_id = self.ctrl.state.staff[0].id
         self.ctrl.toggle_staff(staff_id)
         self.assertTrue(self.ctrl.state.staff[0].hired)
-        self.assertEqual(table.cellWidget(0, last).text(), "Licenzia")
+        labels = [table.cellWidget(r, last).text() for r in range(table.rowCount())]
+        self.assertEqual(labels.count("Licenzia"), 1)
+
+    def test_rows_are_grouped_by_role_from_cheapest_to_dearest(self) -> None:
+        table = self.win.staff_tab.table
+        roles = [table.item(r, 1).text() for r in range(table.rowCount())]
+        self.assertEqual(
+            roles, [StaffRole.PHYSIO.value] * 3 + [StaffRole.DOCTOR.value] * 3 + [StaffRole.MENTAL_COACH.value] * 3
+        )
+        for start in (0, 3, 6):
+            costs = [int(table.item(r, 3).text().lstrip("€")) for r in range(start, start + 3)]
+            self.assertEqual(costs, sorted(costs))
+
+    def test_hiring_a_second_specialist_of_the_same_role_replaces_the_first(self) -> None:
+        state = self.ctrl.state
+        physios = [m for m in state.staff if m.role == StaffRole.PHYSIO]
+        first, second = physios[0], physios[1]
+        self.ctrl.toggle_staff(first.id)
+        self.assertEqual([m.id for m in state.staff if m.role == StaffRole.PHYSIO and m.hired], [first.id])
+        self.ctrl.toggle_staff(second.id)
+        self.assertEqual([m.id for m in state.staff if m.role == StaffRole.PHYSIO and m.hired], [second.id])
+        self.assertTrue(any("lascia il posto" in line for line in state.news_log[:3]))
+
+    def test_roles_do_not_exclude_each_other_and_firing_works(self) -> None:
+        state = self.ctrl.state
+        ids = {role: next(m.id for m in state.staff if m.role == role) for role in (StaffRole.PHYSIO, StaffRole.DOCTOR)}
+        for sid in ids.values():
+            self.ctrl.toggle_staff(sid)
+        self.assertEqual(sum(1 for m in state.staff if m.hired), 2)
+        self.ctrl.toggle_staff(ids[StaffRole.PHYSIO])  # licenzia
+        self.assertEqual([m.role for m in state.staff if m.hired], [StaffRole.DOCTOR])
+
+    def test_hired_cost_follows_the_chosen_candidate(self) -> None:
+        from models.simulation import weekly_finances
+
+        member = next(m for m in self.ctrl.state.staff if m.role == StaffRole.DOCTOR and m.weekly_cost != 340)
+        self.ctrl.toggle_staff(member.id)
+        self.assertEqual(weekly_finances(self.ctrl.state)["staff_cost"], member.weekly_cost)
 
     def test_edited_attributes_survive_a_reload(self) -> None:
         member = next(s for s in self.ctrl.state.staff if s.role == StaffRole.PHYSIO)

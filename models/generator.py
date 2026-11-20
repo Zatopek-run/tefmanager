@@ -35,6 +35,7 @@ from models.entities import (
     RivalClub,
     SeasonObjective,
     Specialty,
+    STAFF_ATTRIBUTES,
     StaffMember,
     StaffRole,
     TrainingFocus,
@@ -483,43 +484,61 @@ def create_initial_coaches(
     return coaches
 
 
-def create_initial_staff() -> List[StaffMember]:
-    """Create the 3 medical & mental support staff candidates (coaches are separate).
+# Mercato dello staff clinico (E.1, Q33): 3 candidati per ruolo con profili e costi diversi. Dati FISSI (nessun RNG: stessa
+# lista in ogni partita, ids stabili). I tre candidati originali (ids 4, 5, 6) stanno al riferimento 14 e costano come prima.
+# Cifre PROVVISORIE: il costo settimanale sale con gli attributi (circa ×0,6 a 10, ×1 a 14, ×1,5 a 18).
+# (id, nome, ruolo, stelle, costo/sett, attributi nell'ordine di STAFF_ATTRIBUTES[ruolo], descrizione)
+STAFF_CATALOGUE = (
+    (4, "Dott.ssa Chiara Neri", StaffRole.PHYSIO, 4, 300, (14, 14),
+     "Accelera recupero fatica (+8/sett) e dimezza durata infortuni."),
+    (7, "Dott. Paolo Greco", StaffRole.PHYSIO, 2, 180, (10, 10),
+     "Fisioterapista junior: aiuta, ma meno (recupero e guarigione più lenti)."),
+    (8, "Dott.ssa Elena Rinaldi", StaffRole.PHYSIO, 5, 460, (19, 13),
+     "Specialista in infortuni: guarigioni molto più rapide, recupero di fatica nella norma."),
+    (5, "Dott. Marco Conti", StaffRole.DOCTOR, 4, 340, (14, 14),
+     "Riduce del 45% il rischio di infortuni da sovraccarico."),
+    (9, "Dott. Andrea Villa", StaffRole.DOCTOR, 2, 200, (10, 10),
+     "Medico di base: riduce il rischio d'infortunio meno del medico sportivo."),
+    (10, "Prof.ssa Giulia Marchetti", StaffRole.DOCTOR, 5, 520, (12, 19),
+     "Medicina preventiva: taglia molto il rischio da sovraccarico, diagnosi nella norma."),
+    (6, "Dott. Luca Ferretti", StaffRole.MENTAL_COACH, 3, 220, (14, 14),
+     "Stabilizza forma in gara e migliora la resa degli Impulsivi."),
+    (11, "Dott.ssa Sara Bellini", StaffRole.MENTAL_COACH, 2, 140, (10, 10),
+     "Preparatrice in formazione: effetto contenuto su forma e nervi degli Impulsivi."),
+    (12, "Dott. Matteo Fabbri", StaffRole.MENTAL_COACH, 5, 340, (12, 19),
+     "Gestione della pressione eccellente: gli Impulsivi in gara diventano quasi affidabili."),
+)
 
-    Attributi (E.1) tutti al valore di riferimento: l'effetto è quello di prima. Nessuna estrazione dell'RNG: finché non c'è
-    un mercato dello staff (QUESTIONS Q33) non c'è nulla da sorteggiare."""
-    return [
-        StaffMember(
-            id=4,
-            name="Dott.ssa Chiara Neri",
-            role=StaffRole.PHYSIO,
-            skill=4,
-            weekly_cost=300,
-            hired=False,
-            description="Accelera recupero fatica (+8/sett) e dimezza durata infortuni.",
-            attributes=normalize_attributes(StaffRole.PHYSIO),
-        ),
-        StaffMember(
-            id=5,
-            name="Dott. Marco Conti",
-            role=StaffRole.DOCTOR,
-            skill=4,
-            weekly_cost=340,
-            hired=False,
-            description="Riduce del 45% il rischio di infortuni da sovraccarico.",
-            attributes=normalize_attributes(StaffRole.DOCTOR),
-        ),
-        StaffMember(
-            id=6,
-            name="Dott. Luca Ferretti",
-            role=StaffRole.MENTAL_COACH,
-            skill=3,
-            weekly_cost=220,
-            hired=False,
-            description="Stabilizza forma in gara e migliora la resa degli Impulsivi.",
-            attributes=normalize_attributes(StaffRole.MENTAL_COACH),
-        ),
-    ]
+
+def _staff_from_catalogue(row: tuple) -> StaffMember:
+    sid, name, role, skill, cost, values, description = row
+    keys = [key for key, _label in STAFF_ATTRIBUTES[role]]
+    return StaffMember(
+        id=sid,
+        name=name,
+        role=role,
+        skill=skill,
+        weekly_cost=cost,
+        hired=False,
+        description=description,
+        attributes=normalize_attributes(role, dict(zip(keys, values))),
+    )
+
+
+def create_initial_staff() -> List[StaffMember]:
+    """Il mercato dello staff clinico (coach separati): 3 candidati per ruolo, nessuno assunto, nessuna estrazione dell'RNG."""
+    return [_staff_from_catalogue(row) for row in STAFF_CATALOGUE]
+
+
+def ensure_staff_market(staff: List[StaffMember]) -> int:
+    """Aggiunge a `staff` i candidati del catalogo che mancano (per id): i salvataggi vecchi avevano solo i 3 originali.
+
+    Deterministico e senza RNG; non tocca chi c'è già (assunzioni comprese). Ritorna quanti ne ha aggiunti."""
+    present = {m.id for m in staff}
+    added = [_staff_from_catalogue(row) for row in STAFF_CATALOGUE if row[0] not in present]
+    staff.extend(added)
+    staff.sort(key=lambda m: (m.id is None, m.id))
+    return len(added)
 
 
 def create_season_objectives(
