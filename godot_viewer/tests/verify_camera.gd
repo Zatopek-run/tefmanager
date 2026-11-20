@@ -138,7 +138,8 @@ func _cam_kind(cam: Camera3D, cams: Node) -> String:
 func _world_of(r: RunnerData) -> Vector3:
 	var rc: Node = root.get_node("RaceController")
 	if rc.is_field(rc.event_kind):
-		if rc.event_kind == "Getto del Peso" and rc.shot_visible:
+		# Peso: la regia segue il peso (volo, atterraggio) e poi l'atleta che esce dalla pedana (fase EXIT)
+		if rc.event_kind == "Getto del Peso" and rc.shot_visible and rc.shot_phase != ShotPutMotion.Phase.EXIT:
 			return rc.shot_pos
 		return rc.jumper_pos + Vector3(0.0, 0.9, 0.0)
 	return TrackGeometry.runner_pose(rc.event_kind, r.lane, r.distance)["position"] + Vector3(0.0, 0.9, 0.0)

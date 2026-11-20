@@ -244,3 +244,7 @@ Lavoro solo in `godot_viewer/` (niente `models/` né `views/`). Vedi `godot_view
 - `godot_viewer/.godot/global_script_class_cache.cfg` e `uid_cache.bin` sono **tracciati da git** e cambiano a ogni `--import`: sono stati inclusi nel commit
   perche' le nuove `class_name` (`ShotPutMotion`, `ShotPutRig`, `ShotPutView`) devono essere registrate, ma tenerli in git e' fonte di conflitti.
 - `verify_race.gd` impiega ~5 minuti (gare in tempo reale a 4x/8x): per il solo peso usare `verify_shotput.gd`.
+- **`verify_camera.gd` sul peso (gare 11 e 12).** Ha trovato due difetti di regia, corretti: dopo il rilascio la camera della rotazione restava
+  sull'atleta 0,25 s mentre il peso (13 m/s) usciva dall'inquadratura (ora 0,08 s, `SPIN_AFTER_REL`) e la panoramica sul settore non conteneva i lanci
+  oltre ~20 m (allargata). Il test e' stato adattato in un solo punto: nella fase `EXIT` il bersaglio previsto e' l'atleta che esce, non il peso
+  gia' atterrato (`_world_of`). Le camere `_sp_*` risultano di tipo «start» (inquadratura contenente il bersaglio), non «pan».

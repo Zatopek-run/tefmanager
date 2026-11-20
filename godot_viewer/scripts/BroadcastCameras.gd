@@ -105,7 +105,7 @@ func _ready() -> void:
 	_o_curve = _make_static_cam(Vector3(-s - 72.0, 18.0, -36.8), Vector3(-s - 30.0, 0.8, -36.8), 30.0, 150.0)
 	_field_cam = _make_static_cam(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), 34.0, 80.0)
 	var sp_c: Vector3 = ShotPutMotion.CENTER
-	_sp_sector = _make_static_cam(sp_c + Vector3(-7.0, 6.0, 13.0), sp_c + Vector3(9.0, 0.0, 0.0), 40.0, 200.0)
+	_sp_sector = _make_static_cam(sp_c + Vector3(-7.0, 7.5, 17.0), sp_c + Vector3(11.0, 0.0, -1.0), 50.0, 300.0)
 	_sp_wide = _make_static_cam(sp_c + Vector3(-3.4, 1.9, 6.6), sp_c + Vector3(-0.9, 1.0, 0.0), 30.0, 90.0)
 	_sp_spin = _make_static_cam(sp_c + Vector3(0.8, 1.55, 6.8), sp_c + Vector3(0.0, 1.2, 0.0), 24.0, 60.0)
 	_sp_fly = _make_static_cam(sp_c + Vector3(8.0, 2.4, 16.0), sp_c + Vector3(8.0, 3.0, 0.0), 22.0, 400.0)
@@ -221,7 +221,7 @@ func _direct_shot() -> void:
 				cam.look_at(focus, Vector3.UP)
 			ShotPutMotion.Phase.SPIN:
 				cam = _sp_spin
-				var u: float = clampf((t - float(ShotPutMotion.KEY_T[1])) / (ShotPutMotion.T_REL + 0.25 - float(ShotPutMotion.KEY_T[1])), 0.0, 1.0)
+				var u: float = clampf((t - float(ShotPutMotion.KEY_T[1])) / (ShotPutMotion.T_REL + ShotPutMotion.SPIN_AFTER_REL - float(ShotPutMotion.KEY_T[1])), 0.0, 1.0)
 				cam.position = ShotPutMotion.CENTER + Vector3(lerpf(-0.6, 1.4, u), 1.55, 6.8 - 1.0 * u)   # lento avvicinamento
 				cam.look_at(focus + Vector3(0.0, 0.2, 0.0), Vector3.UP)
 			ShotPutMotion.Phase.FLIGHT:

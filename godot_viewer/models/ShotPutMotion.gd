@@ -40,6 +40,7 @@ const T_ENTER_END: float = 1.8            # fine dell'ingresso a piedi
 const T_TURN_END: float = 2.4             # fine della rotazione sul posto (di spalle al settore)
 const T_SET: float = 2.65                 # da qui lo scheletro e' comandato dal rig (gambe comprese)
 const T_REL: float = 5.20                 # rilascio (coincide con l'ultimo tasto di KEY_T meno due)
+const SPIN_AFTER_REL: float = 0.08          # la camera della rotazione resta sull'atleta solo un attimo dopo il rilascio: il peso esce subito dall'inquadratura
 const LAND_HOLD: float = 1.3              # dopo l'atterraggio: misura, nastro, bandierina
 const EXIT_TIME: float = 1.8
 const END_HOLD: float = 0.15
@@ -171,7 +172,7 @@ static func phase_at(plan: Plan, t: float) -> int:
 		return Phase.ENTER
 	if t < KEY_T[1]:
 		return Phase.SET
-	if t < T_REL + 0.25:
+	if t < T_REL + SPIN_AFTER_REL:
 		return Phase.SPIN
 	if t < plan.t_land:
 		return Phase.FLIGHT
