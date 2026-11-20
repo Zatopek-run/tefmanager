@@ -221,3 +221,166 @@ static func attach_hair(skeleton: Skeleton3D, gender: String, key: String) -> vo
 	var mat: StandardMaterial3D = hair.get_active_material(0).duplicate() as StandardMaterial3D
 	mat.albedo_color = HAIR_TONES[absi(hash(key + "shade")) % HAIR_TONES.size()]
 	hair.set_surface_override_material(0, mat)
+
+
+# --- scarpe -------------------------------------------------------------------------------------------
+
+const SHOE_INFLATE: float = 0.005       # la tomaia sta appena fuori dalla pelle del piede (unita' del modello, ~1,8 per l'altezza)
+const SHOE_SOLE: float = 0.011          # spessore della suola, compreso nel volume del piede: la suola poggia dove poggiava la pelle
+const SHOE_SECTIONS: int = 22
+const SHOE_ARC: int = 8
+const SHOE_LACE: Color = Color(0.95, 0.95, 0.93)
+
+
+## Scarpe da atletica per i due piedi: tomaia con striscia obliqua di colore `accent` (la squadra), linguetta con lacci, suola.
+## Si adattano alla mesh del piede del modello (maschile o femminile) e seguono l'osso del piede (BoneAttachment3D). La suola
+## sta nel volume del piede (la parte piu' bassa e' quella della pelle): le quote di ShotPutMotion (caviglia da terra) restano valide.
+static func add_shoes(skeleton: Skeleton3D, body: MeshInstance3D, upper: Color, accent: Color, sole: Color) -> void:
+	var verts: PackedVector3Array = body.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_color = Color.WHITE
+	mat.roughness = 0.5
+	for side: float in [1.0, -1.0]:   # +1 = sinistro (x > 0 nello spazio scheletro: il modello guarda +Z)
+		var bone_name: String = "foot_l" if side > 0.0 else "foot_r"
+		var mesh: ArrayMesh = _shoe_mesh(verts, side, upper, accent, sole)
+		if mesh == null:
+			continue
+		mesh.surface_set_material(0, mat)
+		var attach: BoneAttachment3D = BoneAttachment3D.new()
+		attach.bone_name = bone_name
+		skeleton.add_child(attach)
+		var mi: MeshInstance3D = MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.transform = skeleton.get_bone_global_rest(skeleton.find_bone(bone_name)).affine_inverse()   # mesh in spazio scheletro a riposo
+		attach.add_child(mi)
+
+
+static func _shoe_mesh(verts: PackedVector3Array, side: float, upper: Color, accent: Color, sole: Color) -> ArrayMesh:
+	# Profilo del piede dalla mesh del corpo: per fette lungo z, quota massima e larghezza (solo vertici bassi di quel piede).
+	var z0: float = INF
+	var z1: float = -INF
+	var ymin: float = INF
+	var foot: Array[Vector3] = []
+	for v: Vector3 in verts:
+		if v.x * side > 0.04 and v.y < 0.112 and v.z > -0.2 and v.z < 0.2:
+			foot.append(v)
+			z0 = minf(z0, v.z)
+			z1 = maxf(z1, v.z)
+			ymin = minf(ymin, v.y)
+	if foot.size() < 20:
+		return null
+	const BINS: int = 12
+	var top: Array[float] = []
+	var xlo: Array[float] = []
+	var xhi: Array[float] = []
+	for b in range(BINS):
+		top.append(ymin + 0.02)
+		xlo.append(INF)
+		xhi.append(-INF)
+	for v: Vector3 in foot:
+		var b: int = clampi(int((v.z - z0) / (z1 - z0) * BINS), 0, BINS - 1)
+		top[b] = maxf(top[b], v.y)
+		xlo[b] = minf(xlo[b], v.x * side)
+		xhi[b] = maxf(xhi[b], v.x * side)
+	for b in range(BINS):                      # fette senza vertici: prendono quelle vicine
+		if xlo[b] == INF:
+			xlo[b] = xlo[maxi(b - 1, 0)]
+			xhi[b] = xhi[maxi(b - 1, 0)]
+	for _pass in range(2):                     # leviga il profilo
+		for arr: Array in [top, xlo, xhi]:
+			var prev: Array = arr.duplicate()
+			for b in range(BINS):
+				arr[b] = (float(prev[maxi(b - 1, 0)]) + 2.0 * float(prev[b]) + float(prev[mini(b + 1, BINS - 1)])) / 4.0
+	var z_start: float = z0 - 0.004
+	var z_end: float = z1 + 0.004
+	var rings: Array = []          # per fetta: Array di {p, n, c}
+	var centers: Array[Vector3] = []
+	for k in range(SHOE_SECTIONS):
+		var t: float = float(k) / float(SHOE_SECTIONS - 1)
+		var z: float = lerpf(z_start, z_end, t)
+		var f: float = clampf((z - z0) / (z1 - z0) * BINS - 0.5, 0.0, BINS - 1.0)
+		var b0: int = int(floor(f))
+		var b1: int = mini(b0 + 1, BINS - 1)
+		var fr: float = f - float(b0)
+		var cx: float = lerpf(0.5 * (xlo[b0] + xhi[b0]), 0.5 * (xlo[b1] + xhi[b1]), fr)
+		var half_w: float = lerpf(0.5 * (xhi[b0] - xlo[b0]), 0.5 * (xhi[b1] - xlo[b1]), fr) + SHOE_INFLATE
+		var tp: float = lerpf(top[b0], top[b1], fr) + SHOE_INFLATE
+		var sc: float = 1.0                      # punta e tallone arrotondati
+		if k == 0: sc = 0.78
+		elif k == 1: sc = 0.94
+		elif k == SHOE_SECTIONS - 1: sc = 0.42
+		elif k == SHOE_SECTIONS - 2: sc = 0.78
+		elif k == SHOE_SECTIONS - 3: sc = 0.93
+		var yb: float = ymin - 0.001
+		var h: float = maxf(tp - yb, 0.03) * sc
+		rings.append(_shoe_ring(side, cx, z, yb, h, half_w * sc, t, upper, accent, sole))
+		centers.append(Vector3(side * cx, yb + 0.45 * h, z))
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in range(SHOE_SECTIONS - 1):
+		var ra: Array = rings[k]
+		var rb: Array = rings[k + 1]
+		var mid: Vector3 = 0.5 * (centers[k] + centers[k + 1])
+		for m in range(ra.size()):
+			var m2: int = (m + 1) % ra.size()
+			_shoe_tri(st, [ra[m], rb[m], ra[m2]], mid)
+			_shoe_tri(st, [ra[m2], rb[m], rb[m2]], mid)
+	for end: Array in [[0, -1.0], [SHOE_SECTIONS - 1, 1.0]]:      # tappi alle due estremita'
+		var ring: Array = rings[end[0]]
+		var cen: Dictionary = {"p": centers[end[0]], "n": Vector3(0.0, 0.0, float(end[1])), "c": upper}
+		for m in range(ring.size()):
+			_shoe_tri(st, [cen, ring[m], ring[(m + 1) % ring.size()]], centers[end[0]] + Vector3(0.0, 0.0, float(end[1])))
+	return st.commit()
+
+
+## Una sezione trasversale della scarpa: suola piatta, fianchi verticali, sopra una mezza ellisse. Colori per vertice:
+## suola, tomaia, striscia obliqua di squadra sui fianchi, linguetta con lacci sul collo del piede, linguetta del tallone.
+static func _shoe_ring(side: float, cx: float, z: float, yb: float, h: float, w: float, t: float, upper: Color, accent: Color, sole: Color) -> Array:
+	var pts: Array = []       # (u, y, suola?) con u = scostamento laterale dal centro del piede
+	pts.append([-w, yb, true])
+	pts.append([-w, yb + SHOE_SOLE, true])
+	pts.append([-w, yb + SHOE_SOLE + 0.0005, false])
+	pts.append([-w, yb + 0.3 * h, false])
+	for j in range(1, SHOE_ARC):
+		var phi: float = PI * (1.0 - float(j) / float(SHOE_ARC))
+		pts.append([w * cos(phi), yb + 0.3 * h + 0.7 * h * sin(phi), false])
+	pts.append([w, yb + 0.3 * h, false])
+	pts.append([w, yb + SHOE_SOLE + 0.0005, false])
+	pts.append([w, yb + SHOE_SOLE, true])
+	pts.append([w, yb, true])
+	var center_y: float = yb + 0.45 * h
+	var ring: Array = []
+	for p: Array in pts:
+		var u: float = p[0]
+		var y: float = p[1]
+		var yrel: float = clampf((y - yb) / maxf(h, 0.001), 0.0, 1.0)
+		var col: Color = sole if bool(p[2]) else upper
+		if not bool(p[2]):
+			if absf(u) > 0.7 * w and yrel < 0.8 and absf(t - (0.30 + 0.24 * yrel)) < 0.07:
+				col = accent                                   # striscia obliqua sui fianchi
+			elif t < 0.13 and yrel > 0.5:
+				col = accent                                   # linguetta del tallone
+			elif yrel > 0.78 and absf(u) < 0.34 * w and t > 0.2 and t < 0.64:
+				col = SHOE_LACE                                # lacci sul collo del piede
+		var n: Vector3 = Vector3(u, y - center_y, 0.0)
+		n = Vector3(side * n.x, n.y, 0.0).normalized() if n.length() > 0.0001 else Vector3.UP
+		ring.append({"p": Vector3(side * cx + side * u, y, z), "n": n, "c": col})
+	return ring
+
+
+## Triangolo con la faccia anteriore verso l'esterno rispetto a `inside` (in Godot e' quella oraria).
+static func _shoe_tri(st: SurfaceTool, v: Array, inside: Vector3) -> void:
+	var a: Dictionary = v[0]
+	var b: Dictionary = v[1]
+	var c: Dictionary = v[2]
+	var geo: Vector3 = ((c["p"] as Vector3) - (a["p"] as Vector3)).cross((b["p"] as Vector3) - (a["p"] as Vector3))
+	var centroid: Vector3 = ((a["p"] as Vector3) + (b["p"] as Vector3) + (c["p"] as Vector3)) / 3.0
+	if geo.dot(centroid - inside) < 0.0:
+		var tmp: Dictionary = b
+		b = c
+		c = tmp
+	for d: Dictionary in [a, b, c]:
+		st.set_color(d["c"])
+		st.set_normal(d["n"])
+		st.add_vertex(d["p"])

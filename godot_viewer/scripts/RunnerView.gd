@@ -5,7 +5,7 @@ extends Node3D
 ## l'animazione (accovacciato -> corsa -> camminata) e la sua cadenza dipendono dalla velocita'.
 ## Non influenza mai il risultato della gara.
 ##
-## Il modello base e' quasi nudo: canotta, pantaloncini e scarpette si ricavano dalla mesh del corpo
+## Il modello base e' quasi nudo: canotta e pantaloncini si ricavano dalla mesh del corpo (le scarpe sono mesh a parte, vedi CharacterDress.add_shoes)
 ## (triangoli selezionati per altezza, stessi pesi/scheletro, leggermente gonfiati) e si colorano con la squadra.
 ## Convenzione assi: pista lungo +X, su = +Y, corsie lungo +Z.
 
@@ -320,7 +320,7 @@ func _play(anim: StringName, blend: float = BLEND_TIME) -> void:
 
 # --- vestiti e capelli --------------------------------------------------------------------------
 
-## Colora la pelle, aggiunge canotta/pantaloncini/scarpette. Ritorna l'altezza del modello a riposo (m).
+## Colora la pelle, aggiunge canotta, pantaloncini e scarpe. Ritorna l'altezza del modello a riposo (m).
 func _dress(body: MeshInstance3D) -> float:
 	CharacterDress.apply_skin(body, data.gender, absi(hash(_visual_key)) % 4)
 	var ext: Vector2 = CharacterDress.body_extent(body)
@@ -336,7 +336,11 @@ func _dress(body: MeshInstance3D) -> float:
 		bib_print = {"tex": BibPrint.make_texture(self, data.bib), "back": bib_rect, "front": bib_rect, "tex_color": true}
 	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.60, 0.82), team, 0.006, 0.8, bib_print)           # canotta
 	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(0.115, 0.43, 0.60), team.darkened(0.55), 0.007)           # pantaloncini
-	CharacterDress.add_cloth(_skeleton, body, min_y, h, Vector3(1.0, -1.0, 0.045), Color(0.96, 0.96, 0.96), 0.012)        # scarpette
+	# Scarpe vere (non piu' uno strato bianco sulla pelle del piede): tomaia bianca, scura o grigia a scelta dal nome, striscia della squadra.
+	var shoe_pick: int = absi(hash(_visual_key + "scarpe")) % 3
+	var shoe_upper: Color = [Color(0.96, 0.96, 0.96), Color(0.10, 0.10, 0.12), Color(0.78, 0.80, 0.84)][shoe_pick]
+	var shoe_sole: Color = Color(0.93, 0.93, 0.93) if shoe_pick == 1 else Color(0.13, 0.13, 0.15)
+	CharacterDress.add_shoes(_skeleton, body, shoe_upper, team, shoe_sole)
 	return h
 
 
