@@ -168,7 +168,7 @@ ATTITUDE_EFFECTS: Dict[RaceAttitude, Dict[str, float]] = {
 # Piano gara di 800m e 1500m (B.1): ritmo iniziale e scatto finale, scelti prima della gara e applicati dal modello
 # (non sono comandi in gara). Si sommano all'atteggiamento. I bonus positivi (Veloce, scatti) valgono per intero solo a
 # un atleta con molta resistenza e si riducono, fino a diventare un crollo, se ne ha poco; il costo in fatica è fisso.
-# CIFRE PROVVISORIE: misurate e da confermare con l'utente prima di entrare in BALANCE.md.
+# Cifre misurate e confermate dall'utente il 2026-11-20 (Q23, docs/BALANCE.md sezione C).
 class RacePace(str, Enum):
     LENTO = "Lento"
     MEDIO = "Medio"

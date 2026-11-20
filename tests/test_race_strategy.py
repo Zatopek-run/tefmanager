@@ -1,6 +1,6 @@
 """Lotto B.1: piano gara di 800m e 1500m (ritmo iniziale + scatto finale) applicato dal modello.
 
-Senza Qt (`PYTHONPATH=. python3 -m unittest tests.test_race_strategy`). Le cifre sono PROVVISORIE (vedi `entities.py`):
+Senza Qt (`PYTHONPATH=. python3 -m unittest tests.test_race_strategy`). Le cifre sono quelle confermate il 2026-11-20 (`entities.py`, `BALANCE.md`):
 i test fissano la struttura (monotonia, simmetria, costo in fatica, nessuna chiamata in più all'RNG), non il bilanciamento.
 """
 

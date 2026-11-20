@@ -77,6 +77,9 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Range vento | Ventoso U(0,6; 3,3); Pioggia U(−1,4; 1,5); altro U(−0,8; 2,5) | m/s | `simulation.py:560-563` | |
 | Pista | usura −randint(1,3)/sett.; −3 per meeting in casa; stato Ottimale ≥80, Standard ≥55; clamp 25-100 | % | `simulation.py:1366,1048,716-718` | Condizione pista |
 | Normalizzazione | `norm = clamp(score/100; 0,15; 1,18)` | — | `simulation.py:474` | |
+| `PACE_EFFECTS` (B.1, Q23) | Lento −2,0 pt / fatica −4; Medio 0 / 0; Veloce +3,0 / +10 | pt, fatica | `entities.py` (blocco «Piano gara») | Ritmo iniziale 800m/1500m, **confermato 2026-11-20** |
+| `KICK_EFFECTS` (B.1, Q23) | Nessuno 0 / 0; Ultimi 200m +2,0 / +8; Ultimo giro +4,0 / +15 | pt, fatica | `entities.py` | Scatto finale 800m/1500m |
+| `STRATEGY_STAMINA_REF` / `_SPAN` / `_FACTOR_FLOOR` | rif. resistenza 47 / 59 / 72 / 84 (Prov./Reg./Naz./Int.); ampiezza 30; minimo −0,5 | resistenza, fattore | `entities.py` | Fattore f = clamp((resistenza − (rif − span/2)) / span; minimo; 1): 0,5 per la media della categoria. Moltiplica i punti di ritmo e scatto, **non** la fatica |
 
 ## D. Staffette
 
