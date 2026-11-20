@@ -301,6 +301,14 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `generate_attempts` con lo stesso seed della vista PyQt (nullo = `is_foul`). `RaceController.field_queue` le mette
   in scena una dopo l'altra; `verify_race.gd` controlla che il miglior salto del vincitore coincida con il suo
   `mark_value` (solo il vincitore, non gli altri).
+- **Getto del peso** (2026-11-20, dettagli in `godot_viewer/README.md` «Getto del peso»). `models/ShotPutMotion.gd` (funzioni pure, **unica fonte**:
+  pedana, cronologia, posa, volo) + `scripts/ShotPutRig.gd` (posa a mano + `TwoBoneIK3D`, nessuna animazione di lancio nella libreria CC0) +
+  `scripts/ShotPutView.gd` (peso, scia, cratere, nastro, bandierina). **Invariante: il peso atterra ESATTAMENTE a `C + u·(misura + 1,0675)`**:
+  rilascio `R` scritto (mai riletto dallo scheletro), angolo fisso 36-38,5°, `v0` in forma chiusa, volo = funzione del tempo fissata a `tau ≥ T`.
+  `tests/verify_shotput.gd` (headless, secondi) lo controlla; **non rompere questa proprieta'**. Solo le prove del giocatore sono animate
+  (`step["animate"]`); il piano del tentativo sta in `step["plan"]` (`ShotPutMotion.Plan`). Altezza dell'atleta = `RunnerData.visual_height` (la usa
+  anche `RunnerView`: devono coincidere). Rilascio a ~1,06·H, non 2,2 m. **Scelte dell'utente:** niente gabbia, settore disegnato a 30 m (non 100).
+  `ShotPutMotion.Mode`/`Phase` guidano rig e regia; la posa e' tarata a descrizioni biomeccaniche, **non** su un video (da giudicare a occhio).
 - **Ambiente** (solo vista, nessun effetto su tempi o ordine). `scripts/AdBoards.gd`: cartelloni LED con sponsor di
   FANTASIA (se uno coincide con un'azienda vera, cambialo); a doppia faccia nel campo perché le camere interne
   (`_o_start`, `_o_open`) li vedono da dietro (il retro nero faceva una striscia scura), a faccia singola davanti

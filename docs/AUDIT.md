@@ -215,3 +215,32 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 - **Rimborso spese mai rivisto al rinnovo.** Il rinnovo automatico dei contratti (Q22) non ricalcola `weekly_wage` (resta R14).
 - **Riferimenti `file:riga` di `TICK.md` ormai spostati** dopo le modifiche del 2026-11-19 (`simulation.py` è cresciuto): valgono come ordine dei passi, non come numeri di riga.
 - **`verify_pose.gd` in headless** stampa `ERROR: Parameter "material" is null` (rendering fittizio) dopo «posa ai blocchi: OK»; non confrontato con una versione precedente.
+
+## Getto del peso nel visualizzatore Godot (2026-11-20)
+
+Lavoro solo in `godot_viewer/` (niente `models/` né `views/`). Vedi `godot_viewer/README.md` «Getto del peso».
+
+**Difetti trovati e chiusi** (stato precedente):
+- Il peso era una sfera da 0,16 m di raggio (32 cm di diametro, ~2,5× quello vero): ora 0,0605 m (uomini) e 0,052 m (donne).
+- Fermapiedi a scatola centrato sul bordo (per metà dentro la pedana), linee del settore che partivano dal fermapiedi invece che dal bordo
+  del cerchio, distanze segnate con linee dritte: ora fermapiedi ad arco col bordo interno sul cerchio, linee dal bordo e archi centrati sul centro.
+- `field_landed_mark` era una coordinata x con z = -36 fisso (marcatore e soglia `> -40.9` cablati in `Stadium._process`): per il peso il punto di
+  caduta e' un vettore del piano del tentativo (`ShotPutMotion.Plan.landing`); per il lungo resta com'era.
+- Il nullo cadeva 3,6 m di lato (dentro un settore vero): ora il peso atterra alla misura nominale e il nullo si vede dal piede oltre il fermapiedi.
+- Prima del rilascio non c'era nessun gesto di lancio (solo `Walk` + `Punch_Cross`).
+
+**Limiti / da tenere d'occhio (non corretti):**
+- **La posa non e' stata confrontata con un video di riferimento** (non raggiungibile da qui): e' tarata su descrizioni biomeccaniche e sui numeri
+  del modello. Provati solo fotogrammi (`tests/screenshots_shot.gd`), **non** la fluidita' del movimento a schermo né con il mouse.
+- La rotazione del piede attorno al perno non e' comandata (l'IK posiziona solo la caviglia: durante la rotazione la punta del piede non gira);
+  le dita restano a riposo (la mano non stringe il peso); al rilascio il peso passa da «in mano» (polso reale + scarto) a «in volo» da `R`:
+  l'IK non arriva esattamente al bersaglio: misurato con `screenshots_shot.gd` (finestra vera, gare 11 e 12) il peso in mano dista 3,3-3,5 cm da R pochi centesimi prima del rilascio (peso da 12 cm), cioe' un piccolo salto visibile solo da vicino.
+- Il tempo del tentativo animato e' fisso (≈ 10 s a 1x): 6 prove ≈ 1 minuto di sola atleta del club. A 8x resta accettabile.
+- Nei concorsi non ci sono giudici né fotografi (`TrackSideCrew` e' disattivato: la camera del lungo sta dove stanno loro).
+- `is_foul` non porta una motivazione e il valore esportato di un nullo e' 0,96 × risultato (segnaposto del motore Python): la resa del nullo
+  e' una sola, deterministica (piede oltre il fermapiedi).
+- Il settore e' disegnato per 30 m (non 100) e non c'e' gabbia: scelte dell'utente, vedi sopra.
+- `TwoBoneIK3D` (gia' usato da `SetPoseRig`) richiede in pratica Godot ≥ 4.6, non 4.3 come scritto nel README (non verificato su versioni piu' vecchie).
+- `godot_viewer/.godot/global_script_class_cache.cfg` e `uid_cache.bin` sono **tracciati da git** e cambiano a ogni `--import`: sono stati inclusi nel commit
+  perche' le nuove `class_name` (`ShotPutMotion`, `ShotPutRig`, `ShotPutView`) devono essere registrate, ma tenerli in git e' fonte di conflitti.
+- `verify_race.gd` impiega ~5 minuti (gare in tempo reale a 4x/8x): per il solo peso usare `verify_shotput.gd`.
