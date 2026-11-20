@@ -23,7 +23,8 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.game_controller import GameController
-from models.entities import Athlete, PeriodizationPhase, Specialty, TrainingFocus
+from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, PeriodizationPhase, Specialty, TrainingFocus
+from models.ranking import athlete_rankings, ensure_ranking_pool
 from models.simulation import body_fit_score
 
 SPECIALTY_COLORS = {
@@ -393,7 +394,35 @@ class AthleteDetailDialog(QDialog):
         return page
 
     # ------------------------------------------------------------------ competizioni
+    def _ranking_lines(self, a: Athlete) -> List[str]:
+        """Una riga per ogni gara in cui l'atleta ha punti ranking: posto nel mondo, in Italia e punti (C.1)."""
+        state = self.controller.state
+        ensure_ranking_pool(state)
+        lines = []
+        for event in state.active_events:
+            world, national, points = athlete_rankings(state, a, event)
+            if world is None:
+                continue
+            where = f"{world}° nel mondo" if world <= RANKING_WORLD_SIZE else f"oltre la Top {RANKING_WORLD_SIZE} mondiale ({world}°)"
+            home = f", {national}° in {RANKING_HOME_NATION}" if national is not None else ""
+            lines.append(f"{event}: {where}{home} — {points:.0f} punti")
+        return lines
+
     def _build_results(self, a: Athlete) -> QWidget:
+        body = self._build_results_table(a)
+        lines = self._ranking_lines(a)
+        if not lines:
+            return body
+        holder = QWidget()
+        lay = QVBoxLayout(holder)
+        lay.setContentsMargins(0, 0, 0, 0)
+        label = QLabel("\n".join(["RANKING", *lines]))
+        label.setObjectName("SubTitle")
+        lay.addWidget(label)
+        lay.addWidget(body, stretch=1)
+        return holder
+
+    def _build_results_table(self, a: Athlete) -> QWidget:
         table = QTableWidget(0, 6)
         table.setHorizontalHeaderLabels(["Sett.", "Meeting", "Gara", "Piazzamento", "Risultato", "Note"])
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)

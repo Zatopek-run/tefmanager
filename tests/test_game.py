@@ -1461,7 +1461,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             win = MainWindow(controller=ctrl)
 
             self.assertEqual(win.windowTitle(), "Track & Field Manager")
-            self.assertEqual(win.tabs.count(), 9)
+            self.assertEqual(win.tabs.count(), 10)
             self.assertEqual(win.rivals_tab.clubs_table.rowCount(), 7)
             self.assertEqual(win.rivals_tab.compare_table.rowCount(), 3)
             self.assertEqual(win.rivals_tab.roster_table.rowCount(), 3)

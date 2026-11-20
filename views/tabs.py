@@ -1,4 +1,4 @@
-"""Tab views: Dashboard, Roster, Youth Academy, Calendar & Meets, Relays, Rivals, Staff & Facilities, Finances."""
+"""Tab views: Dashboard, Roster, Youth Academy, Calendar & Meets, Relays, Rivals, Ranking, Staff & Facilities, Finances."""
 
 from __future__ import annotations
 
@@ -27,6 +27,13 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from views.athlete_dialog import AthleteDetailDialog
+from models.ranking import (
+    club_points,
+    club_ranking,
+    ensure_ranking_pool,
+    national_ranking,
+    world_ranking,
+)
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
     PROMOTION_SPOTS,
@@ -44,6 +51,9 @@ from models.entities import (
     GYM_MAX_LEVEL,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
+    NATIONALITIES,
+    RANKING_NATIONAL_SIZE,
+    RANKING_WORLD_SIZE,
     STAND_EXPANSION_SEATS,
     STAND_MAX_SEATS,
     TICKET_PRICE,
@@ -2418,3 +2428,146 @@ class RecordsTab(QWidget):
                 self.milestones_list.addItem(f"★ {m}")
         else:
             self.milestones_list.addItem("Nessun traguardo storico ancora registrato.")
+
+
+class RankingTab(QWidget):
+    """Ranking (C.1): classifica mondiale (Top 100), nazionale (Top 50) e delle società della lega, per evento e sesso.
+
+    Gli atleti del club sono evidenziati. Chi sta fuori dalla Top N compare comunque in fondo alla tabella con il
+    suo posto vero (per esempio «143°»): il gioco non nasconde dove sei.
+    """
+
+    CLUB_COLOR = "#0de0cc"
+    RIVAL_COLOR = "#94a3b8"
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        bar = QHBoxLayout()
+        bar.setSpacing(10)
+        bar.addWidget(QLabel("Disciplina"))
+        self.event_combo = QComboBox()
+        self.event_combo.currentIndexChanged.connect(lambda _i: self._refresh_tables())
+        bar.addWidget(self.event_combo)
+        bar.addWidget(QLabel("Sesso"))
+        self.gender_combo = QComboBox()
+        self.gender_combo.addItem("Uomini", "M")
+        self.gender_combo.addItem("Donne", "F")
+        self.gender_combo.currentIndexChanged.connect(lambda _i: self._refresh_tables())
+        bar.addWidget(self.gender_combo)
+        bar.addStretch(1)
+        self.summary_label = QLabel("")
+        self.summary_label.setObjectName("SubTitle")
+        bar.addWidget(self.summary_label)
+        root.addLayout(bar)
+
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.world_table, self.world_title = self._panel(row, "Classifica mondiale", 5, ["#", "Atleta", "Naz.", "Società", "Punti"], 3)
+        self.national_table, self.national_title = self._panel(row, "Classifica nazionale", 4, ["#", "Atleta", "Società", "Punti"], 3)
+        self.club_table, self.club_title = self._panel(row, "Società della lega", 3, ["#", "Società", "Punti"], 2)
+        root.addLayout(row, stretch=1)
+
+        self.note_label = QLabel(
+            "Punti per piazzamento (1° = 100, 2° = 80, …) per il livello della gara; dimezzano in circa sei meeting. "
+            "Gli atleti senza società sono giocatori di fantasia del circuito mondiale. Le staffette non danno punti."
+        )
+        self.note_label.setObjectName("SubTitle")
+        self.note_label.setWordWrap(True)
+        root.addWidget(self.note_label)
+
+    @staticmethod
+    def _panel(parent_row: QHBoxLayout, title_text: str, columns: int, headers: list[str], stretch: int):
+        panel = QFrame()
+        panel.setObjectName("SectionPanel")
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(14, 12, 14, 12)
+        title = QLabel(title_text)
+        title.setObjectName("SectionHeader")
+        lay.addWidget(title)
+        table = QTableWidget(0, columns)
+        table.setHorizontalHeaderLabels(headers)
+        table.setAlternatingRowColors(True)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        lay.addWidget(table)
+        parent_row.addWidget(panel, stretch=stretch)
+        return table, title
+
+    def _fill(self, table: QTableWidget, rows: list[tuple[list[str], bool]]) -> None:
+        table.setRowCount(len(rows))
+        for r, (cells, is_club) in enumerate(rows):
+            for c, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_club:
+                    item.setForeground(QColor(self.CLUB_COLOR))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                table.setItem(r, c, item)
+
+    @staticmethod
+    def _pts(value: float) -> str:
+        return f"{value:.0f}" if value >= 10 else f"{value:.1f}"
+
+    def _selection(self) -> tuple[str, str]:
+        return self.event_combo.currentText(), self.gender_combo.currentData() or "M"
+
+    def _refresh_tables(self) -> None:
+        state = self.controller.state
+        event, gender = self._selection()
+        if not event:
+            return
+        ensure_ranking_pool(state)  # no-op se c'è già; non usa l'RNG della partita
+        world = world_ranking(state, event, gender)
+        national = national_ranking(state, event, gender)
+
+        def pick(entries, size):
+            shown = entries[:size]
+            beyond = [e for e in entries[size:] if e.is_player]  # i miei atleti fuori dalla Top N, col posto vero
+            return shown, beyond
+
+        def world_row(e) -> tuple[list[str], bool]:
+            nation = f"{NATIONALITIES.get(e.nationality, '')} {e.nationality}".strip()
+            return [f"{e.rank}°", e.name, nation, e.club, self._pts(e.points)], e.is_player
+
+        shown, beyond = pick(world, RANKING_WORLD_SIZE)
+        self._fill(self.world_table, [world_row(e) for e in (*shown, *beyond)])
+        self.world_title.setText(f"Classifica mondiale — Top {RANKING_WORLD_SIZE}")
+
+        shown, beyond = pick(national, RANKING_NATIONAL_SIZE)
+        self._fill(
+            self.national_table,
+            [([f"{e.rank}°", e.name, e.club, self._pts(e.points)], e.is_player) for e in (*shown, *beyond)],
+        )
+        self.national_title.setText(f"Classifica nazionale — Top {RANKING_NATIONAL_SIZE}")
+
+        clubs = club_ranking(state)
+        self._fill(
+            self.club_table,
+            [([f"{i}°", name, self._pts(points)], is_club) for i, (name, points, is_club) in enumerate(clubs, start=1)],
+        )
+        mine = next((i for i, (_n, _p, is_club) in enumerate(clubs, start=1) if is_club), 0)
+        self.club_title.setText(f"Società della lega — {state.tier.display_name}")
+        self.summary_label.setText(f"Punti del club: {self._pts(club_points(state))} · {mine}° tra le società della lega")
+
+    def refresh(self, state: GameState) -> None:
+        events = list(state.active_events)
+        current = self.event_combo.currentText()
+        if [self.event_combo.itemText(i) for i in range(self.event_combo.count())] != events:
+            self.event_combo.blockSignals(True)
+            self.event_combo.clear()
+            self.event_combo.addItems(events)
+            if current in events:
+                self.event_combo.setCurrentText(current)
+            self.event_combo.blockSignals(False)
+        self._refresh_tables()

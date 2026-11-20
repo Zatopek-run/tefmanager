@@ -43,6 +43,7 @@ from views.tabs import (
     CalendarTab,
     DashboardTab,
     FinancesTab,
+    RankingTab,
     RecordsTab,
     RelayTab,
     RivalsTab,
@@ -165,6 +166,7 @@ class MainWindow(QMainWindow):
         self.calendar_tab = CalendarTab(self.controller)
         self.relay_tab = RelayTab(self.controller)
         self.rivals_tab = RivalsTab(self.controller)
+        self.ranking_tab = RankingTab(self.controller)
         self.staff_tab = StaffTab(self.controller)
         self.finances_tab = FinancesTab(self.controller)
         self.records_tab = RecordsTab(self.controller)
@@ -179,6 +181,7 @@ class MainWindow(QMainWindow):
                 ("Calendario && Gare", self.calendar_tab),
                 ("Staffette", self.relay_tab),
                 ("Rivali", self.rivals_tab),
+                ("Ranking", self.ranking_tab),
             ]),
             ("SOCIETÀ", [
                 ("Staff && Impianto", self.staff_tab),
@@ -334,6 +337,7 @@ class MainWindow(QMainWindow):
         self.calendar_tab.refresh(state)
         self.relay_tab.refresh(state)
         self.rivals_tab.refresh(state)
+        self.ranking_tab.refresh(state)
         self.staff_tab.refresh(state)
         self.finances_tab.refresh(state)
         self.records_tab.refresh(state)
