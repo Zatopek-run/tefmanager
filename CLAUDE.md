@@ -7,7 +7,9 @@ commenti sono in **italiano**: mantieni la lingua (nomi di variabili e codice in
 
 Sono regole per le sessioni future. Il codice **oggi non le rispetta tutte**: per ciascuna c'è lo stato attuale e il
 lotto di `docs/PLAN.md` che la realizza. Mappa dei documenti: `docs/AUDIT.md` (stato e rischi), `docs/TICK.md`
-(ordine del tick), `docs/BALANCE.md` (costanti), `docs/QUESTIONS.md` (decisioni aperte), `docs/PLAN.md` (lotti).
+(ordine del tick), `docs/BALANCE.md` (costanti), `docs/QUESTIONS.md` (decisioni aperte), `docs/PLAN.md` (lotti di
+sicurezza/refactor), `docs/PIANOLAVORO.md` (**piano di lavoro corrente**: lotti A-G di gameplay, vedi sotto),
+`docs/GAME.md` (descrizione completa del gioco: va aggiornata a ogni lotto chiuso), `docs/REVIEW_REALISMO.md`.
 
 1. **`models/` non importa PyQt6**, né direttamente né tramite `views/` o `controllers/`.
    *Stato attuale: non conforme* — `models/race_export.py:22` importa `views.race_viewer` (che importa PyQt6) → lotto 5.3.
@@ -46,7 +48,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 151 test, OK, ~4 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 164 test, OK, ~5 s
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -75,8 +77,39 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
 tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (25 test, senza Qt: migrazioni e slot)
              test_assignments.py (9, convocazioni)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
-data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN
+             test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   entrambi con PyQt6 offscreen
+data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
+
+## Piano di lavoro corrente (`docs/PIANOLAVORO.md`)
+
+Dal 2026-11-20 il lavoro segue `docs/PIANOLAVORO.md` (scritto dall'utente): sette lotti di gameplay, **A** fondamenta e
+bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mercato e finanze → **E** staff e impianti →
+**F** narrativa → **G** UI/UX. Branch di sviluppo: `feature/gameplay-improvements` (creato da `main` il 2026-11-20).
+
+- **Si procede per lotti e sottopunti nell'ordine del documento** (A.1 … A.5, poi B, C…), rispettando le «Dipendenze» di
+  ogni lotto. Un sottopunto = uno o pochi commit piccoli, in italiano; non si salta avanti senza dirlo all'utente.
+- **Ogni sottopunto ha i test indicati** nel piano: nuovo file in `tests/`, **senza Qt** se la logica sta in `models/`
+  (convenzione 6); smoke test offscreen per le viste. «Test manuale» del piano = da dichiarare come **non eseguito**
+  se non lo si è fatto davvero (niente mouse reale in questo ambiente).
+- **A ogni sottopunto chiuso** aggiornare: `docs/GAME.md` (sempre), `docs/BALANCE.md` (se cambiano cifre: lotti A e D),
+  `docs/TICK.md` (se cambia l'ordine del tick o delle chiamate all'RNG), `docs/AUDIT.md` (difetti trovati o chiusi),
+  `docs/QUESTIONS.md` (decisioni nuove) e le righe «Stato attuale» delle convenzioni qui sopra.
+- **Sovrapposizioni con `docs/PLAN.md`** (il piano dell'utente prevale dove differisce): A.1 ↔ lotti 4.x e QUESTIONS 3;
+  A.2 ↔ 3.3 e QUESTIONS 5; A.3 ↔ 2.1 (+2.2 per `hash()`) e QUESTIONS 2; A.4 ↔ 3.1 e QUESTIONS 6 (qui: chiusura senza
+  scelta = «rifiuta» + pulsante «Ignora», non «ignorare Esc»); A.5 ↔ 1.4 (guardia nel controller, testabile senza mouse,
+  **più** pulsante disabilitato). Chiuso un sottopunto, segnare il lotto di `PLAN.md` corrispondente come fatto.
+- **Schema DB.** Il piano scrive «Lotto A: nessuna modifica schema», ma A.3 salva lo stato dell'RNG: serve una migrazione
+  (**v12**, come in `PLAN.md` 2.1). I numeri di versione citati per B-F (v12…v16) sono **indicativi**: si usa sempre la
+  prima versione libera, con `MIGRATIONS` + `CREATE TABLE` + test su fixture (convenzione 4).
+- **Costanti nuove** (sponsor, premi, modificatori delle strategie, soglie…): nei blocchi di costanti di `entities.py`,
+  mai letterali nelle funzioni (convenzione 2); cifre in `docs/BALANCE.md`.
+- **Cose che il piano non decide** restano all'utente: cifre non indicate, una nuova dipendenza (`pyqtgraph`/`matplotlib`
+  per il Lotto G: chiedere prima di toccare `requirements.txt`), e qualunque scelta di design che emerga lavorando.
+  Il piano è una proposta ambiziosa: se un sottopunto si rivela incoerente con il codice, **si segnala e si propone**
+  prima di scrivere codice, non si aggiusta di nascosto.
+- Le strategie del Lotto B si **scelgono prima della gara** e le applica il modello: non sono comandi in gara, quindi non
+  violano la regola «niente button mashing» né «l'esito lo decide solo il modello».
 
 ## Decisioni e regole da rispettare
 
