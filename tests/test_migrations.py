@@ -603,5 +603,39 @@ class TestMigrationV13RngState(_TmpCase):
         self.assertEqual(user_version(path), 12)
 
 
+class TestMigrationV14RaceStrategy(_TmpCase):
+    """v13 → v14 (B.1): colonna `race_strategy_json` (piano gara per evento), default `'{}'` = ritmo Medio, nessuno scatto."""
+
+    def test_v13_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 14)
+        self.assertIn(13, MIGRATIONS)
+        path = make_save(self.slot("v13"), 13)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("race_strategy_json", column_names(conn, "game_state"))  # la fixture è davvero v13
+            self.assertIn("rng_state_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT race_strategy_json FROM game_state WHERE id = 1").fetchone(), ("{}",))
+            self.assertIn(("race_strategy_json", "TEXT", 1, "'{}'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 13)
+        backup = self.backups("v13")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 13)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("race_strategy_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 13)
+
+    def test_failed_v13_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v13"), 13)
+        before = sha(path)
+        broken = {"game_state": [("race_strategy_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {13: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 13)
+
+
 if __name__ == "__main__":
     unittest.main()

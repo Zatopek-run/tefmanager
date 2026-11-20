@@ -1511,7 +1511,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             ctrl.sign_youth(kids[0])
             self.assertEqual(win.youth_tab.youth_table.rowCount(), 1)
             self.assertEqual(win.roster_tab.table.rowCount(), 10)  # academy kids stay out of the roster
-            self.assertEqual(win.calendar_tab.lineup_table.columnCount(), 5)
+            self.assertEqual(win.calendar_tab.lineup_table.columnCount(), 6)
 
             if ctrl.state.pending_dilemma is not None:
                 dil_dlg = EthicalDilemmaDialog(ctrl.state.pending_dilemma)

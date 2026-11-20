@@ -41,6 +41,9 @@ from models.entities import (
     VERTICAL_SLICE_EVENTS,
     YOUTH_SQUAD_MAX,
     RaceAttitude,
+    RaceKick,
+    RacePace,
+    STRATEGY_EVENTS,
     Specialty,
     Athlete,
     CompetitionSummary,
@@ -570,6 +573,13 @@ class GameController(QObject):
         return True
 
     # ------------------------------------------------------------------ race attitude
+    def set_race_strategy(self, event_name: str, pace: RacePace, kick: RaceKick) -> None:
+        """Piano gara di un 800m/1500m (B.1); si salva col prossimo salvataggio, come l'atteggiamento."""
+        if event_name not in STRATEGY_EVENTS:
+            return
+        self.state.race_strategy[event_name] = {"pace": pace.value, "kick": kick.value}
+        self.status_message.emit(f"{event_name}: ritmo {pace.value}, scatto {kick.value}.")
+
     def set_event_attitude(self, event_name: str, attitude: RaceAttitude) -> None:
         self.state.event_attitude[event_name] = attitude.value
         self.status_message.emit(f"{event_name}: atteggiamento in gara -> {attitude.value}.")

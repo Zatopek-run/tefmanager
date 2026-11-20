@@ -53,6 +53,9 @@ from models.entities import (
     GameState,
     PeriodizationPhase,
     RaceAttitude,
+    RaceKick,
+    RacePace,
+    STRATEGY_EVENTS,
     SeasonOutcome,
     Specialty,
     TrainingFocus,
@@ -888,9 +891,9 @@ class CalendarTab(QWidget):
         lineup_title.setObjectName("SectionHeader")
         lineup_layout.addWidget(lineup_title)
 
-        self.lineup_table = QTableWidget(0, 5)
+        self.lineup_table = QTableWidget(0, 6)
         self.lineup_table.setHorizontalHeaderLabels(
-            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato", "Atteggiamento"]
+            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato", "Atteggiamento", "Piano gara (800m/1500m)"]
         )
         self.lineup_table.setAlternatingRowColors(True)
         self.lineup_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -962,6 +965,33 @@ class CalendarTab(QWidget):
 
         lower_row.addWidget(hist_panel, stretch=3)
         root.addLayout(lower_row, stretch=1)
+
+    def _build_strategy_widget(self, state: GameState, event_name: str) -> QWidget:
+        """Ritmo iniziale e scatto finale di un 800m/1500m (B.1): due menu a tendina nella stessa cella."""
+        pace, kick = state.strategy_for(event_name)
+        pace_combo, kick_combo = QComboBox(), QComboBox()
+        for p in RacePace:
+            pace_combo.addItem(f"Ritmo {p.value}", p)
+        for k in RaceKick:
+            kick_combo.addItem(f"Scatto: {k.value}", k)
+        pace_combo.setCurrentIndex(max(0, pace_combo.findData(pace)))
+        kick_combo.setCurrentIndex(max(0, kick_combo.findData(kick)))
+        pace_combo.setToolTip(
+            "Veloce: più punteggio ma più fatica (se l'atleta ha poca resistenza il vantaggio svanisce). Lento: meno punteggio, meno fatica."
+        )
+        kick_combo.setToolTip("Lo scatto finale dà punteggio in più al prezzo di fatica; richiede resistenza.")
+
+        def changed(_i: int = 0, en: str = event_name) -> None:
+            self.controller.set_race_strategy(en, pace_combo.currentData(), kick_combo.currentData())
+
+        pace_combo.currentIndexChanged.connect(changed)
+        kick_combo.currentIndexChanged.connect(changed)
+        box = QWidget()
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.addWidget(pace_combo)
+        layout.addWidget(kick_combo)
+        return box
 
     def _pick_lineup_athlete(self, event_name: str, gender: str, combo: QComboBox) -> None:
         """Convoca l'atleta scelto; se il controller rifiuta (tetto di gare, età) rimette la scelta di prima."""
@@ -1052,6 +1082,9 @@ class CalendarTab(QWidget):
                     )
                 )
                 self.lineup_table.setCellWidget(row, 4, att_combo)
+
+                if event_name in STRATEGY_EVENTS:
+                    self.lineup_table.setCellWidget(row, 5, self._build_strategy_widget(state, event_name))
 
         league_rows = state.league_standings()
         if state.game_mode == "career":

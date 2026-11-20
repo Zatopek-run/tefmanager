@@ -237,3 +237,12 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 **Cosa cambia.**
 - (1) Stringhe: impatto basso, ma verificare l'effetto sui test che cercano `$`.
 - (2) Campo `contract_end_season` in `Athlete`, migrazione, logica di rinnovo nel tick di fine stagione. Impatto medio.
+
+
+## Q23 — Piano gara di 800m/1500m (PIANOLAVORO B.1) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+
+**Decisioni dell'utente (2026-11-20):** (1) **solo ritmo e scatto**: la «Gestione energia» del piano non c'è, perché l'atteggiamento esistente (Prudente/Normale/Aggressivo) fa già quel lavoro e il piano si somma ad esso; (2) **costo legato alla resistenza**: i punteggi di ritmo e scatto si moltiplicano per un fattore di resistenza relativo alla categoria, e le cifre esatte vanno misurate e proposte prima di fissarle in `BALANCE.md`.
+
+**Scostamenti dal piano (da confermare):** «Veloce + Ultimo giro» = +7 punti e **+25** di fatica (il piano scrive +23, ma le sue cifre sono 10 + 15); «Lento» ha fatica −4 (il piano dice solo «conserva energia»: cifra mia); UI nella scheda Calendario accanto all'atteggiamento e non in `athlete_dialog.py` (il piano è per evento, non per atleta); schema v14 e non v12; il piano è per evento, M e F insieme (come `event_attitude`).
+
+**Cifre provvisorie** (`entities.py`, blocco «Piano gara»): `PACE_EFFECTS`, `KICK_EFFECTS`, `STRATEGY_STAMINA_REF` (47/59/72/84 = resistenza media dei mezzofondisti generati per categoria), `STRATEGY_STAMINA_SPAN` 30, `STRATEGY_FACTOR_FLOOR` −0,5.

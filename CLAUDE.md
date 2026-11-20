@@ -51,7 +51,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 201 test, OK, ~5 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 222 test, OK, ~6 s
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -78,9 +78,9 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (29 test, senza Qt: migrazioni e slot)
-             test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_rng.py (6, stato RNG A.3)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
-             test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   tutti con PyQt6 offscreen
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (31 test, senza Qt: migrazioni e slot)
+             test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_rng.py (6, stato RNG A.3)   test_race_strategy.py (15, piano gara B.1)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
+             test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (4, colonna «Piano gara»)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
 
@@ -136,7 +136,7 @@ bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mer
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 13` (`database.py`; v13 = `game_state.rng_state_json`, A.3, 2026-11-20; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19; v12 = `game_state.league_places_json`, spareggio A.2, 2026-11-20). Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 14` (`database.py`; v14 = `game_state.race_strategy_json`, piano gara B.1, 2026-11-20; v13 = `game_state.rng_state_json`, A.3, 2026-11-20; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19; v12 = `game_state.league_places_json`, spareggio A.2, 2026-11-20). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni

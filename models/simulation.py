@@ -41,11 +41,19 @@ from models.entities import (
     PEAK_FORM_BONUS,
     RELAY_DQ_MULT,
     LEAGUE_PLACE_SLOTS,
+    KICK_EFFECTS,
+    PACE_EFFECTS,
+    STRATEGY_EVENTS,
+    STRATEGY_FACTOR_FLOOR,
+    STRATEGY_STAMINA_REF,
+    STRATEGY_STAMINA_SPAN,
     TEAM_POINTS,
     TICKET_PRICE,
     TIER_CONFIG,
     YOUTH_TRAINING_MULT,
     RaceAttitude,
+    RaceKick,
+    RacePace,
     Athlete,
     CompetitionSummary,
     CompetitionTier,
@@ -640,6 +648,36 @@ def _compute_ticket_income(
     return spectators, spectators * TICKET_PRICE[state.tier.value]
 
 
+def strategy_endurance_factor(stamina: int, tier: CompetitionTier) -> float:
+    """Quanto regge l'atleta il piano gara rispetto alla categoria: 1 molto resistente, 0,5 nella media, < 0 senza fondo."""
+    low = STRATEGY_STAMINA_REF[tier] - STRATEGY_STAMINA_SPAN / 2
+    return max(STRATEGY_FACTOR_FLOOR, min(1.0, (stamina - low) / STRATEGY_STAMINA_SPAN))
+
+
+def race_strategy_effect(
+    stamina: int, tier: CompetitionTier, pace: RacePace, kick: RaceKick
+) -> Tuple[float, int]:
+    """(punti di punteggio, fatica post-gara) di ritmo + scatto per un atleta con quella resistenza (B.1).
+
+    Funzione pura, senza RNG. Il punteggio di ogni scelta si moltiplica per il fattore di resistenza (Lento incluso: costa
+    a chi ha fondo e conviene a chi non ne ha); la fatica no: partire forte senza fondo non rende e stanca comunque.
+    """
+    factor = strategy_endurance_factor(stamina, tier)
+    score = 0.0
+    fatigue = 0
+    for points, tired in (PACE_EFFECTS[pace], KICK_EFFECTS[kick]):
+        score += points * factor
+        fatigue += tired
+    return score, fatigue
+
+
+def strategy_label(pace: RacePace, kick: RaceKick) -> str:
+    """Testo per i risultati; vuoto con il piano neutro (Medio, Nessuno)."""
+    if pace == RacePace.MEDIO and kick == RaceKick.NESSUNO:
+        return ""
+    return f"Ritmo {pace.value}, scatto: {kick.value}"
+
+
 def _score_place(
     team_points: Dict[str, int], meet_places: Dict[str, List[int]], team: str, place: int
 ) -> None:
@@ -791,6 +829,11 @@ def simulate_competition(
 
             attitude = state.attitude_for(event_name)
             att = ATTITUDE_EFFECTS[attitude]
+            strategy_score, strategy_fatigue, strategy_text = 0.0, 0, ""
+            if event_name in STRATEGY_EVENTS:  # piano gara di 800m/1500m (B.1)
+                pace, kick = state.strategy_for(event_name)
+                strategy_score, strategy_fatigue = race_strategy_effect(player_athlete.stamina, state.tier, pace, kick)
+                strategy_text = strategy_label(pace, kick)
 
             wind_ms: Optional[float] = (
                 _roll_meet_wind(weather, state.season_phase, r) if event_def.wind_affected else None
@@ -823,6 +866,7 @@ def simulate_competition(
                     player_athlete, event_def, weather, state.track_condition, has_mental, r
                 )
                 p_score += att["score"]
+                p_score += strategy_score
                 if att["sigma"] > 0:
                     p_score += r.gauss(0.0, att["sigma"])  # all-out efforts are less predictable
                 if is_home:
@@ -841,8 +885,12 @@ def simulate_competition(
                 )
             )
 
+            if withdrew:  # chi si ritira prima del via non ha corso né scattato
+                strategy_fatigue, strategy_text = 0, ""
             # Match fatigue scales with attitude
-            player_athlete.fatigue = clamp_stat(player_athlete.fatigue + int(att["fatigue"]), 0, 100)
+            player_athlete.fatigue = clamp_stat(
+                player_athlete.fatigue + int(att["fatigue"]) + strategy_fatigue, 0, 100
+            )
             player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
 
             # One athlete per rival club in the same gender division
@@ -964,7 +1012,7 @@ def simulate_competition(
                     is_pb=is_pb,
                     is_club_record=is_club_rec,
                     standings=standings,
-                    attitude=attitude.value,
+                    attitude=f"{attitude.value} · {strategy_text}" if strategy_text else attitude.value,
                     withdrew_injured=withdrew,
                     gender=gender,
                 )

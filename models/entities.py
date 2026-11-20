@@ -165,6 +165,47 @@ ATTITUDE_EFFECTS: Dict[RaceAttitude, Dict[str, float]] = {
     RaceAttitude.AGGRESSIVO: {"score": 2.5, "fatigue": 11, "injury": 0.05, "sigma": 2.0},
 }
 
+# Piano gara di 800m e 1500m (B.1): ritmo iniziale e scatto finale, scelti prima della gara e applicati dal modello
+# (non sono comandi in gara). Si sommano all'atteggiamento. I bonus positivi (Veloce, scatti) valgono per intero solo a
+# un atleta con molta resistenza e si riducono, fino a diventare un crollo, se ne ha poco; il costo in fatica è fisso.
+# CIFRE PROVVISORIE: misurate e da confermare con l'utente prima di entrare in BALANCE.md.
+class RacePace(str, Enum):
+    LENTO = "Lento"
+    MEDIO = "Medio"
+    VELOCE = "Veloce"
+
+
+class RaceKick(str, Enum):
+    NESSUNO = "Nessuno"
+    ULTIMI_200 = "Ultimi 200m"
+    ULTIMO_GIRO = "Ultimo giro"
+
+
+STRATEGY_EVENTS: Tuple[str, ...] = ("800m", "1500m")
+# punteggio (× fattore di resistenza) e fatica post-gara
+PACE_EFFECTS: Dict[RacePace, Tuple[float, int]] = {
+    RacePace.LENTO: (-2.0, -4),
+    RacePace.MEDIO: (0.0, 0),
+    RacePace.VELOCE: (3.0, 10),
+}
+KICK_EFFECTS: Dict[RaceKick, Tuple[float, int]] = {
+    RaceKick.NESSUNO: (0.0, 0),
+    RaceKick.ULTIMI_200: (2.0, 8),
+    RaceKick.ULTIMO_GIRO: (4.0, 15),
+}
+# Fattore di resistenza f = (stamina − (REF − SPAN/2)) / SPAN, tra FLOOR e 1, rispetto alla resistenza tipica della categoria
+# (media dei mezzofondisti generati: la resistenza sale con la categoria): f = 0,5 per un atleta nella media, 1 per uno
+# molto resistente, < 0 per uno che non ha fondo. Veloce e scatti rendono punteggio × f; Lento rende punteggio × f
+# (perde per chi ha fondo, guadagna per chi non ne ha). La fatica non dipende da f.
+STRATEGY_STAMINA_REF: Dict[CompetitionTier, int] = {
+    CompetitionTier.PROVINCIALE: 47,
+    CompetitionTier.REGIONALE: 59,
+    CompetitionTier.NAZIONALE: 72,
+    CompetitionTier.INTERNAZIONALE: 84,
+}
+STRATEGY_STAMINA_SPAN = 30
+STRATEGY_FACTOR_FLOOR = -0.5
+
 # Bonus al bersaglio di forma per la fase «Gara (Picco)», solo nel tick che precede una settimana di gara
 # (la forma usata in gara è quella calcolata nel tick precedente). Minore del +9 dello Scarico: il picco
 # non toglie la fatica, quindi è più debole del tapering vero e proprio.
@@ -891,6 +932,8 @@ class GameState:
     news_log: List[str] = field(default_factory=list)
     pending_dilemma: Optional[EthicalDilemma] = None
     event_attitude: Dict[str, str] = field(default_factory=dict)
+    # Piano gara per evento (B.1): {"800m": {"pace": "Veloce", "kick": "Ultimo giro"}}; mancante = Medio + Nessuno.
+    race_strategy: Dict[str, Dict[str, str]] = field(default_factory=dict)
     gym_level: int = 0
     stand_seats: int = 500
     fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
@@ -1044,6 +1087,19 @@ class GameState:
             return RaceAttitude(raw)
         except ValueError:
             return RaceAttitude.NORMALE
+
+    def strategy_for(self, event_name: str) -> Tuple[RacePace, RaceKick]:
+        """Ritmo e scatto scelti per l'evento (solo 800m/1500m li usano); valori sconosciuti → i neutri."""
+        raw = self.race_strategy.get(event_name, {})
+        try:
+            pace = RacePace(raw.get("pace", RacePace.MEDIO.value))
+        except ValueError:
+            pace = RacePace.MEDIO
+        try:
+            kick = RaceKick(raw.get("kick", RaceKick.NESSUNO.value))
+        except ValueError:
+            kick = RaceKick.NESSUNO
+        return pace, kick
 
     @property
     def next_meet_is_home(self) -> bool:
