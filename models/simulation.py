@@ -77,6 +77,7 @@ from models.entities import (
     Transaction,
     WeatherCondition,
 )
+from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.ranking import (
     award_event_points,
     award_place,
@@ -629,6 +630,7 @@ def _roll_meet_wind(weather: WeatherCondition, season_phase: SeasonPhase, rng: r
 
 def _evaluate_objectives(state: GameState, summary: Optional[CompetitionSummary] = None) -> None:
     """Update completion state of seasonal objectives."""
+    refresh_board_objectives(state)  # obiettivi del Board (C.2): solo il bilancio è provvisorio durante la stagione
     for obj in state.objectives:
         if obj.key == "positive_budget":
             threshold = 8000 if state.game_mode == "vertical_slice" else 10000
@@ -1007,6 +1009,7 @@ def simulate_competition(
                 if existing_rec is None or _is_better(event_def, p_val, existing_rec[0]):
                     records[event_name] = (p_val, p_disp, player_athlete.name)
                     is_club_rec = True
+                    note_club_record(state)
                     state.milestones.insert(
                         0,
                         f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nei {event_name}! {player_athlete.name} segna {p_disp}.",
@@ -1165,6 +1168,7 @@ def simulate_competition(
                 if existing_rec is None or p_val < existing_rec[0]:
                     records[relay_name] = (p_val, p_disp, team_label)
                     is_club_rec = True
+                    note_club_record(state)
                     state.milestones.insert(
                         0,
                         f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nella {relay_name} "
@@ -1437,6 +1441,8 @@ def close_season(state: GameState) -> SeasonEndResult:
     else:
         msg = f"Sett. {week}: Stagione chiusa al {placement}° posto in {tier.display_name}: categoria confermata."
 
+    # Verdetto del Board (C.2): prima del cambio di livello e del bonus promozione, che non aiuta il bilancio
+    verdict = settle_season(state, placement)
     if new_tier is not None:
         state.tier = new_tier
     if outcome == SeasonOutcome.PROMOTED:
@@ -1465,6 +1471,25 @@ def close_season(state: GameState) -> SeasonEndResult:
         final_table=table,
         new_tier=new_tier,
     )
+    if verdict is not None:
+        result.board_results = verdict.results
+        result.board_failed = verdict.failed
+        result.board_streak = verdict.streak
+        result.fired = verdict.fired
+        if verdict.fired:
+            line = (
+                f"Sett. {week}: ESONERATO. Il Board non è soddisfatto di {verdict.streak} stagioni di fila "
+                f"({verdict.passed}/{len(verdict.results)} obiettivi quest'anno): {state.team_name} cambia allenatore."
+            )
+            state.milestones.insert(0, line)
+        elif verdict.failed:
+            line = (
+                f"Sett. {week}: il Board giudica fallita la stagione ({verdict.passed}/{len(verdict.results)} obiettivi). "
+                f"Un'altra stagione fallita di fila e sarà l'esonero."
+            )
+        else:
+            line = f"Sett. {week}: il Board è soddisfatto: {verdict.passed}/{len(verdict.results)} obiettivi centrati."
+        state.news_log.insert(1, line)  # sotto l'esito della lega (promozione, retrocessione...), che resta in cima
     state.season_history.insert(0, result)
     return result
 
@@ -1721,6 +1746,7 @@ def advance_week(
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)
+            state.news_log[0:0] = start_new_season(state)  # nuovi obiettivi del Board (C.2), senza RNG
         state.news_log.insert(
             0,
             f"Sett. {state.week}: Inizia la stagione {state.season_phase.value}!",

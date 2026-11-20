@@ -51,7 +51,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 309 test, OK, ~42 s su Windows (~6 s su Linux)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 345 test, OK, ~50 s su Windows (~6 s su Linux)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -72,15 +72,15 @@ pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.
 main.py      entry point (`GameController(auto_create=False)` + `MainWindow`)
 models/      entities.py (GameState, Athlete, eventi, enum, molte costanti)   generator.py (atleti, rivali, dilemmi)
              simulation.py (allenamento, gare, tick `advance_week`)           database.py (SQLite, migrazioni)
-             race_export.py (export per Godot)   bibs.py (pettorali)   ranking.py (punti, campo sintetico, classifiche: C.1, senza Qt)
+             race_export.py (export per Godot)   bibs.py (pettorali)   ranking.py (punti, campo sintetico, classifiche: C.1, senza Qt)   board.py (obiettivi del Board ed esonero: C.2, senza Qt)
 controllers/ game_controller.py   segnali Qt; contiene anche regole e cifre di gioco (vedi docs/AUDIT.md Q13)
 views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QSS scuro)
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (33 test, senza Qt: migrazioni e slot)
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (36 test, senza Qt: migrazioni e slot)
              test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_rng.py (6, stato RNG A.3)   test_race_strategy.py (15, piano gara B.1)   test_field_strategy.py (15, rischio concorsi B.2)   test_relay_strategy.py (23, cambio staffette B.3)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
-             test_ranking.py (31, ranking C.1, senza Qt)   test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (13, colonna «Piano gara / Rischio» e menu «Cambio» delle staffette B.3)   test_ranking_ui.py (7, scheda «Ranking», scheda atleta, ricarica)   tutti con PyQt6 offscreen
+             test_ranking.py (31, ranking C.1, senza Qt)   test_board.py (21, Board C.2, senza Qt)   test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (13, colonna «Piano gara / Rischio» e menu «Cambio» delle staffette B.3)   test_ranking_ui.py (7, scheda «Ranking», scheda atleta, ricarica)   test_board_ui.py (12, Board: Dashboard, dialoghi, esonero)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
 
@@ -89,8 +89,8 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
 Dal 2026-11-20 il lavoro segue `docs/PIANOLAVORO.md` (scritto dall'utente): sette lotti di gameplay, **A** fondamenta e
 bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mercato e finanze → **E** staff e impianti →
 **F** narrativa → **G** UI/UX. Branch di sviluppo: `feature/gameplay-improvements` (creato da `main` il 2026-11-20).
-**Stato (2026-11-20):** lotti A e B chiusi; **C.1** (ranking, schema v15) fatto con atleti sintetici, cifre da confermare
-(QUESTIONS Q26; `test_economy` riscritto sulla distribuzione, AUDIT R21); gli inviti Diamond League sono **C.1b**, da decidere. Prossimo: C.2 (obiettivi del Board).
+**Stato (2026-11-20):** lotti A e B chiusi; **C.2** (obiettivi del Board ed esonero, schema v16) fatto, cifre da confermare (Q27); **C.1** (ranking, schema v15) fatto con atleti sintetici, cifre da confermare
+(QUESTIONS Q26; `test_economy` riscritto sulla distribuzione, AUDIT R21); gli inviti Diamond League sono **C.1b**, da decidere. Prossimo: C.3 (ritiro e post-carriera).
 
 - **Si procede per lotti e sottopunti nell'ordine del documento** (A.1 … A.5, poi B, C…), rispettando le «Dipendenze» di
   ogni lotto. Un sottopunto = uno o pochi commit piccoli, in italiano; non si salta avanti senza dirlo all'utente.
@@ -138,7 +138,7 @@ bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mer
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 15` (`database.py`; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, ranking C.1 (i punti dei rivali stanno nel loro JSON), 2026-11-20; v14 = `game_state.race_strategy_json`, piano gara B.1, rischio concorsi B.2 (stessa colonna, chiave `risk`) e cambio staffette B.3 (stessa colonna, chiave `change`), 2026-11-20; v13 = `game_state.rng_state_json`, A.3, 2026-11-20; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19; v12 = `game_state.league_places_json`, spareggio A.2, 2026-11-20). Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 16` (`database.py`; v16 = `game_state.board_json` (stagioni fallite di fila ed esonero), obiettivi del Board C.2 (soglie e avanzamento in `objectives_json`, verdetto in `season_history_json`), 2026-11-20; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, ranking C.1 (i punti dei rivali stanno nel loro JSON), 2026-11-20; v14 = `game_state.race_strategy_json`, piano gara B.1, rischio concorsi B.2 (stessa colonna, chiave `risk`) e cambio staffette B.3 (stessa colonna, chiave `change`), 2026-11-20; v13 = `game_state.rng_state_json`, A.3, 2026-11-20; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19; v12 = `game_state.league_places_json`, spareggio A.2, 2026-11-20). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni

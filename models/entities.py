@@ -837,6 +837,24 @@ class RivalClub:
 PROMOTION_SPOTS = 2  # top 2 of the final league table move up
 RELEGATION_SPOTS = 1  # last club moves down
 
+# Obiettivi del Board (PIANOLAVORO C.2, 2026-11-20). CIFRE PROVVISORIE: vedi docs/BALANCE.md §L e QUESTIONS Q27.
+# A inizio stagione (solo Carriera) il Board assegna tre obiettivi; la stagione è «fallita» se se ne centrano meno di
+# `BOARD_OBJECTIVES_TO_PASS`, e `BOARD_MAX_FAILED_STREAK` stagioni fallite di fila portano all'esonero (game over).
+BOARD_KEY_LEAGUE = "board_league"
+BOARD_KEY_BUDGET = "board_budget"
+BOARD_KEY_RECORDS = "board_records"
+BOARD_KEYS: Tuple[str, ...] = (BOARD_KEY_LEAGUE, BOARD_KEY_BUDGET, BOARD_KEY_RECORDS)
+# Posto massimo in lega richiesto, per livello (a pari merito di forza, più in alto gli avversari sono più forti).
+BOARD_LEAGUE_TARGET: Dict[CompetitionTier, int] = {
+    CompetitionTier.PROVINCIALE: 3,
+    CompetitionTier.REGIONALE: 4,
+    CompetitionTier.NAZIONALE: 5,
+    CompetitionTier.INTERNAZIONALE: 5,
+}
+BOARD_MIN_RECORDS = 2  # record sociali da stabilire nella stagione (individuali e staffette)
+BOARD_OBJECTIVES_TO_PASS = 2  # obiettivi centrati su tre perché la stagione non sia fallita
+BOARD_MAX_FAILED_STREAK = 2  # stagioni fallite di fila che portano all'esonero
+
 
 class SeasonOutcome(str, Enum):
     PROMOTED = "Promossa"
@@ -855,6 +873,12 @@ class SeasonEndResult:
     outcome: SeasonOutcome
     final_table: List[Tuple[str, int]] = field(default_factory=list)
     new_tier: Optional[CompetitionTier] = None
+    # Verdetto del Board (C.2): (obiettivo, centrato?) per ciascuno; `board_failed` è None se la stagione non aveva
+    # obiettivi del Board (partita iniziata prima di C.2), `board_streak` le stagioni fallite di fila dopo questa.
+    board_results: List[Tuple[str, bool]] = field(default_factory=list)
+    board_failed: Optional[bool] = None
+    board_streak: int = 0
+    fired: bool = False
 
 
 @dataclass
@@ -877,6 +901,8 @@ class SeasonObjective:
     key: str
     title: str
     completed: bool = False
+    target: int = 0  # soglia dell'obiettivo del Board (posto massimo, bilancio da non peggiorare, n. record); 0 = nessuna
+    value: int = 0  # avanzamento dove si conta (record sociali stabiliti nella stagione)
 
 
 @dataclass
@@ -1017,6 +1043,8 @@ class GameState:
     fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
     scouting_points_used: int = 0
     bankrupt: bool = False
+    board_failed_streak: int = 0  # stagioni fallite di fila secondo il Board (C.2)
+    fired: bool = False  # esonerato dal Board: la partita è finita, come nel fallimento
     league_table: Dict[str, int] = field(default_factory=dict)
     # Per club: quanti 1°, 2°, ... posti (indice 0 = 1°) ha ottenuto in stagione; serve allo spareggio (A.2).
     league_places: Dict[str, List[int]] = field(default_factory=dict)

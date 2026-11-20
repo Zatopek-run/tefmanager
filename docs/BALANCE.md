@@ -211,3 +211,15 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Livello di un sintetico | il livello di gara con `opponent_skill` più vicino al suo livello | `ranking.py` |
 
 Calibrazione: vedi Q26 (chi vince sempre in Fase regionale resta fuori dalla Top 100; in Finale Oro è 1°).
+
+## L. Obiettivi del Board (PIANOLAVORO C.2, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q27)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `BOARD_LEAGUE_TARGET` | posto massimo in lega: Fase regionale CdS 3 · Finale Bronzo 4 · Finale Argento 5 · Finale Oro 5 | `entities.py` |
+| `BOARD_MIN_RECORDS` | 2 record sociali nella stagione (individuali e di staffetta) | `entities.py` |
+| Bilancio | budget a fine stagione ≥ budget a inizio stagione (prima del bonus promozione) | `board.py` |
+| `BOARD_OBJECTIVES_TO_PASS` | 2 obiettivi su 3: sotto, la stagione è fallita | `entities.py` |
+| `BOARD_MAX_FAILED_STREAK` | 2 stagioni fallite di fila → esonero (game over) | `entities.py` |
+
+Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilancio 83%, record 100%; stagione fallita 17%; esonerati entro la 2ª stagione 2 su 30 (Q27).

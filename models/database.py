@@ -41,7 +41,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -132,6 +132,11 @@ V15_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("ranking_json", "TEXT NOT NULL DEFAULT '{}'")],
     "game_state": [("ranking_pool_json", "TEXT NOT NULL DEFAULT '[]'")],
 }
+# Columns added in v16 (C.2: Board, `{}` = nessuna stagione fallita e non esonerato; gli obiettivi con soglia e avanzamento
+# stanno in `objectives_json`, il verdetto di ogni stagione in `season_history_json`).
+V16_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("board_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -146,6 +151,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     12: V13_COLUMNS,
     13: V14_COLUMNS,
     14: V15_COLUMNS,
+    15: V16_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -352,6 +358,10 @@ def _season_history_to_json(history: List[SeasonEndResult]) -> str:
                 "outcome": h.outcome.value,
                 "final_table": [[t, p] for t, p in h.final_table],
                 "new_tier": h.new_tier.value if h.new_tier else None,
+                "board_results": [[t, bool(ok)] for t, ok in h.board_results],
+                "board_failed": h.board_failed,
+                "board_streak": h.board_streak,
+                "fired": h.fired,
             }
             for h in history
         ]
@@ -367,6 +377,10 @@ def _season_history_from_json(raw: str) -> List[SeasonEndResult]:
             outcome=SeasonOutcome(h["outcome"]),
             final_table=[(str(t), int(p)) for t, p in h["final_table"]],
             new_tier=CompetitionTier(h["new_tier"]) if h.get("new_tier") else None,
+            board_results=[(str(t), bool(ok)) for t, ok in h.get("board_results", [])],
+            board_failed=h.get("board_failed"),
+            board_streak=int(h.get("board_streak", 0)),
+            fired=bool(h.get("fired", False)),
         )
         for h in json.loads(raw)
     ]
@@ -676,7 +690,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     league_places_json TEXT NOT NULL DEFAULT '{}',
     rng_state_json TEXT NOT NULL DEFAULT '[]',
     race_strategy_json TEXT NOT NULL DEFAULT '{}',
-    ranking_pool_json TEXT NOT NULL DEFAULT '[]'
+    ranking_pool_json TEXT NOT NULL DEFAULT '[]',
+    board_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -885,7 +900,7 @@ class DatabaseManager:
 
         objectives_json = json.dumps(
             [
-                {"key": o.key, "title": o.title, "completed": o.completed}
+                {"key": o.key, "title": o.title, "completed": o.completed, "target": o.target, "value": o.value}
                 for o in state.objectives
             ]
         )
@@ -913,8 +928,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -954,6 +969,7 @@ class DatabaseManager:
                     json.dumps(state.rng_state),
                     json.dumps(state.race_strategy),
                     _synthetic_to_json(state.ranking_pool),
+                    json.dumps({"failed_streak": state.board_failed_streak, "fired": state.fired}),
                 ),
             )
 
@@ -1273,7 +1289,11 @@ class DatabaseManager:
             }
             objectives = [
                 SeasonObjective(
-                    key=o["key"], title=o["title"], completed=bool(o["completed"])
+                    key=o["key"],
+                    title=o["title"],
+                    completed=bool(o["completed"]),
+                    target=int(o.get("target", 0)),
+                    value=int(o.get("value", 0)),
                 )
                 for o in json.loads(row["objectives_json"])
             ]
@@ -1335,6 +1355,8 @@ class DatabaseManager:
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),
                 ranking_pool=_synthetic_from_json(row["ranking_pool_json"]),
+                board_failed_streak=int(json.loads(row["board_json"]).get("failed_streak", 0)),
+                fired=bool(json.loads(row["board_json"]).get("fired", False)),
                 season_history=_season_history_from_json(row["season_history_json"]),
                 event_lineup_f=json.loads(row["event_lineup_f_json"]),
                 club_records_f=club_records_f,

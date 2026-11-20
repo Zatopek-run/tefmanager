@@ -31,12 +31,15 @@ from models.entities import (
     COACH_STAT_LABELS,
     COACH_STATS,
     GAME_MODE_OPTIONS,
+    BOARD_MAX_FAILED_STREAK,
+    BOARD_OBJECTIVES_TO_PASS,
     Athlete,
     CompetitionSummary,
     PROMOTION_SPOTS,
     RELEGATION_SPOTS,
     EthicalDilemma,
     SeasonEndResult,
+    SeasonObjective,
     SeasonOutcome,
     Specialty,
     coach_hire_cost,
@@ -713,9 +716,61 @@ class SeasonEndDialog(QDialog):
                 self.table.setItem(row, col, item)
         layout.addWidget(self.table, stretch=1)
 
+        self.board_label: Optional[QLabel] = None
+        if result.board_failed is not None:  # verdetto del Board (C.2); None = stagione senza obiettivi del Board
+            lines = [f"{'✔' if ok else '✘'} {title}" for title, ok in result.board_results]
+            if result.fired:
+                verdict, color = f"ESONERATO: {result.board_streak} stagioni fallite di fila.", "#f87171"
+            elif result.board_failed:
+                verdict = f"Stagione FALLITA per il Board. Fallite di fila: {result.board_streak}. Alla {BOARD_MAX_FAILED_STREAK}ª arriva l'esonero."
+                color = "#fbbf24"
+            else:
+                verdict, color = "Il Board è soddisfatto della stagione.", "#34d399"
+            self.board_label = QLabel("OBIETTIVI DEL BOARD\n" + "\n".join(lines) + "\n" + verdict)
+            self.board_label.setWordWrap(True)
+            self.board_label.setStyleSheet(f"color: {color}; font-weight: 700;")
+            layout.addWidget(self.board_label)
+
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        ok = QPushButton("Inizia la nuova stagione")
+        ok = QPushButton("Chiudi" if result.fired else "Inizia la nuova stagione")
+        ok.setObjectName("PrimaryButton")
+        ok.clicked.connect(self.accept)
+        btn_row.addWidget(ok)
+        layout.addLayout(btn_row)
+
+
+class BoardObjectivesDialog(QDialog):
+    """Gli obiettivi che il Board assegna a inizio stagione (C.2)."""
+
+    def __init__(self, objectives: List[SeasonObjective], season: int, team_name: str, failed_streak: int = 0, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(f"Il Board — Stagione {season}")
+        self.resize(520, 300)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+        title = QLabel(f"{team_name}: obiettivi della stagione {season}")
+        title.setObjectName("AppTitle")
+        layout.addWidget(title)
+        intro = QLabel(
+            f"Il Board si aspetta che tu ne centri almeno {BOARD_OBJECTIVES_TO_PASS} su {len(objectives)}. "
+            f"{BOARD_MAX_FAILED_STREAK} stagioni fallite di fila portano all'esonero."
+        )
+        intro.setObjectName("SubTitle")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.objectives_label = QLabel("\n".join(f"• {o.title}" for o in objectives))
+        self.objectives_label.setWordWrap(True)
+        layout.addWidget(self.objectives_label)
+        if failed_streak:
+            warn = QLabel(f"Attenzione: la stagione scorsa è stata fallita ({failed_streak} di fila).")
+            warn.setStyleSheet("color: #fbbf24; font-weight: 700;")
+            layout.addWidget(warn)
+        layout.addStretch()
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        ok = QPushButton("Capito")
         ok.setObjectName("PrimaryButton")
         ok.clicked.connect(self.accept)
         btn_row.addWidget(ok)

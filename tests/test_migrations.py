@@ -681,5 +681,52 @@ class TestMigrationV15Ranking(_TmpCase):
             self.assertNotIn("ranking_json", column_names(conn, "athletes"))
 
 
+class TestMigrationV16Board(_TmpCase):
+    """v15 → v16 (C.2): colonna `game_state.board_json` (stagioni fallite di fila ed esonero), default `'{}'`."""
+
+    def test_v15_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 16)
+        self.assertIn(15, MIGRATIONS)
+        path = make_save(self.slot("v15"), 15)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("board_json", column_names(conn, "game_state"))  # la fixture è davvero v15
+            self.assertIn("ranking_pool_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT board_json FROM game_state WHERE id = 1").fetchone(), ("{}",))
+            self.assertIn(("board_json", "TEXT", 1, "'{}'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 15)
+        backup = self.backups("v15")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 15)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("board_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 15)
+
+    def test_a_migrated_save_loads_with_no_failed_season_and_not_fired(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v16")
+        state = make_state(3)
+        state.board_failed_streak, state.fired = 1, True
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # come dopo la migrazione: la colonna ha il valore di default
+            conn.execute("UPDATE game_state SET board_json = '{}'")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual((loaded.board_failed_streak, loaded.fired), (0, False))
+
+    def test_failed_v15_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v15"), 15)
+        before = sha(path)
+        broken = {"game_state": [("board_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {15: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 15)
+
+
 if __name__ == "__main__":
     unittest.main()

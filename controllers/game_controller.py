@@ -196,7 +196,7 @@ class GameController(QObject):
         lineup_f = build_default_lineup(roster, event_names=events, gender="F")
         staff = create_initial_staff()
         coaches = create_initial_coaches(roster, rng=self.rng)
-        objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE)
+        objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE, budget)
 
         state = GameState(
             team_name=team_name,
@@ -1014,6 +1014,9 @@ class GameController(QObject):
             self.status_message.emit(
                 f"Società fallita (debito oltre €{-BANKRUPTCY_THRESHOLD:,}): avvia una nuova partita."
             )
+            return None
+        if self.state.fired:
+            self.status_message.emit("Esonerato dal Board: la partita è finita, avvia una nuova partita.")
             return None
         # Un dilemma ancora pendente (salvataggio vecchio, finestra mai chiusa bene) non blocca più i successivi (A.4).
         self.dismiss_dilemma()

@@ -90,7 +90,7 @@ i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagion
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
-`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1).
+`coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1).
 
 ### 3.2 `Athlete`
 
@@ -115,7 +115,7 @@ calcolata da `age`, non salvata, mostrata nella scheda atleta.
 - `SyntheticAthlete`: atleta di fantasia del ranking mondiale (nome, nazionalità, evento, sesso, livello, punti); non gareggia con il club (§5.15).
 - `StaffMember`: Fisioterapista, Medico Sportivo, Preparatore Mentale (attivabili/disattivabili).
 - `CompetitionSummary` / `EventResult` / `EventStanding`: risultato di un meeting (per evento: classifica, misure, punti, vento, meteo).
-- `EthicalDilemma`, `SeasonObjective`, `SeasonEndResult`, `Transaction`.
+- `EthicalDilemma`, `SeasonObjective` (con `target` e `value`: soglia e avanzamento degli obiettivi del Board), `SeasonEndResult` (anche il verdetto del Board), `Transaction`.
 
 ---
 
@@ -253,7 +253,7 @@ Gli atleti guadagnano **fan** con piazzamenti, PB e record (i fan non calano mai
 
 - **Dilemmi**: nelle settimane 3 e 7 sempre, altrove 22% di probabilità; due tipi (doping / giovane promettente). Si accettano o rifiutano con effetti su soldi, reputazione, prestigio, forma. Chiudere la finestra (X, Esc) o premere «Ignora» fa decadere il dilemma **senza effetti** (`dismiss_dilemma`: né il bonus
   dell'accettazione né il premio del rifiuto), con una notizia; un dilemma ancora pendente (vecchio salvataggio) viene scartato dal tick successivo. Non blocca più i successivi (A.4).
-- **Obiettivi stagionali**: creati alla nuova partita (es. bilancio positivo, traguardo storico, promozione); non vengono rinnovati a fine stagione (difetto noto).
+- **Obiettivi del Board** (C.2, 2026-11-20; cifre provvisorie, Q27): in **Carriera**, a inizio stagione (alla partita nuova e a ogni cambio stagione) il Board assegna tre obiettivi: **chiudere tra i primi N della lega** (3 / 4 / 5 / 5 per livello), **non chiudere la stagione in perdita** (budget a fine stagione almeno quello di inizio stagione) e **stabilire almeno 2 record sociali** (individuali e di staffetta). A fine stagione (`close_season`, prima del cambio di livello e del bonus promozione) si contano: con **meno di 2 centrati su 3** la stagione è **fallita**; **2 stagioni fallite di fila** portano all'**esonero** (`fired`, game over come il fallimento: il tick non parte, il pulsante diventa «Esonerato dal Board»); una stagione non fallita azzera il conto. Il verdetto è nella finestra di fine stagione e nella storia delle stagioni; una finestra elenca gli obiettivi della stagione che comincia; la Dashboard mostra l'avanzamento e un avviso dopo una stagione fallita. Il Prototipo (nessuna stagione) tiene i suoi tre obiettivi fissi; un salvataggio precedente a C.2 tiene i vecchi fino a fine stagione, che non viene giudicata. Nessuna estrazione di RNG.
 
 ### 5.14 Record e PB
 
@@ -284,7 +284,7 @@ Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + c
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 15`** (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 16`** (v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -303,7 +303,7 @@ Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + c
 - **Finestra principale** (`MainWindow`): barra laterale con tre sezioni e dieci pagine:
   GESTIONE → *Dashboard*, *Rosa & Allenamenti*, *Vivaio & Osservatori*; COMPETIZIONI → *Calendario & Gare*, *Staffette*, *Rivali*, *Ranking* (classifica mondiale, nazionale e delle società, per disciplina e sesso: C.1); SOCIETÀ → *Staff & Impianto*, *Finanze*, *Albo & Record*.
   In alto un HUD con settimana/budget/prestigio e il pulsante **Avanza settimana**; menu per salvare/caricare.
-- **Dialoghi**: Scheda Atleta (PANORAMICA, ALLENAMENTO, COMPETIZIONI, con in testa la riga di ranking: posto mondiale e nazionale e punti per gara), Mercato/Recluta atleta, Assumi Allenatore, Nuova Partita, Dilemma Etico, Fine Stagione, Risultati gara (tabellone con pettorali).
+- **Dialoghi**: Scheda Atleta (PANORAMICA, ALLENAMENTO, COMPETIZIONI, con in testa la riga di ranking: posto mondiale e nazionale e punti per gara), Mercato/Recluta atleta, Assumi Allenatore, Nuova Partita, Dilemma Etico, Fine Stagione (con il verdetto del Board), Obiettivi del Board a inizio stagione, Risultati gara (tabellone con pettorali).
 - La UI è piena di piccole regole duplicate (soglie fatica, zona promozione/retrocessione) che andrebbero lette dal modello: vedi `AUDIT.md` Q13.
 
 ---
@@ -338,7 +338,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 309 test, ~42 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 345 test, ~50 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
@@ -355,7 +355,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - ✅ **1.1** migrazione transazionale con backup, ✅ **1.2** rifiuto delle versioni sconosciute (fatti).
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
-- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). Prossimo: C.2 (obiettivi del Board).
+- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). Prossimo: C.3 (ritiro e post-carriera).
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 

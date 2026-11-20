@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.entities import (
+    BOARD_KEYS,
     COACH_COMFORT_LOAD,
     YOUTH_SQUAD_MAX,
     CompetitionSummary,
@@ -34,6 +35,7 @@ from views.dialogs import (
     CompetitionResultsDialog,
     EthicalDilemmaDialog,
     NewGameDialog,
+    BoardObjectivesDialog,
     SeasonEndDialog,
 )
 from views.race_viewer import RaceViewerDialog
@@ -306,7 +308,7 @@ class MainWindow(QMainWindow):
         try:
             self.controller.advance_week()
         finally:
-            self.advance_btn.setEnabled(not self.controller.state.bankrupt)
+            self.advance_btn.setEnabled(not (self.controller.state.bankrupt or self.controller.state.fired))
 
     def _refresh_all(self, state: GameState) -> None:
         mode_tag = "Prototipo Outdoor" if state.game_mode == "vertical_slice" else f"Stagione {state.season_number}"
@@ -321,9 +323,11 @@ class MainWindow(QMainWindow):
         self.hud_prestige.setText(f"Prestigio: {state.prestige}")
 
         # Durante il tick `state_changed` arriva a metà: non riabilitare il pulsante finché non è finito.
-        self.advance_btn.setEnabled(not state.bankrupt and not self.controller.is_advancing)
+        self.advance_btn.setEnabled(not state.bankrupt and not state.fired and not self.controller.is_advancing)
         if state.bankrupt:
             self.advance_btn.setText("Società Fallita")
+        elif state.fired:
+            self.advance_btn.setText("Esonerato dal Board")
         elif state.is_competition_week:
             self.advance_btn.setText("Disputa Gara & Avanza")
         else:
@@ -351,6 +355,12 @@ class MainWindow(QMainWindow):
     def _show_season_end(self, result: SeasonEndResult) -> None:
         dlg = SeasonEndDialog(result, self.controller.state.team_name, parent=self)
         dlg.exec()
+        state = self.controller.state
+        board = [o for o in state.objectives if o.key in BOARD_KEYS]
+        if board and not state.fired:  # il Board assegna gli obiettivi della stagione che comincia (C.2)
+            BoardObjectivesDialog(
+                board, state.season_number, state.team_name, state.board_failed_streak, parent=self
+            ).exec()
 
     def _show_dilemma(self, dilemma: EthicalDilemma) -> None:
         dlg = EthicalDilemmaDialog(dilemma, parent=self)

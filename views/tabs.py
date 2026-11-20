@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from views.athlete_dialog import AthleteDetailDialog
+from models.board import progress_text
 from models.ranking import (
     club_points,
     club_ranking,
@@ -35,6 +36,8 @@ from models.ranking import (
 )
 from models.entities import (
     BANKRUPTCY_THRESHOLD,
+    BOARD_KEYS,
+    BOARD_MAX_FAILED_STREAK,
     PROMOTION_SPOTS,
     RELEGATION_SPOTS,
     COACH_COMFORT_LOAD,
@@ -291,7 +294,7 @@ class DashboardTab(QWidget):
         self.objectives_list = QListWidget()
         self.objectives_list.setWordWrap(True)
         self.objectives_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.objectives_list.setMaximumHeight(108)
+        self.objectives_list.setMaximumHeight(140)
         obj_layout.addWidget(self.objectives_list)
         mid_row.addWidget(obj_panel, stretch=2)
 
@@ -459,7 +462,15 @@ class DashboardTab(QWidget):
         self.objectives_list.clear()
         for obj in state.objectives:
             prefix = "[COMPLETATO] " if obj.completed else "[ ] "
-            self.objectives_list.addItem(f"{prefix}{obj.title}")
+            progress = progress_text(state, obj) if obj.key in BOARD_KEYS else ""
+            self.objectives_list.addItem(f"{prefix}{obj.title}" + (f" — {progress}" if progress else ""))
+        if state.fired:
+            self.objectives_list.addItem("ESONERATO dal Board: la partita è finita.")
+        elif state.board_failed_streak:
+            self.objectives_list.addItem(
+                f"Attenzione: {state.board_failed_streak} stagione/i fallita/e di fila. "
+                f"Alla {BOARD_MAX_FAILED_STREAK}ª arriva l'esonero."
+            )
 
         sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)
         self._top_athlete_ids = [a.id or -1 for a in sorted_athletes]

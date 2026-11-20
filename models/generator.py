@@ -8,6 +8,7 @@ import random
 import re
 from typing import Dict, List, Optional
 
+from models.board import create_board_objectives
 from models.entities import (
     COACH_BASE_SKILL,
     COACH_STATS,
@@ -506,22 +507,15 @@ def create_initial_staff() -> List[StaffMember]:
     ]
 
 
-def create_season_objectives(game_mode: str, tier: CompetitionTier) -> List[SeasonObjective]:
-    """Create season goals for the club."""
+def create_season_objectives(game_mode: str, tier: CompetitionTier, budget: int = 0) -> List[SeasonObjective]:
+    """Create season goals for the club. In Carriera sono gli obiettivi del Board (C.2), con `budget` come base."""
     if game_mode == "vertical_slice":
         return [
             SeasonObjective("positive_budget", "Chiudi la stagione con bilancio sopra €8.000"),
             SeasonObjective("win_event", "Vinci almeno una gara ufficiale"),
             SeasonObjective("club_record", "Stabilisci un nuovo Record Sociale omologato (vento <= 2.0 m/s)"),
         ]
-    return [
-        SeasonObjective("positive_budget", "Mantieni il bilancio sopra €10.000"),
-        SeasonObjective(
-            "promote",
-            f"Ottieni la promozione dalla categoria {tier.display_name}",
-        ),
-        SeasonObjective("historic_mark", "Abbatti un traguardo storico (es. sub-11.00s nei 100m)"),
-    ]
+    return create_board_objectives(tier, budget)
 
 
 def build_default_lineup(
