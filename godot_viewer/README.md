@@ -25,7 +25,7 @@ godot_viewer/
     ShotPutMotion.gd            getto del peso: pedana, tentativo, posa e volo del peso (funzioni pure)
   scenes/
     Stadium.tscn  + scripts/Stadium.gd, BroadcastCameras.gd, RunnerView.gd     VIEW 3D
-                    scripts/ShotPutRig.gd (posa del lanciatore), ShotPutView.gd (peso, cratere, nastro)
+                    scripts/ShotPutRig.gd (posa del lanciatore), ShotPutView.gd (peso, scia, nastro, arco del migliore)
   assets/athlete/               personaggio con scheletro + animazioni (CC0, Quaternius), vedi CREDITS.md
     HUD.tscn      + scripts/HUD.gd                                             VIEW 2D
   data/
@@ -98,8 +98,13 @@ la velocità iniziale è in forma chiusa: `v0 = (D/cosθ) · sqrt(g / (2 (D tan�
 `tau ≥ T`, quindi esatta a 1x, a 8x e con «Salta alla fine». Il punto di caduta ha uno scarto deterministico dall'asse
 (±0,13 rad, stesso atleta e stessa prova = stessa traiettoria): il raggio non cambia.
 
-- **Solo le prove dell'atleta del club sono animate per intero** (≈ 10 s ciascuna a 1x: ingresso, posizione iniziale, rotazione,
-  rilascio, volo, misura, uscita). Quelle degli altri durano 0,35 s: il peso e' già a terra, con cratere, nastro e bandierina.
+- **Tutti i lanci sono animati per intero** (≈ 10 s ciascuno a 1x: ingresso, posizione iniziale, rotazione, rilascio, volo, misura,
+  uscita; con 6 concorrenti sono circa 6 minuti a 1x, i tasti 2/4/8 accelerano). Sul terreno **non restano buche**: un
+  **arco dorato** centrato sulla pedana segna la distanza del miglior lancio, con «COGNOME  misura» accanto (si sposta quando qualcuno lo
+  supera; i nulli non contano). Nell'attimo dell'impatto si alza solo un po' di terriccio.
+- **Piedi** (`ShotPutRig.FootLevel`): l'IK posiziona solo la caviglia e il piede seguirebbe l'inclinazione dello stinco (punta in giu', suola
+  dentro la pedana). Un modificatore dopo l'IK rimette ogni piede orizzontale (punte leggermente in fuori) e la quota della caviglia sopra la
+  suola e' per sesso (`ANKLE_H`, `ANKLE_H_F`: l'osso del piede sta a 8,65 cm da terra nel modello maschile e a 7,07 nel femminile).
 - **Tecnica a rotazione**, destrorso (sequenza gambe → bacino → tronco → braccio; spalle «chiuse» fino alla posizione di potenza).
   Ingresso e uscita a piedi (camminata Quaternius, peso al collo con IK delle braccia); dalla posizione iniziale lo scheletro è
   comandato da `scripts/ShotPutRig.gd` (bacino e schiena a mano, braccia e gambe con `TwoBoneIK3D`, piedi piantati: la libreria CC0
@@ -112,14 +117,14 @@ la velocità iniziale è in forma chiusa: `v0 = (D/cosθ) · sqrt(g / (2 (D tan�
   d'erba falciata con linee dal bordo e archi di distanza ogni 5 m. **Niente gabbia** (non c'è nel getto del peso in gara: serve per
   disco e martello; scelta dell'utente) e **settore disegnato per 30 m** (il vero ne ha 100, ma lungo l'asse la curva 1 è a ~78 m).
 - **Regia** (`BroadcastCameras._direct_shot`, legata alla fase `ShotPutMotion.phase_at`): larga laterale all'ingresso e alla posizione
-  iniziale → teleobiettivo laterale sulla rotazione → teleobiettivo laterale che segue il peso con la scia → cratere, nastro e
+  iniziale → teleobiettivo laterale sulla rotazione → teleobiettivo laterale che segue il peso con la scia → punto d'impatto, nastro e
   bandierina (verde valido, rossa nullo) → larga all'uscita. Panoramica sul settore per le prove non animate.
 - Verifica: `godot --headless --path godot_viewer -s res://tests/verify_shotput.gd` (~15 s: atterraggio entro 0,5 mm per 480 combinazioni
   di misura/altezza/sesso/nullo, angolo 35-40°, peso sempre sopra il suolo, posa continua, piedi dentro la pedana fino al rilascio,
   uscita dal lato posteriore, controller sulle gare demo 11 e 12). `tests/screenshots_shot.gd` (con finestra) salva i fotogrammi del
   tentativo: `-- cartella [--race=12] [--round=2] [--debug] [--instant]`.
-- Limiti: posa tarata su descrizioni biomeccaniche e non su un video di riferimento (non guardabile da qui); la rotazione del piede
-  attorno al perno non è comandata (l'IK posiziona solo la caviglia); le dita restano a riposo (la mano non stringe il peso); nessun
+- Limiti: posa tarata su descrizioni biomeccaniche e non su un video di riferimento (non guardabile da qui); il piede e' orizzontale ma
+  non pivota attorno alla punta (gira con il bacino, con una rotazione costante rispetto a esso); le dita restano a riposo (la mano non stringe il peso); nessun
   giudice nei concorsi; il disegno dell'arco della scia è una linea da 1 px.
 
 ## Riprese e grafica "da diretta TV"
@@ -147,6 +152,6 @@ la vista interna. «Salta alla fine» nel dialog chiude Godot.
 `RunnerView.gd` carica `Superhero_Male_FullBody.gltf` (65 ossa) e gli applica le animazioni `Crouch_Idle`,
 `Jog_Fwd`, `Sprint`, `Walk` di `UAL1_Standard.glb` (stesso scheletro, versione senza root motion). La cadenza
 dell'animazione segue la velocità reale (`speed / metri per ciclo`), così i piedi non scivolano. Il modello è
-quasi nudo: canotta, pantaloncini e scarpette sono copie della mesh del corpo gonfiate di pochi mm e tagliate per
+quasi nudo: canotta e pantaloncini sono copie della mesh del corpo gonfiate di pochi mm e tagliate per
 altezza con uno shader (UV2 = posizione a riposo), colorate con la squadra. Pelle (4 toni), capelli e altezza
-(1,72–1,88 m) sono deterministici dal nome dell'atleta. Gli asset pesano ~28 MB.
+(1,72–1,88 m) sono deterministici dal nome dell'atleta. **Scarpe** (`CharacterDress.add_shoes`): mesh a parte per ogni piede, ricavata dal profilo del piede del modello (maschile o femminile), appesa all'osso del piede; tomaia bianca, scura o grigia a scelta dal nome, striscia obliqua, linguetta del tallone e suola nei colori di squadra/neri, lacci. La suola sta nel volume del piede (la pelle resta il livello del suolo). Gli asset pesano ~28 MB.

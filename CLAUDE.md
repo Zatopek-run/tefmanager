@@ -303,10 +303,10 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   `mark_value` (solo il vincitore, non gli altri).
 - **Getto del peso** (2026-11-20, dettagli in `godot_viewer/README.md` «Getto del peso»). `models/ShotPutMotion.gd` (funzioni pure, **unica fonte**:
   pedana, cronologia, posa, volo) + `scripts/ShotPutRig.gd` (posa a mano + `TwoBoneIK3D`, nessuna animazione di lancio nella libreria CC0) +
-  `scripts/ShotPutView.gd` (peso, scia, cratere, nastro, bandierina). **Invariante: il peso atterra ESATTAMENTE a `C + u·(misura + 1,0675)`**:
+  `scripts/ShotPutView.gd` (peso, scia, terriccio, nastro, bandierina, arco del migliore; niente buche nel terreno). **Invariante: il peso atterra ESATTAMENTE a `C + u·(misura + 1,0675)`**:
   rilascio `R` scritto (mai riletto dallo scheletro), angolo fisso 36-38,5°, `v0` in forma chiusa, volo = funzione del tempo fissata a `tau ≥ T`.
-  `tests/verify_shotput.gd` (headless, secondi) lo controlla; **non rompere questa proprieta'**. Solo le prove del giocatore sono animate
-  (`step["animate"]`); il piano del tentativo sta in `step["plan"]` (`ShotPutMotion.Plan`). Altezza dell'atleta = `RunnerData.visual_height` (la usa
+  `tests/verify_shotput.gd` (headless, secondi) lo controlla; **non rompere questa proprieta'**. Tutte le prove sono animate
+  (nel peso `step["animate"]` e' sempre vero; un arco dorato sul terreno segna il miglior lancio); il piano del tentativo sta in `step["plan"]` (`ShotPutMotion.Plan`). Altezza dell'atleta = `RunnerData.visual_height` (la usa
   anche `RunnerView`: devono coincidere). Rilascio a ~1,06·H, non 2,2 m. **Scelte dell'utente:** niente gabbia, settore disegnato a 30 m (non 100).
   `ShotPutMotion.Mode`/`Phase` guidano rig e regia; la posa e' tarata a descrizioni biomeccaniche, **non** su un video (da giudicare a occhio).
 - **Ambiente** (solo vista, nessun effetto su tempi o ordine). `scripts/AdBoards.gd`: cartelloni LED con sponsor di

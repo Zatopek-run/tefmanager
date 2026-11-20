@@ -232,7 +232,7 @@ Lavoro solo in `godot_viewer/` (niente `models/` né `views/`). Vedi `godot_view
 **Limiti / da tenere d'occhio (non corretti):**
 - **La posa non e' stata confrontata con un video di riferimento** (non raggiungibile da qui): e' tarata su descrizioni biomeccaniche e sui numeri
   del modello. Provati solo fotogrammi (`tests/screenshots_shot.gd`), **non** la fluidita' del movimento a schermo né con il mouse.
-- La rotazione del piede attorno al perno non e' comandata (l'IK posiziona solo la caviglia: durante la rotazione la punta del piede non gira);
+- Il piede e' tenuto orizzontale da `ShotPutRig.FootLevel` ma non pivota attorno alla punta (gira con il bacino, rotazione costante rispetto a esso);
   le dita restano a riposo (la mano non stringe il peso); al rilascio il peso passa da «in mano» (polso reale + scarto) a «in volo» da `R`:
   l'IK non arriva esattamente al bersaglio: misurato con `screenshots_shot.gd` (finestra vera, gare 11 e 12) il peso in mano dista 3,3-3,5 cm da R pochi centesimi prima del rilascio (peso da 12 cm), cioe' un piccolo salto visibile solo da vicino.
 - Il tempo del tentativo animato e' fisso (≈ 10 s a 1x): 6 prove ≈ 1 minuto di sola atleta del club. A 8x resta accettabile.
@@ -248,3 +248,28 @@ Lavoro solo in `godot_viewer/` (niente `models/` né `views/`). Vedi `godot_view
   sull'atleta 0,25 s mentre il peso (13 m/s) usciva dall'inquadratura (ora 0,08 s, `SPIN_AFTER_REL`) e la panoramica sul settore non conteneva i lanci
   oltre ~20 m (allargata). Il test e' stato adattato in un solo punto: nella fase `EXIT` il bersaglio previsto e' l'atleta che esce, non il peso
   gia' atterrato (`_world_of`). Le camere `_sp_*` risultano di tipo «start» (inquadratura contenente il bersaglio), non «pan».
+
+### Richieste successive sul peso e sulle scarpe (2026-11-20)
+
+- **Scarpe per tutti gli atleti** (tutte le gare): prima i piedi erano la mesh del corpo gonfiata e tagliata per altezza (`add_cloth`, «scarpette»),
+  cioe' pelle con uno strato bianco. Ora `CharacterDress.add_shoes` costruisce una mesh per piede dal profilo del piede del modello, appesa all'osso
+  (`BoneAttachment3D`). La suola sta nel volume del piede. **Non** si flette alla punta (l'osso `ball_*` non e' usato) e non ci sono chiodi. Le
+  scarpe di giudici e fotografi (`TrackSideCrew`) restano le vecchie scarpe gonfie.
+- **«Piedi che sprofondano nella pedana»**: due cause. (1) L'IK posiziona solo la caviglia e il piede seguiva l'inclinazione dello stinco (punta
+  in giu'). (2) `ANKLE_H` era 4,75% di H per entrambi i sessi, ma la caviglia sta a 5,28% (M) e 4,46% (F) sopra la suola. Corretto con `FootLevel`
+  (piede orizzontale dopo l'IK) e quota per sesso. Gli altri eventi non usano questo rig: ai blocchi (`SetPoseRig`) e in corsa il piede segue ancora
+  il suo osso; non e' stato rivisto.
+- **Tutti i lanci animati**: ≈ 10 s ciascuno, 6 concorrenti ≈ 6 minuti a 1x (a 2x/4x/8x molto meno). Non c'e' un tasto «prossimo lancio»: c'e' solo
+  «Salta alla fine» (che salta tutta la gara). Da valutare se serve.
+- **Arco del miglior lancio**: un arco per il solo migliore (non uno per concorrente). Il nome sta nel testo sul terreno; i nulli non lasciano segno
+  (il loro valore esportato e' nominale).
+- **Piedi sotto terra in ingresso e in uscita dalla pedana** (segnalato dall'utente): non era la pedana ma le animazioni `Walk` e `Idle`, che abbassano
+  il corpo rispetto al riposo: misurato nella scena vera (`screenshots_shot.gd --soles`) la suola scende fino a 5,7 cm (M) e 4,9 cm (F) sotto il
+  livello del nodo, con la terra battuta a quota 0. Compenso in `ShotPutMotion` (`WALK_SINK*`, `IDLE_SINK*` in frazioni di H, per sesso, piu' la
+  quota del terreno: pedana 1,2 cm dentro il cerchio, terra fuori). **Lo stesso abbassamento puo' valere per `Walk`/`Idle` negli altri eventi** (a fine
+  gara, dopo il traguardo): non verificato né corretto, fuori dal peso. La misura dell'attesa maschile (`IDLE`) e' sporcata dal passaggio fra le due
+  animazioni (0,25 s): si e' usato il valore massimo trovato.
+- **Crateri tolti** (richiesta dell'utente): il peso non lascia più nessuna buca, né per il lancio in corso né per quelli già fatti. Restano il
+  terriccio sollevato all'impatto, il nastro, la bandierina e l'arco dorato del migliore. Conseguenza: sul terreno non resta un segno per ogni
+  lancio (prima i valid lasciavano un cratere): se serve vedere dove sono caduti tutti, e' una scelta di design da prendere (es. puntini o
+  bandierine piccole).
