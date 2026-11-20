@@ -335,3 +335,29 @@ Lettura: «Conservativo» serve nella 4x100m con poco affiatamento (≤ 50) ed �
 **Limiti dichiarati:** (1) un salvataggio di un esonerato non è segnalato nell'elenco della schermata iniziale (come invece «SOCIETÀ FALLITA»); (2) non c'è modo di continuare dopo l'esonero (nessun nuovo club): è un game over, come il fallimento; (3) **non provato con il mouse reale**; (4) un dilemma non cambia nulla sul verdetto, ma il rifiuto del dilemma azzera un budget negativo (AUDIT R7) e può quindi aiutare il bilancio.
 
 **Da decidere:** (a) confermare le cifre; (b) **il Board è troppo facile da soddisfare senza giocare**: con 2 su 3, bilancio e record bastano. Opzioni: tenere così; rendere il piazzamento obbligatorio; alzare i record (3 o 4, o solo record che battono un primato esistente); (c) dopo l'esonero: solo game over, o l'offerta di un altro club (non c'è nel piano).
+
+## Q28 — Ritiro e post-carriera (PIANOLAVORO C.3) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+
+**Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) «infortunato grave» = **almeno 3 infortuni nella stessa stagione**, con un contatore per atleta (`season_injuries`, schema v17); (2) l'ex atleta che diventa allenatore è
+un'**offerta da accettare** (pulsante), non un'assunzione automatica; (3) le abilità dell'allenatore si ricavano dagli **attributi dell'atleta**, non dal PB; (4) probabilità di ritiro **33 anni 25%, 34 anni 50%, 35+ certo**.
+
+**Cosa c'è** (`models/career.py`, `simulation.retire_veterans`, schema v17): al cambio stagione, in Carriera, dopo il +1 d'età e prima del rinnovo dei contratti, ogni atleta della Prima Squadra può ritirarsi (33 anni 25%, 34 anni 50%,
+35+ certo; da 30 anni con 3+ infortuni in stagione 35%, mai sotto la chance dell'età). L'ultimo atleta della Prima Squadra non si ritira. Chi si ritira esce dalla rosa (formazione e staffette si ricompongono) e va nella lista
+«Ex atleti» della scheda *Albo & Record*. Un ex atleta su dieci (10%) si offre come allenatore: lo si assume a €750 con le sue abilità (principale e secondaria 55-85 dai suoi attributi), con le regole di `hire_coach` (1 a settimana, massimo
+6 specializzati); l'offerta scade al cambio stagione successivo.
+
+**Cifre PROVVISORIE (`BALANCE.md` §M):** tutte quelle sopra, più 30 anni come età minima per il ritiro da infortuni, 35% di chance da infortuni, €750 di ingaggio, tetto di 100 ex atleti ricordati.
+
+**Scostamenti dal piano:** (1) il piano scrive `is_retired` in `Athlete`: **non** si tiene l'atleta ritirato in `state.athletes` con un flag (ogni ciclo su atleti, stipendi, formazione, staffette, ranking, contratti, carichi degli
+allenatori e caricamento del DB avrebbe dovuto filtrarlo): l'`Athlete` esce dalla lista e resta un ricordo `RetiredAthlete` (in `game_state.retired_json`); (2) il piano mette la logica in `generator.py` («generare allenatori da atleti
+ritirati»): le regole pure stanno in un modulo nuovo `models/career.py` (senza Qt e senza RNG, come `board.py`) e l'orchestrazione in `simulation.py`; la creazione del `Coach` è in `GameController.hire_retired_coach`; (3) il piano dà
+le abilità «basate su PB»: scelta dell'utente, dagli attributi; (4) la lista è nella scheda *Albo & Record*, non in una scheda nuova.
+
+**Misura (autopilota, nessuna azione del giocatore, 6 partite, 8 stagioni):** la Prima Squadra passa da 16 a 3-8 atleti e i ritirati sono 8-13 (AUDIT R24); le offerte da allenatore sono rare (0-1 vive per stagione).
+
+**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen sui metodi collegati ai pulsanti); (2) le estrazioni del ritiro stanno prima di quelle dei rivali (TICK 16b'): una partita con atleti di 33+ anni
+cambia la sequenza dell'RNG dopo il primo cambio stagione; (3) l'età di partenza della rosa (19-32 anni) fa sì che molti veterani si ritirino già nelle prime stagioni; (4) un ex atleta non torna e non ha altro seguito oltre al ruolo di
+allenatore: niente dirigente, niente ex campione che porta fan o sponsor.
+
+**Da decidere:** (a) confermare le cifre; (b) **chi rimpiazza i ritirati**: oggi solo il giocatore (vivaio, scouting, mercato), quindi in autopilota la squadra si svuota; opzioni: tenere così; far arrivare qualche giovane a costo zero al
+cambio stagione; abbassare le probabilità; (c) se l'ex campione allenatore debba avere un effetto in più (sponsor, fan, prestigio).

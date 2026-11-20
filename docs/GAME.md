@@ -110,6 +110,7 @@ calcolata da `age`, non salvata, mostrata nella scheda atleta.
 - `EventDefinition`: evento (nome, tipo corsa/concorso, sensibile al vento, record del mondo, ancore dei livelli). Eventi: `100m`, `400m`,
   `800m`, `1500m`, `Salto in Lungo`, `Getto del Peso`; `RelayDefinition`: `4x100m`, `4x400m`.
 - `Coach`: 4 abilità 1-100 (Velocità, Resistenza, Forza, Tecnica), tier, tipo (specializzato su una disciplina o del vivaio).
+- `RetiredAthlete`: ricordo di un ex atleta del club (nome, disciplina, età e stagione del ritiro, motivo, PB, offerta da allenatore con le sue abilità); l'`Athlete` esce da `GameState.athletes` (§5.16).
 - `Relay`: 4 frazionisti in ordine + riserva, `harmony` (affiatamento 0-100), `last_change_week`.
 - `RivalClub`/`RivalAthlete`: società avversarie persistenti (livello, ambizione, storia del livello, un atleta per gara, `ranking_points`).
 - `SyntheticAthlete`: atleta di fantasia del ranking mondiale (nome, nazionalità, evento, sesso, livello, punti); non gareggia con il club (§5.15).
@@ -133,7 +134,7 @@ sceglie l'atteggiamento, compone le staffette, spende soldi (staff, impianti, sc
 6. Decadimento abilità degli allenatori; affiatamento staffette; **evoluzione dei rivali**; usura della pista.
 7. Fedeltà sponsor +2; azzera i punti scouting; **`week += 1`**.
 8. Solo Carriera, ogni 12 settimane: cambio **fase** (Outdoor → Cross → Indoor). A fine ciclo (36 sett.): verdetto di lega, nuova stagione,
-   azzeramento classifica di lega, +1 anno a tutti gli atleti, rinnovo dei rivali, poi **contratti scaduti**: rinnovo automatico (1-3 stagioni, senza costo e senza RNG) o, per chi ha «Non rinnovare», uscita dalla società (§5.9).
+   azzeramento classifica di lega, +1 anno a tutti gli atleti, **ritiro dei veterani** (§5.16), rinnovo dei rivali, poi **contratti scaduti**: rinnovo automatico (1-3 stagioni, senza costo e senza RNG) o, per chi ha «Non rinnovare», uscita dalla società (§5.9).
 9. Promozione automatica dal vivaio a 18 anni; **convocazioni non più ammesse sostituite** (tetto di 2 gare individuali + 1 staffetta, under 20 fuori da «Finale Oro / Coppa Europa», `normalize_assignments`); notizie; valutazione obiettivi; possibile **dilemma etico**; troncamento dei registri.
 
 Dopo il tick il controller azzera in memoria i risultati dello scouting e il pool del mercato, **salva** su SQLite ed emette i segnali:
@@ -257,7 +258,7 @@ Gli atleti guadagnano **fan** con piazzamenti, PB e record (i fan non calano mai
 
 ### 5.14 Record e PB
 
-Per atleta e per evento si tiene il **PB** (solo con vento legale); la società ha **record sociali** per evento e divisione, più un albo e una scheda «Albo & Record». Si segnano «momenti storici» (misure oltre una soglia storica per evento).
+Per atleta e per evento si tiene il **PB** (solo con vento legale); la società ha **record sociali** per evento e divisione, più un albo e una scheda «Albo & Record» (con anche la lista degli **ex atleti**, §5.16). Si segnano «momenti storici» (misure oltre una soglia storica per evento).
 
 ### 5.15 Ranking (C.1, 2026-11-20; cifre provvisorie, `QUESTIONS.md` Q26)
 
@@ -266,6 +267,21 @@ Ogni piazzamento in una gara **individuale** dà punti ranking: `RANKING_PLACE_P
 Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. Usano **l'RNG della partita** (convenzione 3; scelta dell'utente, Q26): il campo si crea con `rng` alla partita nuova e al caricamento di un salvataggio v14, e a ogni meeting estraggono da `r` al passo C-13b del tick; essendo lo stato dell'RNG salvato, ricaricare dà gli stessi risultati. Aggiungere il ranking ha spostato le estrazioni di ogni partita a parità di seme.
 
 Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + club), **nazionale** (solo `Italia`, Top 50), **società** (le società del livello attuale, per somma dei punti dei loro atleti). Un atleta del club fuori dalla Top N compare comunque in fondo alla tabella con il suo posto vero. Oggi è **solo informativo** (nessun effetto su sponsor, premi, inviti): gli inviti Diamond League sono il sottopunto C.1b, da decidere. Calibrazione misurata: chi vince sempre in Fase regionale resta fuori dalla Top 100, in Finale Oro è 1°.
+
+### 5.16 Ritiro e post-carriera (C.3, 2026-11-20; cifre provvisorie, `QUESTIONS.md` Q28)
+
+Solo in **Carriera**, al cambio stagione, dopo il +1 d'età e **prima** del rinnovo dei contratti: ogni atleta della **Prima Squadra** (il vivaio no) può ritirarsi. Probabilità per età: 33 anni **25%**, 34 anni **50%**,
+da 35 anni **certo**. Ritiro anticipato per infortuni: da 30 anni, con **almeno 3 infortuni nella stagione appena chiusa** (`Athlete.season_injuries`: allenamento e ritiro in gara; la squalifica per doping non conta), 35% di
+probabilità (non scende mai sotto quella dell'età). L'**ultimo atleta** della Prima Squadra non si ritira mai (come per i contratti). Chi si ritira esce da formazione e staffette, che si ricompongono da sole, e finisce
+nella lista **«Ex atleti»** della scheda *Albo & Record* (gli ultimi 100, con stagione, età, motivo e stato); una notizia annuncia il ritiro.
+
+**Post-carriera:** un ex atleta su dieci (10%) **si offre come allenatore** della società. Non entra in automatico (costerebbe lo stipendio senza chiedere): nella lista compare «Disponibile come allenatore» e il
+pulsante **«Assumi come allenatore»** lo ingaggia a **€750** (ridotto: ex atleta della casa; un allenatore di livello 1 ne costa 1.500), con le solite regole (un allenatore a settimana, massimo 6 specializzati). Le sue
+abilità vengono dagli **attributi che aveva da atleta**, non dal PB: principale e secondaria della sua disciplina (come per gli altri allenatori) limitate a 55-85, la secondaria 10 punti sotto, le altre al livello base 25.
+L'offerta **scade al cambio stagione successivo**.
+
+**Conseguenza di gioco:** nessuno rimpiazza chi si ritira da solo; si rimpiazza con il vivaio (promozione a 18 anni), lo scouting e il mercato. Un club in autopilota (nessun acquisto, 6 partite, 8 stagioni) passa da
+16 atleti a 3-8 (AUDIT R24).
 
 ---
 
@@ -284,7 +300,7 @@ Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + c
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 16`** (v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 17`** (v17 = `athletes.season_injuries` e `game_state.retired_json`, C.3; v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -338,7 +354,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 345 test, ~50 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 377 test, ~60 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
@@ -355,7 +371,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - ✅ **1.1** migrazione transazionale con backup, ✅ **1.2** rifiuto delle versioni sconosciute (fatti).
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
-- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). Prossimo: C.3 (ritiro e post-carriera).
+- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). Prossimo: D (mercato e finanze).
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 

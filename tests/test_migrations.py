@@ -728,5 +728,57 @@ class TestMigrationV16Board(_TmpCase):
         self.assertEqual(user_version(path), 15)
 
 
+class TestMigrationV17Retirement(_TmpCase):
+    """v16 → v17 (C.3): `athletes.season_injuries` (default 0) e `game_state.retired_json` (default `'[]'`)."""
+
+    def test_v16_save_gets_the_columns_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 17)
+        self.assertIn(16, MIGRATIONS)
+        path = make_save(self.slot("v16"), 16)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("retired_json", column_names(conn, "game_state"))  # la fixture è davvero v16
+            self.assertNotIn("season_injuries", column_names(conn, "athletes"))
+            self.assertIn("board_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT retired_json FROM game_state WHERE id = 1").fetchone(), ("[]",))
+            self.assertEqual(conn.execute("SELECT season_injuries FROM athletes WHERE id = 1").fetchone(), (0,))
+            self.assertIn(("retired_json", "TEXT", 1, "'[]'", 0), columns(conn, "game_state"))
+            self.assertIn(("season_injuries", "INTEGER", 1, "0", 0), columns(conn, "athletes"))
+        sentinel_ok(self, path, 16)
+        backup = self.backups("v16")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 16)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("retired_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 16)
+
+    def test_a_migrated_save_loads_with_no_retired_and_no_injuries(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v17")
+        state = make_state(3)
+        state.athletes[0].season_injuries = 3
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # come dopo la migrazione: le colonne hanno il valore di default
+            conn.execute("UPDATE game_state SET retired_json = '[]'")
+            conn.execute("UPDATE athletes SET season_injuries = 0")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(loaded.retired, [])
+        self.assertTrue(all(a.season_injuries == 0 for a in loaded.athletes))
+
+    def test_failed_v16_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v16"), 16)
+        before = sha(path)
+        broken = {"game_state": [("retired_json", "TEXT NOT NULL DEFAULT '[]'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {16: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 16)
+
+
 if __name__ == "__main__":
     unittest.main()

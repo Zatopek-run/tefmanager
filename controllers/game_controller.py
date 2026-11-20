@@ -25,10 +25,12 @@ from models.entities import (
     COACH_MAX_TIER,
     COACH_STAT_LABELS,
     COACH_STATS,
+    Coach,
     EVENTS,
     INTERNATIONAL_MIN_AGE,
     MAX_SPECIALIZED_COACHES,
     MAX_YOUTH_COACHES,
+    RETIRED_COACH_HIRE_COST,
     RELAY_CHANGE_COOLDOWN_WEEKS,
     RELAYS,
     Relay,
@@ -777,6 +779,44 @@ class GameController(QObject):
         state.news_log.insert(
             0,
             f"Sett. {state.week}: Ingaggiato l'allenatore {coach.name} ({coach.kind_label}: {skills}).",
+        )
+        self._persist(state)
+        self.state_changed.emit(state)
+        self.status_message.emit(f"Assunto {coach.name} (€{coach.weekly_wage}/sett).")
+        return True
+
+    def hire_retired_coach(self, index: int) -> bool:
+        """Assume come allenatore un ex atleta che si è offerto (C.3): `index` è la riga di `state.retired`.
+
+        Stesse regole di `hire_coach` (un allenatore a settimana, massimo di specializzati), ingaggio ridotto
+        `RETIRED_COACH_HIRE_COST`. Non usa l'RNG: abilità e nome sono quelli dell'ex atleta.
+        """
+        state = self.state
+        if not 0 <= index < len(state.retired):
+            return False
+        ex = state.retired[index]
+        if not ex.coach_offer or not ex.coach_skills:
+            self.status_message.emit("Questo ex atleta non è disponibile come allenatore.")
+            return False
+        if state.coach_hired_week == state.week:
+            self.status_message.emit("Puoi assumere un solo allenatore a settimana.")
+            return False
+        if sum(1 for c in state.coaches if not c.is_youth_coach) >= MAX_SPECIALIZED_COACHES:
+            self.status_message.emit(f"Hai già il massimo di allenatori specializzati ({MAX_SPECIALIZED_COACHES}).")
+            return False
+        if not self._pay(RETIRED_COACH_HIRE_COST, f"Ingaggio allenatore (ex atleta {ex.name})", "Allenatori"):
+            return False
+        coach = Coach(id=None, name=ex.name, specialty=ex.specialty, skills=dict(ex.coach_skills))
+        coach.id = max((c.id or 0 for c in state.coaches), default=0) + 1
+        state.coaches.append(coach)
+        state.coach_hired_week = state.week
+        ex.coach_offer = False
+        ex.became_coach = True
+        for a in state.athletes:
+            if state.coach_of(a) is None and coach.can_train(a):
+                a.coach_id = coach.id
+        state.news_log.insert(
+            0, f"Sett. {state.week}: {ex.name}, ex atleta della società, è il nuovo allenatore ({coach.kind_label})."
         )
         self._persist(state)
         self.state_changed.emit(state)

@@ -40,9 +40,11 @@ from models.entities import (
     BOARD_MAX_FAILED_STREAK,
     PROMOTION_SPOTS,
     RELEGATION_SPOTS,
+    COACH_BASE_SKILL,
     COACH_COMFORT_LOAD,
     COACH_STAT_LABELS,
     COACH_STATS,
+    RETIRED_COACH_HIRE_COST,
     MAX_SPECIALIZED_COACHES,
     MAX_YOUTH_COACHES,
     RELAY_CHANGE_COOLDOWN_WEEKS,
@@ -2363,7 +2365,52 @@ class RecordsTab(QWidget):
         milestones_lay.addWidget(self.milestones_list)
         bottom_row.addWidget(milestones_panel, stretch=2)
 
+        retired_panel = QFrame()
+        retired_panel.setObjectName("SectionPanel")
+        retired_lay = QVBoxLayout(retired_panel)
+        retired_lay.setContentsMargins(14, 12, 14, 12)
+        retired_title = QLabel("Ex atleti")
+        retired_title.setObjectName("SectionHeader")
+        retired_lay.addWidget(retired_title)
+        self.retired_table = QTableWidget(0, 5)
+        self.retired_table.setHorizontalHeaderLabels(["Nome", "Disciplina", "Età", "Stagione", "Stato"])
+        self.retired_table.setAlternatingRowColors(True)
+        self.retired_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.retired_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.retired_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.retired_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.retired_table.verticalHeader().setVisible(False)
+        self.retired_table.itemSelectionChanged.connect(self._update_retired_button)
+        retired_lay.addWidget(self.retired_table)
+        self.hire_retired_button = QPushButton("Assumi come allenatore")
+        self.hire_retired_button.setEnabled(False)
+        self.hire_retired_button.clicked.connect(self._hire_selected_retired)
+        retired_lay.addWidget(self.hire_retired_button)
+        bottom_row.addWidget(retired_panel, stretch=3)
+
         root.addLayout(bottom_row, stretch=2)
+
+    def _selected_retired_index(self) -> Optional[int]:
+        rows = self.retired_table.selectionModel().selectedRows()
+        return rows[0].row() if rows else None
+
+    def _update_retired_button(self) -> None:
+        """Abilitato solo se l'ex atleta selezionato è disponibile come allenatore (C.3)."""
+        idx = self._selected_retired_index()
+        retired = self.controller.state.retired
+        ok = idx is not None and idx < len(retired) and retired[idx].coach_offer
+        self.hire_retired_button.setEnabled(bool(ok))
+        if ok:
+            ex = retired[idx]
+            skills = ", ".join(f"{COACH_STAT_LABELS[k]} {v}" for k, v in ex.coach_skills.items() if v > COACH_BASE_SKILL)
+            self.hire_retired_button.setToolTip(
+                f"{ex.name}: {skills}. Ingaggio €{RETIRED_COACH_HIRE_COST:,} (ridotto: ex atleta della società)."
+            )
+
+    def _hire_selected_retired(self) -> None:
+        idx = self._selected_retired_index()
+        if idx is not None:
+            self.controller.hire_retired_coach(idx)
 
     @staticmethod
     def _make_records_panel(parent_row: QHBoxLayout, title_text: str) -> QTableWidget:
@@ -2431,6 +2478,20 @@ class RecordsTab(QWidget):
                 if col == 3 and color:
                     item.setForeground(QColor(color))
                 self.seasons_table.setItem(row, col, item)
+
+        selected = self._selected_retired_index()
+        self.retired_table.setRowCount(len(state.retired))
+        for row, ex in enumerate(state.retired):
+            vals = [ex.name, f"{ex.specialty.value} ({ex.gender})", str(ex.age), f"{ex.season}", ex.status_label]
+            for col, text in enumerate(vals):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 4 and ex.coach_offer:
+                    item.setForeground(QColor("#0de0cc"))
+                self.retired_table.setItem(row, col, item)
+        if selected is not None and selected < len(state.retired):
+            self.retired_table.selectRow(selected)
+        self._update_retired_button()
 
         self.milestones_list.clear()
         if state.milestones:

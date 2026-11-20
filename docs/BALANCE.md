@@ -223,3 +223,20 @@ Calibrazione: vedi Q26 (chi vince sempre in Fase regionale resta fuori dalla Top
 | `BOARD_MAX_FAILED_STREAK` | 2 stagioni fallite di fila → esonero (game over) | `entities.py` |
 
 Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilancio 83%, record 100%; stagione fallita 17%; esonerati entro la 2ª stagione 2 su 30 (Q27).
+
+## M. Ritiro e post-carriera (PIANOLAVORO C.3, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q28)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `RETIREMENT_MIN_AGE` / `RETIREMENT_CHANCE_BY_AGE` | dal 33° anno: 33 → 25% · 34 → 50% (una estrazione a cambio stagione) | `entities.py` |
+| `RETIREMENT_CERTAIN_AGE` | 35: ritiro certo | `entities.py` |
+| `RETIREMENT_INJURY_MIN_AGE` | 30: età minima per il ritiro anticipato per infortuni | `entities.py` |
+| `RETIREMENT_INJURIES_PER_SEASON` | 3 infortuni nella stagione appena chiusa = «infortunato grave» (gli infortuni durano 1-4 sett.) | `entities.py` |
+| `RETIREMENT_INJURY_CHANCE` | 35% (mai sotto la chance dell'età) | `entities.py` |
+| `RETIRED_COACH_CHANCE` | 10% degli ex atleti si offre come allenatore | `entities.py` |
+| `RETIRED_COACH_HIRE_COST` | €750 (livello 1 = 1.500) | `entities.py` |
+| `RETIRED_COACH_SKILL_MIN` / `_MAX` | 55-85: abilità principale e secondaria dagli attributi dell'atleta | `entities.py` |
+| `RETIRED_COACH_SECONDARY_GAP` | 10: la secondaria vale 10 meno della principale (come `coach_hire_skills`) | `entities.py` |
+| `MAX_RETIRED_LIST` | 100 ex atleti ricordati | `entities.py` |
+
+Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 16 a 3-8 atleti, 8-13 ritirati, 0-1 offerte da allenatore vive per stagione (Q28, AUDIT R24).

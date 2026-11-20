@@ -311,6 +311,24 @@ MAX_INDIVIDUAL_EVENTS = 2
 INTERNATIONAL_MIN_AGE = 20
 # Contratti (Q22): durata di 1-3 stagioni, rinnovo automatico alla scadenza; per annullarlo si svincola l'atleta.
 CONTRACT_MAX_SEASONS = 3
+# Ritiro (C.3), valutato una volta al cambio stagione sulla Prima Squadra, dopo l'incremento dell'età. CIFRE PROVVISORIE
+# (QUESTIONS Q28). Chance per età (a partire da RETIREMENT_MIN_AGE); da RETIREMENT_CERTAIN_AGE il ritiro è certo.
+RETIREMENT_MIN_AGE = 33
+RETIREMENT_CHANCE_BY_AGE: Dict[int, float] = {33: 0.25, 34: 0.50}
+RETIREMENT_CERTAIN_AGE = 35
+# Ritiro anticipato per «infortunato grave»: gli infortuni durano 1-4 settimane, quindi «grave» = stagione tormentata,
+# cioè almeno RETIREMENT_INJURIES_PER_SEASON infortuni nella stessa stagione (`Athlete.season_injuries`, azzerato a ogni
+# cambio stagione), da RETIREMENT_INJURY_MIN_AGE anni in su. La chance non scende mai sotto quella dell'età.
+RETIREMENT_INJURY_MIN_AGE = 30
+RETIREMENT_INJURIES_PER_SEASON = 3
+RETIREMENT_INJURY_CHANCE = 0.35
+# Post-carriera: probabilità che un ex atleta diventi allenatore (offerta al giocatore, non assunzione automatica).
+RETIRED_COACH_CHANCE = 0.10
+RETIRED_COACH_HIRE_COST = 750  # ingaggio ridotto (un allenatore di livello 1 costa 1.500): è un ex atleta della casa
+RETIRED_COACH_SKILL_MIN = 55  # abilità principale e secondaria dall'attributo che aveva da atleta, limitate a [min, max]
+RETIRED_COACH_SKILL_MAX = 85
+RETIRED_COACH_SECONDARY_GAP = 10  # la secondaria vale meno della principale, come in `coach_hire_skills`
+MAX_RETIRED_LIST = 100  # ex atleti ricordati (i più recenti)
 
 
 def age_category(age: int) -> str:
@@ -603,6 +621,7 @@ class Athlete:
     gender: str = "M"
     contract_no_renew: bool = False  # il giocatore non vuole rinnovarlo: alla scadenza lascia la società
     ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1)
+    season_injuries: int = 0  # infortuni subiti nella stagione in corso (C.3: ritiro anticipato)
 
     @property
     def gender_label(self) -> str:
@@ -720,6 +739,36 @@ class Coach:
         if self.specialty is None:
             return athlete.in_youth_squad
         return self.specialty == athlete.specialty
+
+
+@dataclass
+class RetiredAthlete:
+    """Un ex atleta della società (C.3): resta solo questo ricordo, l'`Athlete` esce da `GameState.athletes`.
+
+    `coach_skills` è valorizzato solo se l'ex atleta si è offerto come allenatore (post-carriera): finché `coach_offer`
+    è vero il giocatore può assumerlo (`GameController.hire_retired_coach`); l'offerta scade al cambio stagione dopo.
+    """
+
+    name: str
+    gender: str
+    specialty: Specialty
+    age: int  # età al ritiro
+    season: int  # stagione appena chiusa al momento del ritiro
+    reason: str  # «Età» o «Infortuni»
+    nationality: str = "Italia"
+    overall: int = 0
+    personal_best_display: Optional[str] = None
+    coach_skills: Dict[str, int] = field(default_factory=dict)
+    coach_offer: bool = False
+    became_coach: bool = False
+
+    @property
+    def status_label(self) -> str:
+        if self.became_coach:
+            return "Allenatore della società"
+        if self.coach_offer:
+            return "Disponibile come allenatore"
+        return "In pensione"
 
 
 @dataclass
@@ -1051,6 +1100,7 @@ class GameState:
     # Stato completo dell'RNG della partita (`random.Random.getstate()` come lista JSON); vuoto = salvataggio vecchio (A.3).
     rng_state: List = field(default_factory=list)
     coaches: List[Coach] = field(default_factory=list)
+    retired: List[RetiredAthlete] = field(default_factory=list)  # ex atleti (C.3), i più recenti in testa
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
     rival_clubs: List[RivalClub] = field(default_factory=list)

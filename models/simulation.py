@@ -13,6 +13,9 @@ from models.entities import (
     COACH_BASE_SKILL,
     COACH_COMFORT_LOAD,
     COACH_NO_COACH_MULT,
+    MAX_RETIRED_LIST,
+    RETIRED_COACH_CHANCE,
+    RetiredAthlete,
     RELAY_DQ_MARK,
     RIVAL_RACE_SIGMA,
     RIVAL_RETIREMENT_AGE,
@@ -78,6 +81,7 @@ from models.entities import (
     WeatherCondition,
 )
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
+from models.career import make_retired, retirement_chance
 from models.ranking import (
     award_event_points,
     award_place,
@@ -512,6 +516,7 @@ def apply_weekly_training(
             if has_physio and base_weeks > 1:
                 base_weeks -= 1
             athlete.injured_weeks = base_weeks
+            athlete.season_injuries += 1
             athlete.form = clamp_stat(athlete.form - 18, 5, 100)
             injury_note = (
                 f"{athlete.name} ha subito uno stiramento muscolare (Fatica {athlete.fatigue}) "
@@ -913,6 +918,7 @@ def simulate_competition(
                 p_disp = DNF_MARK
                 weeks_out = r.randint(1, 3) + (1 if attitude == RaceAttitude.AGGRESSIVO else 0)
                 player_athlete.injured_weeks = max(player_athlete.injured_weeks, weeks_out)
+                player_athlete.season_injuries += 1
                 player_athlete.form = clamp_stat(player_athlete.form - 15, 5, 100)
                 state.news_log.insert(
                     0,
@@ -1581,14 +1587,60 @@ def renew_expiring_contracts(state: GameState) -> List[str]:
     return notes
 
 
-def _remove_athletes_from_assignments(state: GameState, leaving: List[Athlete]) -> List[str]:
-    """Toglie dalla società gli atleti a fine contratto e ricompone formazione e staffette rimaste scoperte."""
+def retire_veterans(state: GameState, rng: random.Random) -> List[str]:
+    """Ritiro e post-carriera (C.3), al cambio stagione dopo l'incremento dell'età e prima del rinnovo dei contratti.
+
+    Per ogni atleta della Prima Squadra, in ordine di lista, con probabilità di ritiro > 0 (`retirement_chance`) si
+    estrae **una** `rng.random()`; per chi si ritira ne segue **un'altra** (`RETIRED_COACH_CHANCE`: si offre come
+    allenatore). Chi non è eleggibile non consuma estrazioni. L'ultimo atleta della Prima Squadra non può andarsene
+    (come nei contratti): resta senza estrarre il secondo numero. Gli ex atleti vanno in `state.retired` (più recenti
+    in testa); le offerte da allenatore delle stagioni precedenti scadono. Azzera `season_injuries` di tutti.
+    """
+    for old in state.retired:
+        old.coach_offer = False  # l'offerta vale fino al cambio stagione successivo
+    season_closed = state.season_number - 1  # `season_number` è già incrementato
+    squad_size = len(state.main_squad)
+    leaving: List[Athlete] = []
+    memories: List[RetiredAthlete] = []
+    for athlete in list(state.main_squad):
+        chance, reason = retirement_chance(athlete)
+        if chance <= 0 or rng.random() >= chance:
+            continue
+        if squad_size - len(leaving) <= 1:
+            continue  # l'ultimo atleta della Prima Squadra resta
+        offer = rng.random() < RETIRED_COACH_CHANCE
+        memories.append(make_retired(athlete, season_closed, reason, offer))
+        leaving.append(athlete)
+    state.retired[0:0] = reversed(memories)  # il più recente in testa
+    del state.retired[MAX_RETIRED_LIST:]
+    for a in state.athletes:
+        a.season_injuries = 0
+    if not leaving:
+        return []
+    notes = _remove_athletes_from_assignments(state, leaving, announce=False)
+    for a, memory in zip(leaving, memories):
+        text = f"Sett. {state.week}: {a.name} ({a.age} anni, {a.specialty.value}) si ritira dall'attività"
+        text += " per i troppi infortuni." if memory.reason == "Infortuni" else "."
+        if memory.coach_offer:
+            text += " Si offre come allenatore della società (scheda Albo)."
+        notes.append(text)
+    return notes
+
+
+def _remove_athletes_from_assignments(
+    state: GameState, leaving: List[Athlete], announce: bool = True
+) -> List[str]:
+    """Toglie dalla società gli atleti che escono (fine contratto o ritiro) e ricompone formazione e staffette.
+
+    Con `announce` scrive la notizia «lasciato a fine contratto»; il ritiro scrive le sue (`retire_veterans`).
+    """
     gone = {a.id for a in leaving}
     state.athletes = [a for a in state.athletes if a.id not in gone]
-    notes = [
-        f"Sett. {state.week}: {a.name} ha lasciato la società a fine contratto (non rinnovato)."
-        for a in leaving
-    ]
+    notes = (
+        [f"Sett. {state.week}: {a.name} ha lasciato la società a fine contratto (non rinnovato)." for a in leaving]
+        if announce
+        else []
+    )
     for gender in ("M", "F"):
         lineup = state.lineup_for(gender)
         vacated = [e for e, aid in lineup.items() if aid in gone]
@@ -1743,6 +1795,7 @@ def advance_week(
             state.league_places = {}
             for a in state.athletes:
                 a.age += 1
+            state.news_log[0:0] = retire_veterans(state, r)  # ritiro e post-carriera (C.3)
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)
