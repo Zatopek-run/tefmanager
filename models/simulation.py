@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
+    AGENT_RELATION_NOT_RENEWED,
+    AGENT_RELATION_PODIUM,
+    AGENT_RELATION_RENEWED,
     ATTITUDE_EFFECTS,
     PROMOTION_BONUS,
     COACH_BASE_SKILL,
@@ -80,6 +83,7 @@ from models.entities import (
     Transaction,
     WeatherCondition,
 )
+from models.agents import adjust_relation, drift_relations, ensure_agents
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.career import make_retired, retirement_chance
 from models.ranking import (
@@ -1068,6 +1072,8 @@ def simulate_competition(
                 # Fans follow athletes who place well, set PBs and break records
                 fan_gain = max(0, 9 - player_place) * fan_mult + (5 if is_pb else 0) + (10 if is_club_rec else 0)
                 player_athlete.fans += fan_gain
+                if player_place <= 3:
+                    adjust_relation(state, player_athlete.agent_id, AGENT_RELATION_PODIUM)  # D.1: un podio fa bene all'agente
 
             total_prize += prize
             total_prestige += prestige_gain
@@ -1366,6 +1372,7 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
                 lineup[e] = filled.get(e)
     state.news_log[0:0] = normalize_assignments(state)
     ensure_contracts(state)
+    ensure_agents(state)  # D.1: agente dei vecchi salvataggi (deterministico, nessun RNG)
     ensure_ranking_pool(state, r)  # C.1: campo sintetico dei vecchi salvataggi
 
 
@@ -1574,10 +1581,12 @@ def renew_expiring_contracts(state: GameState) -> List[str]:
     for a in expired:
         if a.contract_no_renew and squad_size - len(left) > 1:
             left.append(a)
+            adjust_relation(state, a.agent_id, AGENT_RELATION_NOT_RENEWED)  # D.1
         else:
             a.contract_no_renew = False
             assign_contract(state, a)
             renewed.append(a)
+            adjust_relation(state, a.agent_id, AGENT_RELATION_RENEWED)  # D.1
     notes: List[str] = []
     if renewed:
         names = ", ".join(f"{a.name} (fino alla stagione {a.contract_end_season})" for a in renewed)
@@ -1795,6 +1804,7 @@ def advance_week(
             state.league_places = {}
             for a in state.athletes:
                 a.age += 1
+            drift_relations(state)  # D.1: le relazioni con gli agenti si raffreddano verso il neutro (nessun RNG)
             state.news_log[0:0] = retire_veterans(state, r)  # ritiro e post-carriera (C.3)
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):

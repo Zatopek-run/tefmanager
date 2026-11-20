@@ -329,6 +329,22 @@ RETIRED_COACH_SKILL_MIN = 55  # abilità principale e secondaria dall'attributo 
 RETIRED_COACH_SKILL_MAX = 85
 RETIRED_COACH_SECONDARY_GAP = 10  # la secondaria vale meno della principale, come in `coach_hire_skills`
 MAX_RETIRED_LIST = 100  # ex atleti ricordati (i più recenti)
+# Agenti (D.1). CIFRE PROVVISORIE (QUESTIONS Q29). Un agente cura più atleti (relazione condivisa, 0-100, parte da 50).
+# La richiesta sull'ingaggio al tesseramento è un +% secondo la personalità, spostato dalla relazione: a 50 nessuna
+# modifica, a 100 −AGENT_RELATION_FEE_SPAN, a 0 +AGENT_RELATION_FEE_SPAN (punti percentuali, non relativi).
+AGENT_RELATION_START = 50
+AGENT_RELATION_MAX = 100
+AGENT_RELATION_FEE_SPAN = 0.15
+AGENT_NEW_SLOTS = 2  # un atleta nuovo va a un agente già noto o ne ha uno nuovo (probabilità slot / (agenti + slot))
+AGENT_MAX_IDLE = 20  # agenti senza clienti ricordati al massimo (i più lontani dalla relazione neutra se ne vanno prima)
+# Come cambia la relazione con l'agente di un atleta: il rinnovo e i podi la alzano, lo svincolo e il mancato rinnovo la abbassano.
+AGENT_RELATION_RENEWED = 3
+AGENT_RELATION_PODIUM = 1
+AGENT_RELATION_RELEASED = -10
+AGENT_RELATION_NOT_RENEWED = -5
+# A ogni cambio stagione la relazione si avvicina a quella neutra di questa frazione della distanza: senza, in autopilota
+# (podi e rinnovi automatici) tutti gli agenti arrivavano a 100 entro la quarta stagione e la relazione non diceva più nulla.
+AGENT_RELATION_DRIFT = 0.25
 
 
 def age_category(age: int) -> str:
@@ -622,6 +638,7 @@ class Athlete:
     contract_no_renew: bool = False  # il giocatore non vuole rinnovarlo: alla scadenza lascia la società
     ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1)
     season_injuries: int = 0  # infortuni subiti nella stagione in corso (C.3: ritiro anticipato)
+    agent_id: Optional[int] = None  # agente (D.1); None = ancora da assegnare (vecchi salvataggi, atleti creati a mano)
 
     @property
     def gender_label(self) -> str:
@@ -769,6 +786,56 @@ class RetiredAthlete:
         if self.coach_offer:
             return "Disponibile come allenatore"
         return "In pensione"
+
+
+class AgentPersonality(Enum):
+    """Come tratta un agente: l'Aggressivo chiede di più, il Leale di meno (D.1)."""
+
+    AGGRESSIVE = "Aggressivo"
+    REASONABLE = "Ragionevole"
+    LOYAL = "Leale"
+
+
+# Richiesta base sull'ingaggio al tesseramento per personalità (frazione dell'ingaggio standard).
+AGENT_FEE_MARKUP: Dict[AgentPersonality, float] = {
+    AgentPersonality.AGGRESSIVE: 0.20,
+    AgentPersonality.REASONABLE: 0.0,
+    AgentPersonality.LOYAL: -0.10,
+}
+# Peso nella scelta della personalità di un agente nuovo (somma 100).
+AGENT_PERSONALITY_WEIGHTS: Dict[AgentPersonality, int] = {
+    AgentPersonality.AGGRESSIVE: 30,
+    AgentPersonality.REASONABLE: 50,
+    AgentPersonality.LOYAL: 20,
+}
+
+
+@dataclass
+class Agent:
+    """Agente di uno o più atleti (D.1). La relazione (0-100) è del giocatore con l'agente, non con il singolo atleta."""
+
+    id: int
+    name: str
+    personality: AgentPersonality = AgentPersonality.REASONABLE
+    relation: int = AGENT_RELATION_START
+
+    @property
+    def fee_modifier(self) -> float:
+        """Frazione da aggiungere all'ingaggio standard: personalità + relazione (a 100 −15 punti, a 0 +15)."""
+        trust = (AGENT_RELATION_START - self.relation) / AGENT_RELATION_START
+        return AGENT_FEE_MARKUP[self.personality] + AGENT_RELATION_FEE_SPAN * trust
+
+    @property
+    def relation_label(self) -> str:
+        if self.relation >= 75:
+            return "Ottima"
+        if self.relation >= 55:
+            return "Buona"
+        if self.relation >= 45:
+            return "Neutra"
+        if self.relation >= 25:
+            return "Tesa"
+        return "Pessima"
 
 
 @dataclass
@@ -1101,6 +1168,7 @@ class GameState:
     rng_state: List = field(default_factory=list)
     coaches: List[Coach] = field(default_factory=list)
     retired: List[RetiredAthlete] = field(default_factory=list)  # ex atleti (C.3), i più recenti in testa
+    agents: List[Agent] = field(default_factory=list)  # agenti degli atleti (D.1), anche senza clienti se la relazione non è neutra
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
     rival_clubs: List[RivalClub] = field(default_factory=list)

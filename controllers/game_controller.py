@@ -21,6 +21,7 @@ from models.database import (
     make_save_slot_path,
 )
 from models.entities import (
+    AGENT_RELATION_RELEASED,
     BANKRUPTCY_THRESHOLD,
     COACH_MAX_TIER,
     COACH_STAT_LABELS,
@@ -63,6 +64,7 @@ from models.entities import (
     gym_upgrade_cost,
     stand_expansion_cost,
 )
+from models.agents import adjust_relation, assign_agent, ensure_agents, negotiated_fee, prune_idle_agents
 from models.generator import (
     build_default_lineup,
     clamp_stat,
@@ -75,7 +77,6 @@ from models.generator import (
     generate_initial_roster,
     generate_school_scouting_pool,
     generate_vertical_slice_roster,
-    get_recruitment_fee,
 )
 from models.ranking import ensure_ranking_pool
 from models.rng_state import dump_rng_state, restore_or_seed
@@ -236,6 +237,7 @@ class GameController(QObject):
         )
         auto_build_all_relays(state)
         ensure_contracts(state)
+        ensure_agents(state)  # D.1: agenti degli atleti iniziali (nessun RNG)
         ensure_ranking_pool(state, self.rng)  # C.1: campo mondiale del ranking
         if persist:
             self._persist(state)
@@ -487,10 +489,12 @@ class GameController(QObject):
         """Return this week's free-agent pool, generating it once per week."""
         if not self.free_agent_pool:
             self.free_agent_pool = self.generate_free_agents(count=count)
+            for candidate in self.free_agent_pool:
+                assign_agent(self.state, candidate)  # D.1: l'agente (e la sua richiesta) si vede prima di tesserare
         return list(self.free_agent_pool)
 
     def recruit_athlete(self, prospect: Athlete) -> bool:
-        fee = get_recruitment_fee(prospect)
+        fee = negotiated_fee(prospect, assign_agent(self.state, prospect))  # D.1: ingaggio chiesto dall'agente
         if self.state.budget < fee:
             self.status_message.emit(
                 f"Fondi insufficienti per tesserare {prospect.name} (servono €{fee:,})."
@@ -544,6 +548,7 @@ class GameController(QObject):
             return False
         if not target.in_youth_squad:
             self.state.fidelity = max(0, self.state.fidelity - 8)
+            adjust_relation(self.state, target.agent_id, AGENT_RELATION_RELEASED)  # D.1: l'agente non lo dimentica
 
         self.state.athletes = [a for a in self.state.athletes if a.id != athlete_id]
         self._remove_from_relays(athlete_id)
@@ -665,6 +670,7 @@ class GameController(QObject):
         prospect.id = max((a.id or 0 for a in self.state.athletes), default=0) + 1
         prospect.in_youth_squad = True
         self.state.athletes.append(prospect)
+        assign_agent(self.state, prospect)
         self.free_agent_pool = [
             p for p in self.free_agent_pool if p is not prospect and p.name != prospect.name
         ]
@@ -1063,6 +1069,7 @@ class GameController(QObject):
         report = advance_week(self.state, rng=self.rng)
         self.scouting_results = []
         self.free_agent_pool = []
+        prune_idle_agents(self.state)  # D.1: il pool è vuoto, i suoi agenti nuovi senza clienti non servono più
         self._persist()
         self.state_changed.emit(self.state)
         self.week_advanced.emit(report)

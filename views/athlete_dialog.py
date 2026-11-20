@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from controllers.game_controller import GameController
+from models.agents import agent_of
 from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, PeriodizationPhase, Specialty, TrainingFocus
 from models.ranking import athlete_rankings
 from models.simulation import body_fit_score
@@ -189,6 +190,16 @@ class AthleteDetailDialog(QDialog):
             text += " (rinnovo automatico)"
         return text
 
+    def _agent_text(self, a: Athlete) -> str:
+        """Agente dell'atleta (D.1): nome, personalità e relazione con la società."""
+        agent = agent_of(self.controller.state, a)
+        return agent.name if agent is not None else "—"
+
+    def _relation_text(self, a: Athlete) -> str:
+        """Personalità dell'agente e relazione con la società (D.1), su una riga a parte perché la colonna è stretta."""
+        agent = agent_of(self.controller.state, a)
+        return f"{agent.personality.value} · {agent.relation}" if agent is not None else "—"
+
     @staticmethod
     def _initials(name: str) -> str:
         parts = [p for p in name.replace("-", " ").split() if p]
@@ -284,6 +295,8 @@ class AthleteDetailDialog(QDialog):
             ("Potenziale", str(a.potential)),
             ("Rimborso spese", f"€{a.weekly_wage:,}/sett."),
             ("Contratto", self._contract_text(a)),
+            ("Agente", self._agent_text(a)),
+            ("Rapporto", self._relation_text(a)),
             ("Fan", f"{a.fans:,}"),
             ("Primato", a.personal_best_display or "—"),
             ("Allenatore", coach.name if coach else "Nessuno"),

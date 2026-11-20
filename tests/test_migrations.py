@@ -780,5 +780,55 @@ class TestMigrationV17Retirement(_TmpCase):
         self.assertEqual(user_version(path), 16)
 
 
+class TestMigrationV18Agents(_TmpCase):
+    """v17 → v18 (D.1): `athletes.agent_id` (NULL = nessun agente) e `game_state.agents_json` (default `'[]'`)."""
+
+    def test_v17_save_gets_the_columns_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 18)
+        self.assertIn(17, MIGRATIONS)
+        path = make_save(self.slot("v17"), 17)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("agents_json", column_names(conn, "game_state"))  # la fixture è davvero v17
+            self.assertNotIn("agent_id", column_names(conn, "athletes"))
+            self.assertIn("retired_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT agents_json FROM game_state WHERE id = 1").fetchone(), ("[]",))
+            self.assertEqual(conn.execute("SELECT agent_id FROM athletes WHERE id = 1").fetchone(), (None,))
+            self.assertIn(("agents_json", "TEXT", 1, "'[]'", 0), columns(conn, "game_state"))
+            self.assertIn(("agent_id", "INTEGER", 0, None, 0), columns(conn, "athletes"))
+        sentinel_ok(self, path, 17)
+        backup = self.backups("v17")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 17)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("agents_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 17)
+
+    def test_a_migrated_save_loads_without_agents_and_the_game_assigns_them(self) -> None:
+        from models.agents import agent_of, ensure_agents
+        from tests.test_assignments import make_state
+
+        path = self.slot("v18")
+        state = make_state(3)
+        DatabaseManager(db_path=path).save_game(state)
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(loaded.agents, [])
+        self.assertTrue(all(a.agent_id is None for a in loaded.athletes))
+        self.assertEqual(ensure_agents(loaded), len(loaded.athletes))  # come fa `upgrade_legacy_state` al caricamento
+        self.assertTrue(all(agent_of(loaded, a) is not None for a in loaded.athletes))
+
+    def test_failed_v17_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v17"), 17)
+        before = sha(path)
+        broken = {"game_state": [("agents_json", "TEXT NOT NULL DEFAULT '[]'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {17: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 17)
+
+
 if __name__ == "__main__":
     unittest.main()

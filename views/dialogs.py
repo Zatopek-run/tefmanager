@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 import zlib
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -33,6 +33,7 @@ from models.entities import (
     GAME_MODE_OPTIONS,
     BOARD_MAX_FAILED_STREAK,
     BOARD_OBJECTIVES_TO_PASS,
+    Agent,
     Athlete,
     CompetitionSummary,
     PROMOTION_SPOTS,
@@ -46,7 +47,8 @@ from models.entities import (
     coach_hire_skills,
     coach_weekly_wage,
 )
-from models.generator import LAZIO_PROVINCES, get_recruitment_fee
+from models.agents import negotiated_fee
+from models.generator import LAZIO_PROVINCES
 
 
 def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
@@ -269,14 +271,16 @@ class RecruitAthleteDialog(QDialog):
         budget: int,
         roster: Optional[List[Athlete]] = None,
         parent=None,
+        agents: Optional[List[Agent]] = None,
     ) -> None:
         super().__init__(parent)
         self.prospects = prospects
         self.budget = budget
         self.roster: List[Athlete] = list(roster) if roster is not None else []
+        self.agents: Dict[int, Agent] = {a.id: a for a in (agents or [])}  # D.1: senza agenti vale l'ingaggio standard
         self.selected_prospect: Optional[Athlete] = None
         self.setWindowTitle("Scouting & Mercato Svincolati")
-        self.resize(960, 470)
+        self.resize(1240, 470)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -296,7 +300,7 @@ class RecruitAthleteDialog(QDialog):
         sub.setWordWrap(True)
         layout.addWidget(sub)
 
-        self.table = QTableWidget(len(self.prospects), 11)
+        self.table = QTableWidget(len(self.prospects), 12)
         self.table.setHorizontalHeaderLabels(
             [
                 "Nome",
@@ -308,6 +312,7 @@ class RecruitAthleteDialog(QDialog):
                 "Resilienza",
                 "Carattere",
                 "Ingaggio/sett",
+                "Agente",
                 "Costo",
                 "Note",
             ]
@@ -316,11 +321,15 @@ class RecruitAthleteDialog(QDialog):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header_view = self.table.horizontalHeader()
+        header_view.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        for stretch_col in (0, 9):  # nome e agente prendono lo spazio che resta: sono i testi lunghi
+            header_view.setSectionResizeMode(stretch_col, QHeaderView.ResizeMode.Stretch)
         self.table.verticalHeader().setVisible(False)
 
         for row, a in enumerate(self.prospects):
-            fee = get_recruitment_fee(a)
+            fee = self._fee(a)
+            agent = self._agent(a)
             origin = "Camp. Studenteschi" if a.is_youth_prospect else "Svincolato"
             note = f"Vel {a.speed} · Res {a.stamina} · Tec {a.technique}"
             vals = [
@@ -333,6 +342,7 @@ class RecruitAthleteDialog(QDialog):
                 str(a.resilience),
                 a.personality.value,
                 f"€{a.weekly_wage}",
+                self._agent_text(agent),
                 f"€{fee:,}",
                 note,
             ]
@@ -341,8 +351,10 @@ class RecruitAthleteDialog(QDialog):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 5 and a.potential >= 85:
                     item.setForeground(QColor("#34d399"))
-                elif col == 9 and fee > self.budget:
+                elif col == 10 and fee > self.budget:
                     item.setForeground(QColor("#f87171"))
+                if col == 9 and agent is not None:
+                    item.setToolTip(self._agent_tooltip(a, agent))
                 self.table.setItem(row, col, item)
 
         self.table.itemSelectionChanged.connect(self._update_comparison)
@@ -369,13 +381,33 @@ class RecruitAthleteDialog(QDialog):
         btn_row.addWidget(sign_btn)
         layout.addLayout(btn_row)
 
+    def _agent(self, prospect: Athlete) -> Optional[Agent]:
+        return self.agents.get(prospect.agent_id) if prospect.agent_id is not None else None
+
+    def _fee(self, prospect: Athlete) -> int:
+        return negotiated_fee(prospect, self._agent(prospect))
+
+    @staticmethod
+    def _agent_text(agent: Optional[Agent]) -> str:
+        if agent is None:
+            return "—"
+        return f"{agent.name} · {agent.personality.value} ({agent.relation})"
+
+    @staticmethod
+    def _agent_tooltip(prospect: Athlete, agent: Agent) -> str:
+        pct = round(agent.fee_modifier * 100)
+        return (
+            f"Agente {agent.name}: {agent.personality.value}, relazione {agent.relation}/100 ({agent.relation_label}).\n"
+            f"Chiede il {pct:+d}% sull'ingaggio standard di {prospect.name}."
+        )
+
     def _update_comparison(self) -> None:
         rows = self.table.selectionModel().selectedRows()
         if not rows or not (0 <= rows[0].row() < len(self.prospects)):
             self.compare_label.setText("")
             return
         prospect = self.prospects[rows[0].row()]
-        fee = get_recruitment_fee(prospect)
+        fee = self._fee(prospect)
         after = self.budget - fee
         peers = [
             a
@@ -408,7 +440,7 @@ class RecruitAthleteDialog(QDialog):
         if not rows:
             return
         prospect = self.prospects[rows[0].row()]
-        fee = get_recruitment_fee(prospect)
+        fee = self._fee(prospect)
         if fee > self.budget:
             QMessageBox.warning(
                 self,

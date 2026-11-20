@@ -240,3 +240,22 @@ Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilanci
 | `MAX_RETIRED_LIST` | 100 ex atleti ricordati | `entities.py` |
 
 Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 16 a 3-8 atleti, 8-13 ritirati, 0-1 offerte da allenatore vive per stagione (Q28, AUDIT R24).
+
+## N. Agenti (PIANOLAVORO D.1, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q29)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `AGENT_FEE_MARKUP` | richiesta sull'ingaggio per personalità: Aggressivo +20% · Ragionevole 0 · Leale −10% | `entities.py` |
+| `AGENT_PERSONALITY_WEIGHTS` | peso nella scelta della personalità di un agente nuovo: 30 / 50 / 20 | `entities.py` |
+| `AGENT_RELATION_START` / `AGENT_RELATION_MAX` | relazione 0-100, parte da 50 | `entities.py` |
+| `AGENT_RELATION_FEE_SPAN` | ±15 punti percentuali sulla richiesta (a 100 −15, a 0 +15) | `entities.py` |
+| `AGENT_RELATION_RENEWED` | +3 per atleta rinnovato alla scadenza | `entities.py` |
+| `AGENT_RELATION_PODIUM` | +1 per podio in una gara individuale | `entities.py` |
+| `AGENT_RELATION_RELEASED` | −10 per svincolo di un atleta della Prima Squadra | `entities.py` |
+| `AGENT_RELATION_NOT_RENEWED` | −5 per atleta non rinnovato che lascia | `entities.py` |
+| `AGENT_RELATION_DRIFT` | 0,25: a ogni cambio stagione la relazione chiude un quarto della distanza da 50 | `entities.py` |
+| `AGENT_NEW_SLOTS` | 2: un atleta nuovo va a un agente noto o ne ha uno nuovo con probabilità slot/(agenti+slot) | `entities.py` |
+| `AGENT_MAX_IDLE` | 20 agenti senza clienti ricordati al massimo | `entities.py` |
+
+Misura in autopilota (6 partite, 8 stagioni, Carriera): 6-8 agenti; **senza** `AGENT_RELATION_DRIFT` la relazione media saliva a 90-100 entro la 4ª-5ª stagione (inutile), **con** 0,25 sta tra 68 e 77 a regime e tocca 100 solo
+raramente (Q29).

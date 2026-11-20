@@ -840,6 +840,7 @@ class RosterTab(QWidget):
             self.controller.state.budget,
             roster=self.controller.state.main_squad,
             parent=self,
+            agents=self.controller.state.agents,
         )
         if dlg.exec() and dlg.selected_prospect is not None:
             self.controller.recruit_athlete(dlg.selected_prospect)
