@@ -53,7 +53,9 @@ Meccaniche da gestionale di atletica online, adattate alla scala del gioco:
 
 - **Promozioni e retrocessioni (Carriera)**: la categoria si decide sul campo, non più col prestigio. A fine stagione (dopo Outdoor, Cross e Indoor: 36 settimane) conta la classifica di lega: le prime 2 salgono di categoria, l'ultima scende. In Internazionale il 1° posto vale il titolo. A pari punti l'ordine è alfabetico. Una finestra mostra la classifica finale e il verdetto; la dashboard indica posizione, zona e settimane al verdetto. Il prestigio resta e fa crescere il pubblico nei meeting in casa. Nel Prototipo (8 settimane) non ci sono promozioni né retrocessioni.
 
-I salvataggi v2, v3, v4 e v5 vengono migrati in automatico a v6 (schema SQLite esteso con `ALTER TABLE`), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri e le partite senza rivali ricevono le società rivali.
+- **Carriera e mercato (lotti C e D, cifre provvisorie)**: ranking mondiale, nazionale e delle società; obiettivi del Board (due stagioni fallite di fila = esonero); atleti che si ritirano a 33-35 anni o per infortuni e possono tornare come allenatori; **agenti** con personalità e relazione, **trattative** con un giro di controfferta, bonus per record e clausola rescissoria; **finanze** con bilancio mensile, merchandising, taglio dello sponsor dopo una stagione fuori dai primi 5 e diritti TV in Internazionale. Descrizione completa in `docs/GAME.md`.
+
+I salvataggi delle versioni precedenti (da v2 a v19) vengono migrati in automatico allo schema v20 (schema SQLite esteso con `ALTER TABLE`, con un backup verificato prima di ogni migrazione), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri e le partite senza rivali ricevono le società rivali.
 
 ## How to Run
 

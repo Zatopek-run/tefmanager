@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1-A.5, B.1, B.2 e B.3 di `PIANOLAVORO.md` fatti; **cifre di B.2 provvisorie**, quelle di B.3 misurate e confermate) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 269 test OK (eseguita il 2026-11-20; 132 di questi senza PyQt6).
+Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1-A.5, B.1, B.2 e B.3 di `PIANOLAVORO.md` fatti; **cifre di B.2 provvisorie**, quelle di B.3 misurate e confermate) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Aggiornamento 2026-11-20: fatti anche C.1-C.3 (ranking, Board, ritiro) e **tutto il lotto D** (agenti, trattative, finanze; §5.15-5.19), cifre provvisorie (Q26-Q31); schema 20. Suite di test: **532 test OK** (eseguita il 2026-11-20; i modelli nuovi girano senza PyQt6).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -48,16 +48,17 @@ main.py          entry point: GameController(auto_create=False) + MainWindow
 models/          LOGICA DI GIOCO, nessun import di PyQt6 (regola vincolante, oggi violata solo da race_export.py)
   entities.py      GameState, Athlete, Coach, Relay, RivalClub, EventDefinition, enum, molte costanti
   generator.py     generazione atleti, rivali, allenatori, staff, dilemmi, scouting
+  ranking.py board.py career.py   ranking (C.1), obiettivi del Board (C.2), ritiro (C.3)   agents.py market.py finances.py   agenti (D.1), trattativa (D.2), finanze (D.3)
   simulation.py    allenamento, motore gara, staffette, finanze, tick `advance_week`
   database.py      SQLite: schema, migrazioni, backup, salvataggio/caricamento, elenco slot
   race_export.py   esporta una gara in un DB per Godot      bibs.py   numeri di pettorale
 controllers/
   game_controller.py   GameController (QObject con segnali Qt): tutte le azioni del giocatore, il tick, il caricamento
 views/           interfaccia PyQt6 (nessuna logica che decida esiti)
-  start_screen.py main_window.py tabs.py dialogs.py athlete_dialog.py styles.py (tema scuro QSS) results_board.py
+  start_screen.py main_window.py tabs.py dialogs.py athlete_dialog.py styles.py (tema scuro QSS) results_board.py finance_chart.py (grafico a barre dei mesi)
   race_viewer.py race_3d.py field_3d.py (gare in diretta)     godot_launcher.py (lancio di Godot)
 godot_viewer/    progetto Godot 4.3+ separato (solo vista), legge risultati da SQLite
-tests/           test_game.py (96 test, usa PyQt6)   test_migrations.py (25), test_assignments.py (9), test_contracts.py (12), test_event_800m.py (9): senza Qt
+tests/           test_game.py (96 test, usa PyQt6)   test_migrations.py (48), test_assignments.py (9), test_contracts.py (12), test_event_800m.py (9), test_ranking/board/retirement/agents/negotiations/finances.py (lotti C e D): senza Qt; i `*_ui.py` usano PyQt6 offscreen (elenco completo in CLAUDE.md)
 data/            societa_atletica_lazio.csv          docs/   AUDIT, TICK, BALANCE, QUESTIONS, PLAN, GAME
 ```
 
@@ -90,7 +91,7 @@ i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagion
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
-`coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1).
+`coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1); gli ex atleti (`retired`, C.3), gli **agenti** (`agents`, D.1) e i **bilanci mensili** (`monthly_reports`, D.3).
 
 ### 3.2 `Athlete`
 
@@ -100,7 +101,7 @@ Caratteristiche (0-100): `speed`, `stamina`, `strength`, `technique`, `resilienc
 Resiliente**); `training_focus` (**Resistenza, Potenza Esplosiva, Tecnica, Riposo & Recupero**); `periodization`
 (**Prep. Generale, Prep. Specifica, Gara (Picco), Scarico (Tapering)**); `weekly_wage`, `injured_weeks`, `is_youth_prospect`,
 `in_youth_squad`, `fans`, `coach_id`, `personal_best` (per evento), `doping_boost_weeks`, `contract_end_season` (ultima stagione di contratto, inclusa; 0 = nessuno, cioè vivaio)
-e `contract_no_renew` (il giocatore non vuole rinnovarlo: §5.9) e `ranking_points` (punti ranking per evento, §5.15). La **fascia d'età** (`age_category`: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+) è solo un'etichetta
+e `contract_no_renew` (il giocatore non vuole rinnovarlo: §5.9), `ranking_points` (punti ranking per evento, §5.15), `season_injuries` (infortuni della stagione, §5.16), `agent_id` (agente, §5.17) e `record_bonus` (bonus per record pattuito, §5.18). La **fascia d'età** (`age_category`: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+) è solo un'etichetta
 calcolata da `age`, non salvata, mostrata nella scheda atleta.
 `overall` è una media pesata delle caratteristiche con pesi diversi per specialità. L'altezza e il peso concorrono al punteggio in gara
 (§5.3). Il picco di età dipende dalla specialità (`peak_age_range`: Velocità 20-27, Salti 20-28, Mezzofondo 21-30, Lanci 23-32).
@@ -129,7 +130,7 @@ sceglie l'atteggiamento, compone le staffette, spende soldi (staff, impianti, sc
 1. Se la settimana è **di gara** (`settimana % 4 == 0`): simula il meeting (meteo, vento, punteggi di tutti, classifica, premi, record, staffette, punti squadra, biglietti/trasferta).
 2. Per ogni atleta: allenamento settimanale (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio). Nel tick che precede una gara la fase «Gara (Picco)» aggiunge `PEAK_FORM_BONUS` (+6) al bersaglio di forma.
 3. Note di infortunio; eventuale scandalo doping (reputazione −25, prestigio −45).
-4. Finanze settimanali: entrate (sponsor, individuali, quote) e uscite (rimborsi spese atleti, staff, allenatori, palestra); libro mastro.
+4. Finanze settimanali: entrate (sponsor, individuali, merchandising, quote) e uscite (rimborsi spese atleti, staff, allenatori, palestra); libro mastro.
 5. Se `budget < 0`: interessi 5% a settimana; sotto −20.000 la società **fallisce** (`bankrupt`: blocca i tick successivi).
 6. Decadimento abilità degli allenatori; affiatamento staffette; **evoluzione dei rivali**; usura della pista.
 7. Fedeltà sponsor +2; azzera i punti scouting; **`week += 1`**.
