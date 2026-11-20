@@ -308,7 +308,7 @@ Gare: con la Preparazione la prima gara è alla settimana 12 (poi ogni 4: 9 gare
 
 Misura in autopilota (Carriera nuova, nessuna azione, seme 1): budget 18.000 → circa 53.000 dopo 40 settimane e circa 100.000 dopo 100; reputazione e prestigio fermi. È una **conseguenza non voluta** dell'avvio vuoto (entrate senza costi atleti), non una cifra scelta: vedi QUESTIONS Q32 e AUDIT R29.
 
-## R. Staff con attributi (PIANOLAVORO E.1, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q33)
+## R. Staff con attributi (PIANOLAVORO E.1, 2026-11-20) — cifre degli attributi e del catalogo **confermate dall'utente il 2026-11-20** (QUESTIONS Q33); liquidazione e rinnovo del mercato PROVVISORI
 
 Fisioterapista, Medico e Preparatore mentale hanno **due attributi 1-20 ciascuno**. Principio: **al riferimento (`STAFF_ATTR_REF` = 14) ogni effetto è identico a prima di E.1**; i tre candidati fissi e i vecchi salvataggi stanno al riferimento, quindi il bilanciamento non si sposta (c'è un test sull'identità, e i 572 test precedenti passano invariati). Sopra il riferimento l'effetto cresce in proporzione, sotto cala. Nessuna estrazione di RNG in più (il tick non cambia).
 
@@ -330,4 +330,6 @@ Fisioterapista, Medico e Preparatore mentale hanno **due attributi 1-20 ciascuno
 | Medico (diagnosi / prevenzione) | Villa ★2, 10 / 10, €200 | Conti ★4, 14 / 14, €340 | Marchetti ★5, 12 / 19, €520 |
 | Preparatore mentale (motivazione / pressione) | Bellini ★2, 10 / 10, €140 | Ferretti ★3, 14 / 14, €220 | Fabbri ★5, 12 / 19, €340 |
 
-Il costo sale con gli attributi (circa ×0,6 a 10, ×1 a 14, ×1,5 a 18-19). Salvataggi vecchi: `staff.attributes_json = '{}'` → tutti a 14, e al caricamento si aggiungono i candidati del catalogo che mancano (`ensure_staff_market`, per id, senza toccare chi è già assunto). Se per un salvataggio risultano più assunti dello stesso ruolo (non può succedere dal gioco) vale il migliore.
+Il costo sale con gli attributi (circa ×0,6 a 10, ×1 a 14, ×1,5 a 18-19).
+
+**Liquidazione** (scelta dell'utente 2026-11-20: «sostituire uno specialista costa la liquidazione del precedente»): `STAFF_SEVERANCE_WEEKS` = 6 settimane di compenso di chi esce (es. fisioterapista da €300 → €1.800), cifra **mia e provvisoria**. Si paga a **ogni** licenziamento di un assunto, anche quando è una sostituzione (sennò basterebbe licenziare e poi assumere); assumere in un ruolo scoperto è gratis. Se il budget non basta l'operazione è rifiutata e non cambia nulla. Voce «Liquidazione …» nel libro mastro, categoria «Staff». Salvataggi vecchi: `staff.attributes_json = '{}'` → tutti a 14, e al caricamento si aggiungono i candidati del catalogo che mancano (`ensure_staff_market`, per id, senza toccare chi è già assunto). Se per un salvataggio risultano più assunti dello stesso ruolo (non può succedere dal gioco) vale il migliore.

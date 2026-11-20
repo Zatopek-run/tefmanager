@@ -84,7 +84,7 @@ from models.entities import (
     StaffRole,
 )
 from controllers.game_controller import scouting_search_cost
-from models.staff import describe_attributes
+from models.staff import describe_attributes, hired_of_role, severance_pay
 from models.finances import recent_reports
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
 from views.dialogs import (
@@ -1492,7 +1492,14 @@ class StaffTab(QWidget):
                     item.setForeground(QColor("#34d399"))
                 self.table.setItem(row, col, item)
 
-            btn = QPushButton("Licenzia" if s.hired else "Assumi")
+            current = hired_of_role(state, s.role)  # chi sarebbe sostituito, se non è già s
+            if s.hired:
+                label = f"Licenzia (€{severance_pay(s):,})"
+            elif current is not None:
+                label = f"Sostituisci (€{severance_pay(current):,})"
+            else:
+                label = "Assumi"
+            btn = QPushButton(label)
             btn.setObjectName("DangerButton" if s.hired else "PrimaryButton")
             btn.clicked.connect(lambda _c=False, sid=s.id: self.controller.toggle_staff(sid))
             self.table.setCellWidget(row, 6, btn)

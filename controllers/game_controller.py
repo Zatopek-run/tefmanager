@@ -83,6 +83,7 @@ from models.generator import (
 )
 from models.ranking import ensure_ranking_pool
 from models.rng_state import dump_rng_state, restore_or_seed
+from models.staff import hired_of_role, severance_pay
 from models.simulation import (
     WeekAdvanceReport,
     advance_week,
@@ -446,29 +447,56 @@ class GameController(QObject):
         self.status_message.emit("Manutenzione pista completata.")
         return True
 
-    def toggle_staff(self, staff_id: int) -> None:
+    def toggle_staff(self, staff_id: int) -> bool:
+        """Assume o licenzia uno specialista clinico (E.1). Un solo assunto per ruolo: assumerne uno al posto di un altro
+        licenzia quello in carica. **Ogni licenziamento di un assunto costa la liquidazione** (`severance_pay`), anche quando
+        è una sostituzione; se il budget non basta non cambia nulla. Ritorna `True` se l'operazione è stata eseguita."""
         member = next((s for s in self.state.staff if s.id == staff_id), None)
         if member is None:
-            return
-        member.hired = not member.hired
-        action = "Assunto" if member.hired else "Licenziato"
-        self.state.news_log.insert(
-            0, f"Sett. {self.state.week}: {action} {member.name} ({member.role.value})."
-        )
-        replaced: Optional[str] = None
-        if member.hired:  # un solo specialista per ruolo (mercato dello staff, E.1): chi c'era viene sostituito
-            for other in self.state.staff:
-                if other is not member and other.hired and other.role == member.role:
-                    other.hired = False
-                    replaced = other.name
-                    self.state.news_log.insert(
-                        0, f"Sett. {self.state.week}: {other.name} ({other.role.value}) lascia il posto a {member.name}."
-                    )
+            return False
+        leaving = member if member.hired else hired_of_role(self.state, member.role)  # chi esce, se c'è
+        severance = severance_pay(leaving) if leaving is not None else 0
+        if severance > self.state.budget:
+            self.status_message.emit(
+                f"Budget insufficiente per la liquidazione di {leaving.name} (€{severance:,})."
+            )
+            return False
+        week = self.state.week
+        if leaving is not None:
+            leaving.hired = False
+            if severance > 0:
+                self.state.budget -= severance
+                self.state.transactions.insert(
+                    0,
+                    Transaction(
+                        id=None,
+                        week=week,
+                        description=f"Liquidazione {leaving.name} ({leaving.role.value})",
+                        category="Staff",
+                        amount=-severance,
+                    ),
+                )
+        if leaving is member:  # licenziamento semplice
+            self.state.news_log.insert(
+                0, f"Sett. {week}: Licenziato {member.name} ({member.role.value}), liquidazione €{severance:,}."
+            )
+            message = f"Licenziato: {member.name} (liquidazione €{severance:,})."
+        else:
+            member.hired = True
+            if leaving is None:
+                self.state.news_log.insert(0, f"Sett. {week}: Assunto {member.name} ({member.role.value}).")
+                message = f"Assunto: {member.name}."
+            else:
+                self.state.news_log.insert(
+                    0,
+                    f"Sett. {week}: {leaving.name} ({leaving.role.value}) lascia il posto a {member.name}, "
+                    f"liquidazione €{severance:,}.",
+                )
+                message = f"Assunto: {member.name} al posto di {leaving.name} (liquidazione €{severance:,})."
         self._persist()
         self.state_changed.emit(self.state)
-        self.status_message.emit(
-            f"{action}: {member.name}." if replaced is None else f"{action}: {member.name} (al posto di {replaced})."
-        )
+        self.status_message.emit(message)
+        return True
 
     def set_event_athlete(
         self, event_name: str, athlete_id: Optional[int], gender: str = "M"

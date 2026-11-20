@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
 from models.database import DatabaseManager
-from models.entities import STAFF_ATTR_REF, StaffRole
+from models.entities import STAFF_ATTR_REF, STAFF_SEVERANCE_WEEKS, StaffRole
+from models.staff import severance_pay
 from tests.support import start_game
 from views.main_window import MainWindow
 
@@ -55,7 +56,9 @@ class TestStaffAttributesUi(unittest.TestCase):
         self.ctrl.toggle_staff(staff_id)
         self.assertTrue(self.ctrl.state.staff[0].hired)
         labels = [table.cellWidget(r, last).text() for r in range(table.rowCount())]
-        self.assertEqual(labels.count("Licenzia"), 1)
+        self.assertEqual(sum(1 for t in labels if t.startswith("Licenzia")), 1)
+        self.assertEqual(sum(1 for t in labels if t.startswith("Sostituisci")), 2)  # gli altri due dello stesso ruolo
+        self.assertEqual(labels.count("Assumi"), 6)  # i ruoli ancora scoperti
 
     def test_rows_are_grouped_by_role_from_cheapest_to_dearest(self) -> None:
         table = self.win.staff_tab.table
@@ -72,10 +75,12 @@ class TestStaffAttributesUi(unittest.TestCase):
         physios = [m for m in state.staff if m.role == StaffRole.PHYSIO]
         first, second = physios[0], physios[1]
         self.ctrl.toggle_staff(first.id)
+        budget_before = state.budget  # l'assunzione in un ruolo scoperto non costa nulla
         self.assertEqual([m.id for m in state.staff if m.role == StaffRole.PHYSIO and m.hired], [first.id])
         self.ctrl.toggle_staff(second.id)
         self.assertEqual([m.id for m in state.staff if m.role == StaffRole.PHYSIO and m.hired], [second.id])
         self.assertTrue(any("lascia il posto" in line for line in state.news_log[:3]))
+        self.assertEqual(state.budget, budget_before - severance_pay(first))
 
     def test_roles_do_not_exclude_each_other_and_firing_works(self) -> None:
         state = self.ctrl.state
@@ -83,7 +88,7 @@ class TestStaffAttributesUi(unittest.TestCase):
         for sid in ids.values():
             self.ctrl.toggle_staff(sid)
         self.assertEqual(sum(1 for m in state.staff if m.hired), 2)
-        self.ctrl.toggle_staff(ids[StaffRole.PHYSIO])  # licenzia
+        self.ctrl.toggle_staff(ids[StaffRole.PHYSIO])  # licenzia (con liquidazione)
         self.assertEqual([m.role for m in state.staff if m.hired], [StaffRole.DOCTOR])
 
     def test_hired_cost_follows_the_chosen_candidate(self) -> None:
@@ -92,6 +97,53 @@ class TestStaffAttributesUi(unittest.TestCase):
         member = next(m for m in self.ctrl.state.staff if m.role == StaffRole.DOCTOR and m.weekly_cost != 340)
         self.ctrl.toggle_staff(member.id)
         self.assertEqual(weekly_finances(self.ctrl.state)["staff_cost"], member.weekly_cost)
+
+    def test_firing_and_replacing_both_cost_the_severance_of_the_one_who_leaves(self) -> None:
+        state = self.ctrl.state
+        physios = sorted((m for m in state.staff if m.role == StaffRole.PHYSIO), key=lambda m: m.weekly_cost)
+        junior, senior = physios[0], physios[-1]
+        self.assertTrue(self.ctrl.toggle_staff(junior.id))  # nessuno in carica: niente liquidazione
+        self.assertEqual(state.budget, 18000)
+        self.assertEqual(severance_pay(junior), junior.weekly_cost * STAFF_SEVERANCE_WEEKS)
+        self.assertTrue(self.ctrl.toggle_staff(senior.id))  # sostituzione: paga la liquidazione del JUNIOR
+        self.assertEqual(state.budget, 18000 - severance_pay(junior))
+        self.assertTrue(self.ctrl.toggle_staff(senior.id))  # licenziamento semplice: paga quella del senior
+        self.assertEqual(state.budget, 18000 - severance_pay(junior) - severance_pay(senior))
+        self.assertFalse(any(m.hired for m in state.staff))
+        rows = [t for t in state.transactions if t.category == "Staff" and t.description.startswith("Liquidazione")]
+        self.assertEqual([t.amount for t in rows], [-severance_pay(senior), -severance_pay(junior)])
+
+    def test_without_the_money_nothing_changes(self) -> None:
+        state = self.ctrl.state
+        physios = sorted((m for m in state.staff if m.role == StaffRole.PHYSIO), key=lambda m: m.weekly_cost)
+        self.ctrl.toggle_staff(physios[0].id)
+        state.budget = severance_pay(physios[0]) - 1
+        news_before = list(state.news_log)
+        self.assertFalse(self.ctrl.toggle_staff(physios[1].id))  # sostituzione
+        self.assertFalse(self.ctrl.toggle_staff(physios[0].id))  # licenziamento
+        self.assertEqual([m.id for m in state.staff if m.hired], [physios[0].id])
+        self.assertEqual(state.budget, severance_pay(physios[0]) - 1)
+        self.assertEqual(state.news_log, news_before)
+
+    def test_the_severance_is_in_the_staff_category_of_the_monthly_report(self) -> None:
+        # Stessa categoria delle voci settimanali: il bilancio mensile (D.3) la raggruppa con lo staff.
+        state = self.ctrl.state
+        member = next(m for m in state.staff if m.role == StaffRole.DOCTOR)
+        self.ctrl.toggle_staff(member.id)
+        self.ctrl.toggle_staff(member.id)
+        self.assertEqual(state.transactions[0].category, "Staff")
+        self.assertEqual(state.transactions[0].amount, -severance_pay(member))
+
+    def test_buttons_show_the_severance(self) -> None:
+        state = self.ctrl.state
+        physios = sorted((m for m in state.staff if m.role == StaffRole.PHYSIO), key=lambda m: m.weekly_cost)
+        self.ctrl.toggle_staff(physios[1].id)
+        table = self.win.staff_tab.table
+        last = table.columnCount() - 1
+        labels = [table.cellWidget(r, last).text() for r in range(3)]  # i fisioterapisti sono le prime 3 righe
+        self.assertEqual(labels[1], f"Licenzia (€{severance_pay(physios[1]):,})")
+        self.assertEqual(labels[0], f"Sostituisci (€{severance_pay(physios[1]):,})")
+        self.assertEqual(labels[2], f"Sostituisci (€{severance_pay(physios[1]):,})")
 
     def test_edited_attributes_survive_a_reload(self) -> None:
         member = next(s for s in self.ctrl.state.staff if s.role == StaffRole.PHYSIO)

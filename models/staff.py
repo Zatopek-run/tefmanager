@@ -24,6 +24,7 @@ from models.entities import (
     STAFF_ATTR_MIN,
     STAFF_ATTR_REF,
     STAFF_ATTRIBUTES,
+    STAFF_SEVERANCE_WEEKS,
     GameState,
     StaffMember,
     StaffRole,
@@ -105,6 +106,16 @@ def impulsive_sigma(has_mental_coach: bool, pressione: int = STAFF_ATTR_REF) -> 
     if not has_mental_coach:
         return IMPULSIVE_SIGMA
     return max(MENTAL_SIGMA_FLOOR, IMPULSIVE_SIGMA - (IMPULSIVE_SIGMA - CALM_SIGMA) * _factor(pressione))
+
+
+def severance_pay(member: StaffMember) -> int:
+    """Liquidazione dovuta al licenziamento di uno specialista assunto: `STAFF_SEVERANCE_WEEKS` settimane di compenso."""
+    return member.weekly_cost * STAFF_SEVERANCE_WEEKS
+
+
+def hired_of_role(state: GameState, role: StaffRole) -> Optional[StaffMember]:
+    """Lo specialista assunto di un ruolo (a regola uno solo), o `None`."""
+    return next((m for m in state.staff if m.hired and m.role == role), None)
 
 
 def describe_attributes(member: StaffMember) -> str:

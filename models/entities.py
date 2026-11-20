@@ -541,6 +541,9 @@ DOCTOR_RISK_FLOOR = 0.20
 # Preparatore mentale: `motivazione` scala il bonus al bersaglio di forma, `pressione` la deviazione dell'Impulsivo in gara
 # (senza preparatore IMPULSIVE_SIGMA, col preparatore al riferimento CALM_SIGMA, più in basso fino a MENTAL_SIGMA_FLOOR).
 MENTAL_FORM_BONUS = 4
+# Liquidazione (scelta dell'utente 2026-11-20: sostituire uno specialista costa la liquidazione del precedente). CIFRA
+# PROVVISORIA (QUESTIONS Q33): settimane di compenso pagate a ogni licenziamento di uno specialista assunto.
+STAFF_SEVERANCE_WEEKS = 6
 IMPULSIVE_SIGMA = 5.6
 CALM_SIGMA = 3.8
 MENTAL_SIGMA_FLOOR = 3.0
