@@ -30,7 +30,6 @@ from models.entities import (
     AGENT_RELATION_MAX,
     AGENT_RELATION_START,
     RELAYS,
-    SEASON_WEEKS,
     Agent,
     AgentPersonality,
     Athlete,
@@ -137,7 +136,7 @@ def drift_relations(state: GameState) -> None:
 
 def raced_names(state: GameState, season: int) -> set:
     """Nomi degli atleti del club convocati in una gara individuale (anche ritirati prima del via) nella stagione `season`."""
-    first, last = (season - 1) * SEASON_WEEKS + 1, season * SEASON_WEEKS
+    first, last = (season - 1) * state.season_length + 1, season * state.season_length
     return {
         er.player_athlete_name
         for summary in state.competition_history
@@ -151,6 +150,8 @@ def penalize_idle_athletes(state: GameState, season: int) -> int:
     """«Resta fermo»: ogni atleta della Prima Squadra mai convocato nella stagione `season` (né in una gara individuale
     né in una staffetta, quella in formazione al cambio stagione) abbassa di `AGENT_RELATION_IDLE` la relazione con il suo
     agente. Restituisce quanti atleti. Nessun RNG. Chi è arrivato a stagione quasi finita è penalizzato come gli altri."""
+    if state.is_foundation(season):  # Q32: nella stagione di fondazione nessuna penalità («resta fermo» non si applica)
+        return 0
     raced = raced_names(state, season)
     in_relay = {
         mid

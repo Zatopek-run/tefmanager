@@ -941,6 +941,10 @@ class SeasonEndDialog(QDialog):
             lines = [f"{'✔' if ok else '✘'} {title}" for title, ok in result.board_results]
             if result.fired:
                 verdict, color = f"ESONERATO: {result.board_streak} stagioni fallite di fila.", "#f87171"
+            elif result.board_foundation:  # stagione di fondazione (Q32): solo informativa
+                verdict, color = (
+                    "Stagione di fondazione: nessuna conseguenza. Da ora il Board guarda i risultati.", "#38bdf8"
+                )
             elif result.board_failed:
                 verdict = f"Stagione FALLITA per il Board. Fallite di fila: {result.board_streak}. Alla {BOARD_MAX_FAILED_STREAK}ª arriva l'esonero."
                 color = "#fbbf24"

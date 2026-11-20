@@ -21,6 +21,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.entities import (
     PROMOTION_BONUS,
@@ -47,7 +48,7 @@ def _new_game(tmpdir: str, seed: int, mode: str) -> GameController:
     ctrl = GameController(
         db_manager=DatabaseManager(db_path=Path(tmpdir) / f"e{seed}.db"), rng=random.Random(seed), auto_create=False
     )
-    ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+    start_game(ctrl, team_name="CUS Test", game_mode=mode)
     return ctrl
 
 

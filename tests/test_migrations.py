@@ -919,5 +919,58 @@ class TestMigrationV20MonthlyReports(_TmpCase):
         self.assertEqual(user_version(path), 19)
 
 
+class TestMigrationV21PrepWeeks(_TmpCase):
+    """v20 → v21 (avvio senza atleti, Q32): `game_state.prep_weeks` (default 0 = calendario di sempre, senza Preparazione)."""
+
+    def test_v20_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 21)
+        self.assertIn(20, MIGRATIONS)
+        path = make_save(self.slot("v20"), 20)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("prep_weeks", column_names(conn, "game_state"))  # la fixture è davvero v20
+            self.assertIn("monthly_report_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT prep_weeks FROM game_state WHERE id = 1").fetchone(), (0,))
+            self.assertIn(("prep_weeks", "INTEGER", 1, "0", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 20)
+        backup = self.backups("v20")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 20)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("prep_weeks", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 20)
+
+    def test_a_migrated_save_keeps_the_old_calendar(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v21")
+        DatabaseManager(db_path=path).save_game(make_state(3))
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(loaded.prep_weeks, 0)
+        self.assertEqual(loaded.season_length, 36)
+
+    def test_prep_weeks_and_the_empty_squad_roundtrip(self) -> None:
+        from models.entities import GameState, SeasonPhase
+
+        path = self.slot("empty")
+        state = GameState(game_mode="career", prep_weeks=8, season_phase=SeasonPhase.PREPARAZIONE)
+        DatabaseManager(db_path=path).save_game(state)
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual((loaded.prep_weeks, loaded.season_phase), (8, SeasonPhase.PREPARAZIONE))
+        self.assertEqual((loaded.athletes, loaded.coaches), ([], []))
+
+    def test_failed_v20_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v20"), 20)
+        before = sha(path)
+        broken = {"game_state": [("prep_weeks", "INTEGER NOT NULL DEFAULT 0"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {20: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 20)
+
+
 if __name__ == "__main__":
     unittest.main()

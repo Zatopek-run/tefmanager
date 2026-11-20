@@ -289,3 +289,21 @@ Esempio (atleta con ingaggio standard €1.770, agente Ragionevole a relazione 5
 
 Misura in autopilota (8 partite, Carriera, nessuna azione): dopo 12 settimane +€6.400/+13.700 (prima di D.3: +€4.700/+15.300, A.1), dopo 36 settimane +€7.000/+19.200, dopo 72 settimane +€12.100/+46.400; il taglio dello sponsor è attivo dopo la prima stagione in 7 partite su 8 (nessuno
 arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrate settimanali (Q31, AUDIT R28).
+
+## Q. Avvio senza atleti e Preparazione (2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q32)
+
+**Budget e valori economici di partenza: INVARIATI** (fondo 18.000 in Carriera, 10.000 nel Prototipo, quote 450/settimana, staff e impianti come sempre). Cambia solo che la rosa parte vuota.
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `SEASON_PREP_WEEKS` | 8 settimane di Preparazione a inizio di ogni stagione (solo Carriere nuove, `prep_weeks`); multipla di 4 | `entities.py` |
+| `PHASE_WEEKS` | 12 settimane per fase con gare (invariato, prima era un letterale `12`) | `entities.py` |
+| `SEASON_WEEKS` | 36 settimane di gara (invariato); la stagione di una Carriera nuova ne ha 44 | `entities.py` |
+| `FOUNDATION_MIN_ATHLETES` | 6 atleti in società (Prima Squadra e vivaio) a fine stagione 1 | `entities.py` |
+| `FOUNDATION_MIN_YOUTH` | 2 ragazzi nel vivaio | `entities.py` |
+| `FOUNDATION_MIN_MEETS` | 3 meeting con almeno un atleta schierato | `entities.py` |
+| `BOARD_RAMP_GAP_PER_PLACE` / `BOARD_RAMP_MAX_SLACK` / `BOARD_RAMP_SQUAD_SIZE` | stagione 2: posto in lega richiesto + 1 ogni 5 punti di forza sotto la media dei rivali (media dei migliori 8 atleti), al massimo +3 | `entities.py` |
+
+Gare: con la Preparazione la prima gara è alla settimana 12 (poi ogni 4: 9 gare per stagione, come prima). Stagione di fondazione: nessuna conseguenza del verdetto, nessun taglio sponsor (`SPONSOR_MISS_PENALTY` non si applica dopo la stagione 1), nessuna penalità «resta fermo». Società senza atleti a un meeting: nessuna trasferta, nessun biglietto.
+
+Misura in autopilota (Carriera nuova, nessuna azione, seme 1): budget 18.000 → circa 53.000 dopo 40 settimane e circa 100.000 dopo 100; reputazione e prestigio fermi. È una **conseguenza non voluta** dell'avvio vuoto (entrate senza costi atleti), non una cifra scelta: vedi QUESTIONS Q32 e AUDIT R29.

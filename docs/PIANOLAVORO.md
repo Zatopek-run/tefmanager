@@ -6,6 +6,10 @@
 
 ---
 
+> **Aggiornamento 2026-11-20 — fuori dai lotti A-G (richiesta dell'utente): avvio della Carriera senza atleti** (QUESTIONS Q32, schema v21). Rosa e vivaio vuoti all'avvio, **Preparazione** di 8 settimane senza gare a inizio di ogni stagione (solo Carriere nuove; `GameState.prep_weeks`, 0 nei salvataggi esistenti), non iscrizione ai meeting con la Prima Squadra vuota, obiettivi del Board di **fondazione** nella stagione 1 e raccordo nella stagione 2, aiuti a schermo e messaggio iniziale. Budget invariato. Fatto, cifre provvisorie. Non cambia l'ordine dei lotti: restano da fare E-G e C.1b.
+
+---
+
 ## 📋 Principi Guida (ereditati da CLAUDE.md)
 
 1. **MVC rigoroso:** `models/` non importa PyQt6. Le viste non decidono esiti.

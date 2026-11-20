@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import traceback
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional
 
@@ -28,6 +29,7 @@ from models.entities import (
     COACH_STATS,
     Coach,
     EVENTS,
+    FIRST_OUTDOOR_DATE,
     INTERNATIONAL_MIN_AGE,
     MAX_SPECIALIZED_COACHES,
     MAX_YOUTH_COACHES,
@@ -58,6 +60,7 @@ from models.entities import (
     EthicalDilemma,
     GameState,
     PeriodizationPhase,
+    SEASON_PREP_WEEKS,
     SeasonPhase,
     TrainingFocus,
     Transaction,
@@ -75,7 +78,6 @@ from models.generator import (
     generate_coach,
     create_season_objectives,
     generate_academy_prospects,
-    generate_initial_roster,
     generate_school_scouting_pool,
     generate_vertical_slice_roster,
 )
@@ -179,7 +181,8 @@ class GameController(QObject):
         province: Optional[str] = None,
         persist: bool = True,
     ) -> GameState:
-        if game_mode == "vertical_slice":
+        foundation = game_mode != "vertical_slice"  # Carriera: società da fondare, nessun atleta (Q32)
+        if not foundation:
             roster = generate_vertical_slice_roster(rng=self.rng)
             events = list(VERTICAL_SLICE_EVENTS)
             budget = 10000
@@ -188,19 +191,19 @@ class GameController(QObject):
                 "10 atleti, 3 discipline (100m, Lungo, 1500m) e 2 gare (Sett. 4 e Sett. 8)."
             )
         else:
-            roster = generate_initial_roster(rng=self.rng)
+            roster = []  # l'avvio è vuoto: Prima Squadra e vivaio si costruiscono con scouting e mercato
             events = None
             budget = 18000
-            intro = (
-                f"Sett. 1: Carriera Completa avviata per {team_name}! "
-                "Gestisci stagioni Outdoor, Cross e Indoor fino alla categoria Finale Oro / Coppa Europa."
-            )
+            intro = ""  # scritta sotto, quando il calendario è noto
 
         lineup = build_default_lineup(roster, event_names=events, gender="M")
         lineup_f = build_default_lineup(roster, event_names=events, gender="F")
         staff = create_initial_staff()
-        coaches = create_initial_coaches(roster, rng=self.rng)
-        objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE, budget)
+        # Gli allenatori iniziali (uno per disciplina) fanno parte dell'avvio di sempre: restano anche senza atleti da seguire.
+        coaches = create_initial_coaches(
+            roster, rng=self.rng, specialties=list(Specialty) if foundation else None
+        )
+        objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE, budget, foundation=foundation)
 
         state = GameState(
             team_name=team_name,
@@ -208,7 +211,11 @@ class GameController(QObject):
             budget=budget,
             week=1,
             season_number=1,
-            season_phase=SeasonPhase.OUTDOOR,
+            season_phase=SeasonPhase.PREPARAZIONE if foundation else SeasonPhase.OUTDOOR,
+            prep_weeks=SEASON_PREP_WEEKS if foundation else 0,
+            start_date=(
+                FIRST_OUTDOOR_DATE - timedelta(weeks=SEASON_PREP_WEEKS) if foundation else FIRST_OUTDOOR_DATE
+            ),
             prestige=0,
             reputation=75,
             tier=CompetitionTier.PROVINCIALE,
@@ -236,6 +243,15 @@ class GameController(QObject):
             coaches=coaches,
             rival_clubs=create_rival_clubs(rng=self.rng, province=province, team_name=team_name),
         )
+        if foundation:
+            state.news_log = [
+                f"Sett. 1: Nasce {team_name}! La società non ha ancora atleti: hai €{budget:,} in cassa e "
+                f"{state.prep_weeks} settimane di Preparazione, senza gare, per costruire la squadra "
+                f"(la prima gara è alla settimana {state.week + state.weeks_until_competition}). "
+                "Primo passo consigliato: apri «Vivaio & Osservatori» per lo scouting e «Rosa & Allenamenti» "
+                "per tesserare i primi atleti dal mercato. Il Board non chiede risultati questa stagione, "
+                "ma di fondare la società."
+            ]
         auto_build_all_relays(state)
         ensure_contracts(state)
         ensure_agents(state)  # D.1: agenti degli atleti iniziali (nessun RNG)

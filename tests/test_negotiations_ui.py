@@ -17,6 +17,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication, QDialog, QLabel
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.agents import agent_by_id
 from models.database import DatabaseManager
 from models.entities import (
@@ -40,7 +41,7 @@ class _Base(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "s.db"
         self.ctrl = GameController(db_manager=DatabaseManager(db_path=self.path), rng=random.Random(3), auto_create=False)
-        self.ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+        start_game(self.ctrl, team_name="CUS Test", game_mode="career")
         self.state = self.ctrl.state
         self.state.budget = 50000
 

@@ -46,7 +46,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -160,6 +160,10 @@ V19_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V20_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("monthly_report_json", "TEXT NOT NULL DEFAULT '[]'")],
 }
+# Columns added in v21 (avvio senza atleti, Q32: settimane di Preparazione a inizio stagione; 0 = nessuna, calendario di prima).
+V21_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("prep_weeks", "INTEGER NOT NULL DEFAULT 0")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -179,6 +183,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     17: V18_COLUMNS,
     18: V19_COLUMNS,
     19: V20_COLUMNS,
+    20: V21_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -389,6 +394,7 @@ def _season_history_to_json(history: List[SeasonEndResult]) -> str:
                 "board_failed": h.board_failed,
                 "board_streak": h.board_streak,
                 "fired": h.fired,
+                "board_foundation": h.board_foundation,
             }
             for h in history
         ]
@@ -408,6 +414,7 @@ def _season_history_from_json(raw: str) -> List[SeasonEndResult]:
             board_failed=h.get("board_failed"),
             board_streak=int(h.get("board_streak", 0)),
             fired=bool(h.get("fired", False)),
+            board_foundation=bool(h.get("board_foundation", False)),
         )
         for h in json.loads(raw)
     ]
@@ -811,7 +818,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     board_json TEXT NOT NULL DEFAULT '{}',
     retired_json TEXT NOT NULL DEFAULT '[]',
     agents_json TEXT NOT NULL DEFAULT '[]',
-    monthly_report_json TEXT NOT NULL DEFAULT '[]'
+    monthly_report_json TEXT NOT NULL DEFAULT '[]',
+    prep_weeks INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -1051,8 +1059,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json, prep_weeks
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -1096,6 +1104,7 @@ class DatabaseManager:
                     _retired_to_json(state.retired),
                     _agents_to_json(state.agents),
                     _reports_to_json(state.monthly_reports),
+                    state.prep_weeks,
                 ),
             )
 
@@ -1486,6 +1495,7 @@ class DatabaseManager:
                 retired=_retired_from_json(row["retired_json"]),
                 agents=_agents_from_json(row["agents_json"]),
                 monthly_reports=_reports_from_json(row["monthly_report_json"]),
+                prep_weeks=int(row["prep_weeks"]),
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),

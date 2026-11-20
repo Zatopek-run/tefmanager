@@ -17,6 +17,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication, QLabel
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.entities import RANKING_NATIONAL_SIZE, RANKING_WORLD_SIZE
 from models.simulation import advance_week
@@ -28,7 +29,7 @@ _app = QApplication.instance() or QApplication([])
 
 def _controller(path: Path, seed: int = 3) -> GameController:
     ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(seed), auto_create=False)
-    ctrl.start_new_game(team_name="CUS Test", game_mode="vertical_slice")
+    start_game(ctrl, team_name="CUS Test", game_mode="vertical_slice")
     return ctrl
 
 

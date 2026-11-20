@@ -17,6 +17,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.entities import MONTH_WEEKS, SPONSOR_TOP_N, MonthlyReport, SeasonEndResult, SeasonOutcome, CompetitionTier
 from views.finance_chart import MonthlyBarsWidget
@@ -27,7 +28,7 @@ _app = QApplication.instance() or QApplication([])
 
 def _controller(tmp: str) -> GameController:
     ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmp) / "s.db"), rng=random.Random(3), auto_create=False)
-    ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+    start_game(ctrl, team_name="CUS Test", game_mode="career")
     return ctrl
 
 

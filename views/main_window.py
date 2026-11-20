@@ -271,9 +271,10 @@ class MainWindow(QMainWindow):
 
     def _update_nav_badges(self, state: GameState) -> None:
         by_id = {a.id: a for a in state.main_squad}
+        has_squad = bool(state.main_squad)  # senza atleti niente avvisi su formazioni e staffette (c'è già l'aiuto in Dashboard)
         missing_lineup = sum(
             1
-            for g in ("M", "F")
+            for g in ("M", "F") if has_squad
             for ev in state.active_events
             if (aid := state.lineup_for(g).get(ev)) is None
             or by_id.get(aid) is None
@@ -281,7 +282,7 @@ class MainWindow(QMainWindow):
         )
         incomplete_relays = sum(
             1
-            for g in ("M", "F")
+            for g in ("M", "F") if has_squad
             for rname in state.active_relays
             if (r := state.relays_for(g).get(rname)) is None or not r.is_complete
         )
@@ -295,7 +296,7 @@ class MainWindow(QMainWindow):
         badges = {
             1: f" ({tired_count} st.)" if tired_count else "",
             2: f" ({youth_pts} pt)" if youth_pts >= 2 else "",
-            3: " (!)" if (state.is_competition_week or missing_lineup > 0) else "",
+            3: " (!)" if has_squad and (state.is_competition_week or missing_lineup > 0) else "",
             4: f" ({incomplete_relays}!)" if incomplete_relays else "",
             6: " (!)" if staff_warn else "",
         }
@@ -347,6 +348,8 @@ class MainWindow(QMainWindow):
         self.records_tab.refresh(state)
 
     def _show_competition_results(self, summary: CompetitionSummary) -> None:
+        if summary.club_absent:  # società senza atleti: non si è iscritta, lo dicono notizie e barra di stato (Q32)
+            return
         if summary.event_results:
             RaceViewerDialog(summary, parent=self).exec()
         dlg = CompetitionResultsDialog(summary, parent=self)

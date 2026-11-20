@@ -89,6 +89,8 @@ TIER_CONFIG: Dict[CompetitionTier, Dict[str, int]] = {
 class SeasonPhase(str, Enum):
     """Real athletics seasonal cycle."""
 
+    # Pre-stagione senza gare: apre ogni ciclo delle partite di Carriera nuove (`GameState.prep_weeks` > 0).
+    PREPARAZIONE = "Preparazione (Pre-stagione)"
     OUTDOOR = "Outdoor (Primavera/Estate)"
     CROSS = "Cross (Autunno)"
     INDOOR = "Indoor (Inverno)"
@@ -343,7 +345,13 @@ AGENT_RELATION_PODIUM = 1
 AGENT_RELATION_RELEASED = -10
 AGENT_RELATION_NOT_RENEWED = -5
 AGENT_RELATION_IDLE = -2  # per ogni atleta della Prima Squadra che in una stagione non è mai stato convocato («resta fermo»)
-SEASON_WEEKS = 36  # settimane di una stagione di Carriera (3 fasi da 12): la settimana è continua, non riparte
+SEASON_WEEKS = 36  # settimane di gara di una stagione di Carriera (3 fasi da 12): la settimana è continua, non riparte
+PHASE_WEEKS = 12  # settimane di ogni fase con gare (Outdoor, Cross, Indoor)
+# Avvio senza atleti (2026-11-20, QUESTIONS Q32): le partite di Carriera nuove hanno una Preparazione di questa durata a inizio
+# di ogni stagione (nessuna gara, la società si costruisce). Deve essere multipla di 4 per tenere le gare ogni 4 settimane
+# allineate. I salvataggi esistenti hanno `prep_weeks` = 0: il loro calendario non cambia.
+SEASON_PREP_WEEKS = 8
+FIRST_OUTDOOR_DATE = date(2026, 4, 6)  # data della prima settimana di Outdoor: una Carriera nuova parte `SEASON_PREP_WEEKS` prima
 # A ogni cambio stagione la relazione si avvicina a quella neutra di questa frazione della distanza: senza, in autopilota
 # (podi e rinnovi automatici) tutti gli agenti arrivavano a 100 entro la quarta stagione e la relazione non diceva più nulla.
 AGENT_RELATION_DRIFT = 0.25
@@ -997,7 +1005,23 @@ RELEGATION_SPOTS = 1  # last club moves down
 BOARD_KEY_LEAGUE = "board_league"
 BOARD_KEY_BUDGET = "board_budget"
 BOARD_KEY_RECORDS = "board_records"
-BOARD_KEYS: Tuple[str, ...] = (BOARD_KEY_LEAGUE, BOARD_KEY_BUDGET, BOARD_KEY_RECORDS)
+# Obiettivi di FONDAZIONE (stagione 1 di una Carriera nuova, che parte senza atleti; QUESTIONS Q32, cifre provvisorie).
+# Misurano la costruzione della società, non i risultati; non danno mai una stagione «fallita» né l'esonero.
+FOUND_KEY_ATHLETES = "found_athletes"
+FOUND_KEY_YOUTH = "found_youth"
+FOUND_KEY_MEETS = "found_meets"
+FOUNDATION_KEYS: Tuple[str, ...] = (FOUND_KEY_ATHLETES, FOUND_KEY_YOUTH, FOUND_KEY_MEETS)
+FOUNDATION_MIN_ATHLETES = 6  # atleti in società alla fine della stagione (Prima Squadra e vivaio)
+FOUNDATION_MIN_YOUTH = 2  # ragazzi nel vivaio
+FOUNDATION_MIN_MEETS = 3  # meeting in cui la società schiera almeno un atleta
+# Stagione 2 (primo anno «normale»): stesse tre chiavi standard, ma il posto in lega richiesto si allarga di un posto ogni
+# BOARD_RAMP_GAP_PER_PLACE punti di forza che la rosa (media dei migliori BOARD_RAMP_SQUAD_SIZE) ha sotto la media dei rivali
+# del livello, al massimo di BOARD_RAMP_MAX_SLACK posti. Dalla stagione 3 è tutto standard.
+BOARD_RAMP_GAP_PER_PLACE = 5.0
+BOARD_RAMP_MAX_SLACK = 3
+BOARD_RAMP_SQUAD_SIZE = 8
+STANDARD_BOARD_KEYS: Tuple[str, ...] = (BOARD_KEY_LEAGUE, BOARD_KEY_BUDGET, BOARD_KEY_RECORDS)
+BOARD_KEYS: Tuple[str, ...] = STANDARD_BOARD_KEYS + FOUNDATION_KEYS
 # Posto massimo in lega richiesto, per livello (a pari merito di forza, più in alto gli avversari sono più forti).
 BOARD_LEAGUE_TARGET: Dict[CompetitionTier, int] = {
     CompetitionTier.PROVINCIALE: 3,
@@ -1033,6 +1057,7 @@ class SeasonEndResult:
     board_failed: Optional[bool] = None
     board_streak: int = 0
     fired: bool = False
+    board_foundation: bool = False  # stagione di fondazione: il verdetto è solo informativo (Q32)
 
 
 @dataclass
@@ -1173,6 +1198,8 @@ class CompetitionSummary:
     ticket_income: int = 0
     team_standings: List[Tuple[str, int]] = field(default_factory=list)
     player_team: str = ""
+    # La società non aveva atleti e non si è iscritta (Q32). Transitorio, NON salvato: serve solo ai dialoghi del tick.
+    club_absent: bool = False
 
     @property
     def team_placement(self) -> int:
@@ -1200,7 +1227,7 @@ class GameState:
     week: int = 1
     season_number: int = 1
     season_phase: SeasonPhase = SeasonPhase.OUTDOOR
-    start_date: date = field(default_factory=lambda: date(2026, 4, 6))
+    start_date: date = field(default_factory=lambda: FIRST_OUTDOOR_DATE)
     prestige: int = 0
     reputation: int = 70  # 0-100 ethical standing affecting sponsors
     tier: CompetitionTier = CompetitionTier.PROVINCIALE
@@ -1228,6 +1255,9 @@ class GameState:
     bankrupt: bool = False
     board_failed_streak: int = 0  # stagioni fallite di fila secondo il Board (C.2)
     fired: bool = False  # esonerato dal Board: la partita è finita, come nel fallimento
+    # Settimane di Preparazione (senza gare) a inizio di ogni stagione: SEASON_PREP_WEEKS nelle Carriere nuove, 0 nei
+    # salvataggi esistenti e nel Prototipo (calendario invariato). Tutta l'aritmetica del ciclo passa da qui sotto.
+    prep_weeks: int = 0
     league_table: Dict[str, int] = field(default_factory=dict)
     # Per club: quanti 1°, 2°, ... posti (indice 0 = 1°) ha ottenuto in stagione; serve allo spareggio (A.2).
     league_places: Dict[str, List[int]] = field(default_factory=dict)
@@ -1293,7 +1323,41 @@ class GameState:
         """Weeks left before the final league table is drawn up (career mode only)."""
         if self.game_mode != "career":
             return None
-        return 36 - ((self.week - 1) % 36)
+        return self.season_length - ((self.week - 1) % self.season_length)
+
+    # ---- calendario della stagione (Preparazione + Outdoor, Cross, Indoor)
+    @property
+    def season_length(self) -> int:
+        """Settimane di una stagione di Carriera: la Preparazione (se c'è) più le tre fasi da `PHASE_WEEKS`."""
+        return SEASON_WEEKS + self.prep_weeks
+
+    @property
+    def season_cycle(self) -> List[SeasonPhase]:
+        """Le fasi di una stagione, nell'ordine in cui si susseguono."""
+        cycle = [SeasonPhase.OUTDOOR, SeasonPhase.CROSS, SeasonPhase.INDOOR]
+        return ([SeasonPhase.PREPARAZIONE] if self.prep_weeks > 0 else []) + cycle
+
+    def is_phase_start(self, week: int) -> bool:
+        """Vero se `week` è la prima settimana di una fase (o della stagione)."""
+        pos = (week - 1) % self.season_length
+        # Con `prep_weeks` = 0 il primo e il secondo inizio coincidono: restano 0, 12 e 24 come prima.
+        return pos in (0, self.prep_weeks, self.prep_weeks + PHASE_WEEKS, self.prep_weeks + 2 * PHASE_WEEKS)
+
+    def is_prep_week(self, week: int) -> bool:
+        """Vero se `week` cade nella Preparazione di una stagione (mai nelle partite con `prep_weeks` = 0)."""
+        return self.prep_weeks > 0 and (week - 1) % self.season_length < self.prep_weeks
+
+    def is_race_week(self, week: int) -> bool:
+        """Si gareggia ogni 4 settimane, tranne in Preparazione."""
+        return week % 4 == 0 and not self.is_prep_week(week)
+
+    @property
+    def is_foundation_season(self) -> bool:
+        """La stagione 1 di una Carriera nuova (senza atleti): il Board giudica la fondazione, non i risultati (Q32)."""
+        return self.is_foundation(self.season_number)
+
+    def is_foundation(self, season: int) -> bool:
+        return self.prep_weeks > 0 and season == 1
 
     def rivals_in(self, tier: Optional[CompetitionTier] = None) -> List[RivalClub]:
         t = tier or self.tier
@@ -1426,13 +1490,15 @@ class GameState:
 
     @property
     def is_competition_week(self) -> bool:
-        """Competitions occur every 4 in-game weeks."""
-        return self.week % 4 == 0
+        """Competitions occur every 4 in-game weeks (never during the Preparazione)."""
+        return self.is_race_week(self.week)
 
     @property
     def weeks_until_competition(self) -> int:
-        rem = 4 - (self.week % 4)
-        return 0 if self.is_competition_week else rem
+        """Settimane alla prossima gara (0 se questa è di gara); la Preparazione non ne ha, si salta."""
+        if self.is_competition_week:
+            return 0
+        return next(k for k in range(1, self.season_length + 5) if self.is_race_week(self.week + k))
 
     @property
     def is_vertical_slice_complete(self) -> bool:

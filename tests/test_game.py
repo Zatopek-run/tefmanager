@@ -15,6 +15,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")  # i test non devono aprire finestre 
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.entities import (
     CompetitionTier,
@@ -596,7 +597,7 @@ class TestVerticalSliceAndMechanics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             db = DatabaseManager(db_path=Path(tmpdir) / "career.db")
             ctrl = GameController(db_manager=db, rng=random.Random(77))
-            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            start_game(ctrl, team_name="CUS Test", game_mode="career")
             self.assertEqual(len(ctrl.state.athletes), 16)
             self.assertEqual(len(ctrl.state.active_events), 6)  # con l'800m
 
@@ -620,7 +621,7 @@ class TestMaxithlonInspiredMechanics(unittest.TestCase):
         db = DatabaseManager(db_path=Path(tmpdir) / f"m{seed}.db")
         ctrl = GameController(db_manager=db, rng=random.Random(seed))
         if mode != "vertical_slice":
-            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+            start_game(ctrl, team_name="CUS Test", game_mode=mode)
         return ctrl
 
     def test_scouting_points_and_escalating_fees(self) -> None:
@@ -902,7 +903,7 @@ class TestCoachesAndRelays(unittest.TestCase):
         db = DatabaseManager(db_path=Path(tmpdir) / f"c{seed}.db")
         ctrl = GameController(db_manager=db, rng=random.Random(seed))
         if mode != "vertical_slice":
-            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+            start_game(ctrl, team_name="CUS Test", game_mode=mode)
         return ctrl
 
     @staticmethod
@@ -979,7 +980,7 @@ class TestCoachesAndRelays(unittest.TestCase):
             ctrl = self._ctrl(tmpdir, seed=5)
             self.assertEqual(ctrl.state.active_relays, ["4x100m"])
             self.assertTrue(ctrl.state.relays["4x100m"].is_complete)
-            ctrl.start_new_game("X", "career")
+            start_game(ctrl, "X", "career")
             s = ctrl.state
             self.assertEqual(s.active_relays, ["4x100m", "4x400m"])
             # 8 athletes: both relays get 4 legs, nobody runs twice
@@ -1131,7 +1132,7 @@ class TestRivalClubs(unittest.TestCase):
         db = DatabaseManager(db_path=Path(tmpdir) / f"r{seed}.db")
         ctrl = GameController(db_manager=db, rng=random.Random(seed))
         if mode != "vertical_slice":
-            ctrl.start_new_game(team_name="CUS Test", game_mode=mode)
+            start_game(ctrl, team_name="CUS Test", game_mode=mode)
         return ctrl
 
     @staticmethod
@@ -1169,7 +1170,7 @@ class TestRivalClubs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             for prov in LAZIO_PROVINCES:
                 ctrl = self._ctrl(tmpdir, seed=31)
-                ctrl.start_new_game(team_name="Atletica Test", game_mode="career", province=prov)
+                start_game(ctrl, team_name="Atletica Test", game_mode="career", province=prov)
                 s = ctrl.state
                 self.assertEqual(len(s.rival_clubs), 28)
                 prov_clubs = [c.name for c in s.rivals_in(CompetitionTier.PROVINCIALE)]
@@ -1297,7 +1298,7 @@ class TestPromotionAndRelegation(unittest.TestCase):
 
     def _career(self, tmpdir: str, seed: int = 1) -> GameController:
         ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / f"p{seed}.db"), rng=random.Random(seed))
-        ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+        start_game(ctrl, team_name="CUS Test", game_mode="career")
         return ctrl
 
     @staticmethod
@@ -1536,7 +1537,7 @@ class TestPyQtViewsV2(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "cal.db"), rng=random.Random(6))
-            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            start_game(ctrl, team_name="CUS Test", game_mode="career")
             s = ctrl.state
             events = s.active_events
             star = next(a for a in s.main_squad if a.gender == "M")
@@ -1569,7 +1570,7 @@ class TestPyQtViewsV2(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmpdir) / "card.db"), rng=random.Random(6))
-            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            start_game(ctrl, team_name="CUS Test", game_mode="career")
             s = ctrl.state
             senior, expiring, kid = s.main_squad[0], s.main_squad[1], s.main_squad[2]
             kid.in_youth_squad, kid.contract_end_season, kid.age = True, 0, 16
@@ -1599,7 +1600,7 @@ class TestPyQtViewsV2(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "norenew.db"
             ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(6))
-            ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+            start_game(ctrl, team_name="CUS Test", game_mode="career")
             s = ctrl.state
             senior, kid = s.main_squad[0], s.main_squad[1]
             kid.in_youth_squad, kid.contract_end_season = True, 0
@@ -2120,8 +2121,8 @@ class TestGenderDivisions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "relays_mf.db"
             db = DatabaseManager(db_path=path)
-            ctrl = GameController(db_manager=db, rng=random.Random(19))
-            ctrl.start_new_game("CUS Relays", "career")
+            ctrl = GameController(db_manager=db, rng=random.Random(21))
+            start_game(ctrl, "CUS Relays", "career")
             s = ctrl.state
 
             # Both M and F 4x100m and 4x400m start complete with zero shared runners
@@ -2406,7 +2407,7 @@ class TestStartScreenAndUX(unittest.TestCase):
             # Compatibilità con vecchio savegame.db nella cartella principale
             legacy_db = DatabaseManager(db_path=legacy_path)
             legacy_ctrl = GameController(db_manager=legacy_db, rng=random.Random(7))
-            legacy_ctrl.start_new_game(team_name="Legacy Club", game_mode="vertical_slice")
+            start_game(legacy_ctrl, team_name="Legacy Club", game_mode="vertical_slice")
             win.show_start_screen()
             names = {s.team_name for s in ctrl.list_save_slots()}
             self.assertEqual(names, {"Atletica Test", "Legacy Club"})

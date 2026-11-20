@@ -18,8 +18,9 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
-from models.entities import BOARD_KEYS, SeasonEndResult, SeasonOutcome
+from models.entities import BOARD_KEYS, STANDARD_BOARD_KEYS, SeasonEndResult, SeasonOutcome
 from models.simulation import advance_week
 from views.dialogs import BoardObjectivesDialog, SeasonEndDialog
 from views.main_window import MainWindow
@@ -29,7 +30,7 @@ _app = QApplication.instance() or QApplication([])
 
 def _career(path: Path, seed: int = 3) -> GameController:
     ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(seed), auto_create=False)
-    ctrl.start_new_game(team_name="CUS Test", game_mode="career")
+    start_game(ctrl, team_name="CUS Test", game_mode="career")
     return ctrl
 
 
@@ -48,7 +49,7 @@ class TestSeasonCycle(unittest.TestCase):
         self.ctrl = _career(Path(tmp.name) / "s.db")
 
     def test_a_new_career_starts_with_the_three_board_objectives(self) -> None:
-        self.assertEqual([o.key for o in self.ctrl.state.objectives], list(BOARD_KEYS))
+        self.assertEqual([o.key for o in self.ctrl.state.objectives], list(STANDARD_BOARD_KEYS))
         budget = next(o for o in self.ctrl.state.objectives if o.key == "board_budget")
         self.assertEqual(budget.target, self.ctrl.state.budget)
 
@@ -59,7 +60,7 @@ class TestSeasonCycle(unittest.TestCase):
         verdict = state.season_history[0]
         self.assertIsNotNone(verdict.board_failed)
         self.assertEqual(len(verdict.board_results), 3)
-        self.assertEqual([o.key for o in state.objectives], list(BOARD_KEYS))
+        self.assertEqual([o.key for o in state.objectives], list(STANDARD_BOARD_KEYS))
         self.assertTrue(all(o.value == 0 and not o.completed for o in state.objectives if o.key != "board_budget"))
         self.assertTrue(any("il Board assegna" in line for line in state.news_log))
 
@@ -123,7 +124,7 @@ class TestViews(unittest.TestCase):
             proto = GameController(
                 db_manager=DatabaseManager(db_path=Path(tmp) / "p.db"), rng=random.Random(3), auto_create=False
             )
-            proto.start_new_game(team_name="CUS Test", game_mode="vertical_slice")
+            start_game(proto, team_name="CUS Test", game_mode="vertical_slice")
             self.assertTrue(all(o.key not in BOARD_KEYS for o in proto.state.objectives))
 
 

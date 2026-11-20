@@ -8,7 +8,7 @@ import random
 import re
 from typing import Dict, List, Optional
 
-from models.board import create_board_objectives
+from models.board import create_board_objectives, create_foundation_objectives
 from models.entities import (
     COACH_BASE_SKILL,
     COACH_STATS,
@@ -454,14 +454,22 @@ def generate_coach(
 
 
 def create_initial_coaches(
-    roster: List[Athlete], rng: Optional[random.Random] = None
+    roster: List[Athlete],
+    rng: Optional[random.Random] = None,
+    specialties: Optional[List[Specialty]] = None,
 ) -> List[Coach]:
-    """One entry-level coach for each specialty in the starting roster, athletes pre-assigned."""
+    """One entry-level coach for each specialty in the starting roster, athletes pre-assigned.
+
+    `specialties` (avvio senza atleti, Q32) fissa le discipline da coprire invece di ricavarle dalla rosa.
+    """
     r = rng or random.Random()
     coaches: List[Coach] = []
     used: set[str] = set()
     for spec in Specialty:
-        if not any(a.specialty == spec for a in roster):
+        if specialties is not None:
+            if spec not in specialties:
+                continue
+        elif not any(a.specialty == spec for a in roster):
             continue
         primary, secondary = SPECIALTY_COACH_FOCUS[spec]
         coach = generate_coach(spec, primary, secondary, tier=1, rng=r, existing_names=used)
@@ -507,14 +515,19 @@ def create_initial_staff() -> List[StaffMember]:
     ]
 
 
-def create_season_objectives(game_mode: str, tier: CompetitionTier, budget: int = 0) -> List[SeasonObjective]:
-    """Create season goals for the club. In Carriera sono gli obiettivi del Board (C.2), con `budget` come base."""
+def create_season_objectives(
+    game_mode: str, tier: CompetitionTier, budget: int = 0, foundation: bool = False
+) -> List[SeasonObjective]:
+    """Create season goals for the club. In Carriera sono gli obiettivi del Board (C.2), con `budget` come base;
+    con `foundation` (Carriera nuova senza atleti, Q32) quelli di fondazione della società."""
     if game_mode == "vertical_slice":
         return [
             SeasonObjective("positive_budget", "Chiudi la stagione con bilancio sopra €8.000"),
             SeasonObjective("win_event", "Vinci almeno una gara ufficiale"),
             SeasonObjective("club_record", "Stabilisci un nuovo Record Sociale omologato (vento <= 2.0 m/s)"),
         ]
+    if foundation:
+        return create_foundation_objectives()
     return create_board_objectives(tier, budget)
 
 

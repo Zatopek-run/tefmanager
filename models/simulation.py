@@ -852,6 +852,9 @@ def simulate_competition(
         a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
     )
     is_home = state.next_meet_is_home
+    # Società senza atleti in Prima Squadra (avvio da zero, Q32): non si iscrive. I rivali corrono e si dividono i punti,
+    # ma niente trasferta, biglietti, usura della pista, bonus squadra o diritti TV, e nessuna sanzione.
+    club_absent = not state.main_squad
 
     weather = (
         WeatherCondition.SERENO
@@ -1228,7 +1231,7 @@ def simulate_competition(
         (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
         len(team_standings),
     )
-    team_bonus = {1: 10, 2: 6, 3: 3}.get(team_place, 0)
+    team_bonus = 0 if club_absent else {1: 10, 2: 6, 3: 3}.get(team_place, 0)
     total_prestige += team_bonus
     for team, pts in team_points.items():
         state.league_table[team] = state.league_table.get(team, 0) + pts
@@ -1240,14 +1243,16 @@ def simulate_competition(
 
     # Home meets: no bus trip, but the gate brings ticket income and wears the track
     spectators, ticket_income = (0, 0)
-    if is_home:
+    if club_absent:
+        travel_cost = 0  # nessuna estrazione per il biglietto: con la società assente non c'è un pubblico da stimare
+    elif is_home:
         spectators, ticket_income = _compute_ticket_income(state, weather, r)
         travel_cost = 0
         state.track_condition = clamp_stat(state.track_condition - 3, 25, 100)
     else:
         travel_cost = tier_cfg["travel_cost"]
     bonus_total = sum(amount for _a, _e, amount in record_bonuses)
-    tv_income = tv_rights_income(state, is_home)  # D.3: solo in casa e solo Internazionale
+    tv_income = 0 if club_absent else tv_rights_income(state, is_home)  # D.3: solo in casa e solo Internazionale
     state.budget += total_prize + ticket_income + tv_income - travel_cost - bonus_total
     state.prestige += total_prestige
 
@@ -1288,7 +1293,9 @@ def simulate_competition(
                 amount=tv_income,
             ),
         )
-    if is_home:
+    if club_absent:
+        pass  # nessun incasso e nessun costo: la società non partecipa
+    elif is_home:
         state.transactions.insert(
             0,
             Transaction(
@@ -1331,15 +1338,23 @@ def simulate_competition(
         ticket_income=ticket_income,
         team_standings=team_standings,
         player_team=state.team_name,
+        club_absent=club_absent,
     )
     state.competition_history.insert(0, summary)
-    venue = f"in casa, {spectators:,} spettatori" if is_home else "in trasferta"
-    state.news_log.insert(
-        0,
-        f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}, {venue}) — "
-        f"società {team_place}ª con {team_points[state.team_name]} pt, "
-        f"+€{total_prize:,} premi, +{total_prestige} prestigio.",
-    )
+    if club_absent:
+        state.news_log.insert(
+            0,
+            f"Sett. {state.week}: {summary.meet_name}: la società non ha atleti da schierare e non si iscrive "
+            "(nessuna sanzione). Tesseramenti e scouting servono a partecipare ai prossimi meeting.",
+        )
+    else:
+        venue = f"in casa, {spectators:,} spettatori" if is_home else "in trasferta"
+        state.news_log.insert(
+            0,
+            f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}, {venue}) — "
+            f"società {team_place}ª con {team_points[state.team_name]} pt, "
+            f"+€{total_prize:,} premi, +{total_prestige} prestigio.",
+        )
     _evaluate_objectives(state, summary)
     return summary
 
@@ -1527,7 +1542,13 @@ def close_season(state: GameState) -> SeasonEndResult:
         result.board_failed = verdict.failed
         result.board_streak = verdict.streak
         result.fired = verdict.fired
-        if verdict.fired:
+        result.board_foundation = verdict.foundation
+        if verdict.foundation:
+            line = (
+                f"Sett. {week}: il Board chiude la stagione di fondazione: {verdict.passed}/{len(verdict.results)} "
+                "obiettivi centrati. Nessuna conseguenza: dalla prossima stagione contano i risultati."
+            )
+        elif verdict.fired:
             line = (
                 f"Sett. {week}: ESONERATO. Il Board non è soddisfatto di {verdict.streak} stagioni di fila "
                 f"({verdict.passed}/{len(verdict.results)} obiettivi quest'anno): {state.team_name} cambia allenatore."
@@ -1791,7 +1812,8 @@ def advance_week(
     if fin["individual_sponsors"] > 0:
         ledger("Sponsor Individuali Atleti (in base ai fan)", "Sponsor", fin["individual_sponsors"])
     ledger("Quote Tesserati & Contributi", "Quote Sociali", fin["member_fees"])
-    ledger(f"Rimborsi spese atleti ({len(state.main_squad)})", "Rimborsi Atleti", -fin["athlete_wages"])
+    if fin["athlete_wages"] > 0:  # senza atleti in Prima Squadra (avvio da zero) niente riga da zero nel libro mastro
+        ledger(f"Rimborsi spese atleti ({len(state.main_squad)})", "Rimborsi Atleti", -fin["athlete_wages"])
     if fin["staff_cost"] > 0:
         hired_count = sum(1 for s in state.staff if s.hired)
         ledger(f"Compensi Staff ({hired_count} specialisti)", "Staff", -fin["staff_cost"])
@@ -1837,12 +1859,13 @@ def advance_week(
 
     state.week += 1
 
-    # Season progression in Career mode (every 12 weeks: Outdoor -> Cross -> Indoor -> Outdoor)
-    if state.game_mode == "career" and (state.week - 1) % 12 == 0:
-        cycle = [SeasonPhase.OUTDOOR, SeasonPhase.CROSS, SeasonPhase.INDOOR]
+    # Season progression in Career mode: [Preparazione ->] Outdoor -> Cross -> Indoor, ogni fase da 12 settimane
+    # (la Preparazione dura `state.prep_weeks`, 0 nei salvataggi vecchi). La stagione si chiude al giro del ciclo.
+    if state.game_mode == "career" and state.is_phase_start(state.week):
+        cycle = state.season_cycle
         next_idx = (cycle.index(state.season_phase) + 1) % len(cycle)
         state.season_phase = cycle[next_idx]
-        if state.season_phase == SeasonPhase.OUTDOOR:
+        if state.season_phase == cycle[0]:
             season_end = close_season(state)
             state.season_number += 1
             state.league_table = {}
@@ -1856,10 +1879,14 @@ def advance_week(
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)
             state.news_log[0:0] = start_new_season(state)  # nuovi obiettivi del Board (C.2), senza RNG
-        state.news_log.insert(
-            0,
-            f"Sett. {state.week}: Inizia la stagione {state.season_phase.value}!",
-        )
+        if state.season_phase == SeasonPhase.PREPARAZIONE:
+            news = (
+                f"Sett. {state.week}: Inizia la {state.season_phase.value}: si lavora senza gare fino alla "
+                f"settimana {state.week + state.weeks_until_competition}."
+            )
+        else:
+            news = f"Sett. {state.week}: Inizia la stagione {state.season_phase.value}!"
+        state.news_log.insert(0, news)
 
     # Academy kids turning 18 join the main squad automatically
     for a in state.youth_squad:

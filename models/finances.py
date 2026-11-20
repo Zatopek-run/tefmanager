@@ -17,7 +17,6 @@ from models.entities import (
     MERCH_FANS_DIVISOR,
     MERCH_PRESTIGE_DIVISOR,
     MONTH_WEEKS,
-    SEASON_WEEKS,
     SPONSOR_MISS_PENALTY,
     SPONSOR_TOP_N,
     TV_RIGHTS_PER_HOME_MEET,
@@ -47,8 +46,8 @@ def build_monthly_report(state: GameState, first_week: int, last_week: int) -> M
         else:
             expenses[tx.category] = expenses.get(tx.category, 0) - tx.amount
     return MonthlyReport(
-        season=(first_week - 1) // SEASON_WEEKS + 1,
-        month=((first_week - 1) % SEASON_WEEKS) // MONTH_WEEKS + 1,
+        season=(first_week - 1) // state.season_length + 1,
+        month=((first_week - 1) % state.season_length) // MONTH_WEEKS + 1,
         first_week=first_week,
         last_week=last_week,
         income=income,
@@ -79,8 +78,12 @@ def merchandising_income(state: GameState) -> int:
 
 
 def sponsor_cut_active(state: GameState) -> bool:
-    """Lo sponsor società è tagliato se l'ultima stagione è finita fuori dai primi `SPONSOR_TOP_N` della lega."""
-    return bool(state.season_history) and state.season_history[0].placement > SPONSOR_TOP_N
+    """Lo sponsor società è tagliato se l'ultima stagione è finita fuori dai primi `SPONSOR_TOP_N` della lega.
+    Non dopo la stagione di fondazione (Q32): una società nata senza atleti non è «sotto obiettivo»."""
+    if not state.season_history:
+        return False
+    last = state.season_history[0]
+    return last.placement > SPONSOR_TOP_N and not state.is_foundation(last.season)
 
 
 def sponsor_after_cut(state: GameState, sponsor: int) -> tuple[int, int]:

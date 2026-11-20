@@ -157,15 +157,34 @@ def _make_stat_card(
     return card, value_lbl, sub_lbl
 
 
+EMPTY_SQUAD_TEXT = (
+    "Nessun atleta in rosa. Vai a «Vivaio && Osservatori» per lo scouting dei giovani, oppure a «Rosa && Allenamenti» "
+    "→ «Mercato Svincolati» per tesserare i primi atleti."
+)
+
+
+def _empty_hint(text: str) -> QLabel:
+    """Riquadro di aiuto per le schede senza dati (società appena nata): dice che cosa fare, non lascia lo schermo vuoto."""
+    label = QLabel(text.replace("&&", "&"))
+    label.setObjectName("SubTitle")
+    label.setWordWrap(True)
+    label.setStyleSheet("color: #fbbf24; border: 1px solid #fbbf24; border-radius: 6px; padding: 8px 10px;")
+    label.hide()
+    return label
+
+
 def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = None) -> list[tuple[str, str, int]]:
     """Return actionable alerts `(text, severity, target_tab_index)` for the current week."""
     items: list[tuple[str, str, int]] = []
     by_id = {a.id: a for a in state.main_squad}
 
+    if not state.main_squad:  # società senza atleti: il primo passo è tesserarli, non coprire 12 gare
+        items.append(("Nessun atleta in rosa: apri lo scouting e tessera i primi atleti", "warn", 2))
+
     missing_lineups = 0
     injured_lineups = 0
     lineup_ids: set[int] = set()
-    for gender in ("M", "F"):
+    for gender in ("M", "F") if state.main_squad else ():
         lineup = state.lineup_for(gender)
         for ev in state.active_events:
             aid = lineup.get(ev)
@@ -200,7 +219,7 @@ def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = Non
         items.append(("Mercato: nuovi svincolati da valutare questa settimana", "ok", 1))
 
     incomplete_relays = 0
-    for gender in ("M", "F"):
+    for gender in ("M", "F") if state.main_squad else ():
         relays = state.relays_for(gender)
         for name in state.active_relays:
             r = relays.get(name)
@@ -417,8 +436,8 @@ class DashboardTab(QWidget):
             self.tier_progress_label.setText(
                 f"Lega {state.tier.display_name}: {pos}° su {len(standings)} con {pts} pt — {zone}"
             )
-            done = 36 - weeks_left
-            self.tier_progress.setMaximum(36)
+            done = state.season_length - weeks_left
+            self.tier_progress.setMaximum(state.season_length)
             self.tier_progress.setValue(done)
             self.tier_progress.setFormat(
                 f"Stagione {state.season_number}: mancano {weeks_left} settimane al verdetto "
@@ -446,10 +465,14 @@ class DashboardTab(QWidget):
 
         squad = state.main_squad
         fit_count = sum(1 for a in squad if not a.is_injured)
-        self.squad_val.setText(f"{fit_count}/{len(squad)} Sani")
-        self.squad_sub.setText(
-            f"Vivaio {len(state.youth_squad)}/{YOUTH_SQUAD_MAX} · Pista {state.track_condition}%"
-        )
+        if squad:
+            self.squad_val.setText(f"{fit_count}/{len(squad)} Sani")
+            self.squad_sub.setText(
+                f"Vivaio {len(state.youth_squad)}/{YOUTH_SQUAD_MAX} · Pista {state.track_condition}%"
+            )
+        else:
+            self.squad_val.setText("Nessun atleta")
+            self.squad_sub.setText("Vai a Vivaio & Osservatori o al Mercato per tesserare")
 
         if state.is_vertical_slice_complete:
             self.comp_val.setText("Prototipo OK")
@@ -481,7 +504,14 @@ class DashboardTab(QWidget):
 
         sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)
         self._top_athlete_ids = [a.id or -1 for a in sorted_athletes]
-        self.top_table.setRowCount(len(sorted_athletes))
+        self.top_table.clearSpans()
+        self.top_table.setRowCount(len(sorted_athletes) or 1)
+        if not sorted_athletes:
+            placeholder = QTableWidgetItem(EMPTY_SQUAD_TEXT.replace("&&", "&"))
+            placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.top_table.setItem(0, 0, placeholder)
+            self.top_table.setSpan(0, 0, 1, self.top_table.columnCount())
         for row, a in enumerate(sorted_athletes):
             vals = [
                 f"{a.name} ({a.gender})",
@@ -541,6 +571,8 @@ class RosterTab(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
+        self.empty_hint = _empty_hint(EMPTY_SQUAD_TEXT)
+        root.addWidget(self.empty_hint)
 
         toolbar = QHBoxLayout()
         title = QLabel("Rosa, Periodizzazione & Recupero")
@@ -732,6 +764,7 @@ class RosterTab(QWidget):
     def refresh(self, state: GameState) -> None:
         self._athlete_row_ids = []
         full_squad = state.main_squad
+        self.empty_hint.setVisible(not full_squad)
         query = self.search_input.text().strip().lower() if hasattr(self, "search_input") else ""
         spec_val = self.spec_filter.currentData() if hasattr(self, "spec_filter") else None
         healthy_only = self.healthy_only_check.isChecked() if hasattr(self, "healthy_only_check") else False
@@ -883,6 +916,11 @@ class CalendarTab(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
+        self.empty_hint = _empty_hint(
+            "Nessun atleta da convocare: senza atleti la società non si iscrive ai meeting (nessuna sanzione). "
+            + EMPTY_SQUAD_TEXT
+        )
+        root.addWidget(self.empty_hint)
 
         banner = QFrame()
         banner.setObjectName("StatCard")
@@ -1057,6 +1095,7 @@ class CalendarTab(QWidget):
         QTimer.singleShot(0, lambda: self.refresh(self.controller.state))
 
     def refresh(self, state: GameState) -> None:
+        self.empty_hint.setVisible(not state.main_squad)
         if state.is_vertical_slice_complete:
             self.cycle_label.setText(
                 "Prototipo Stagione Outdoor completato (2 gare disputate)! "
@@ -1711,6 +1750,11 @@ class YouthTab(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
+        self.empty_hint = _empty_hint(
+            "Il vivaio è vuoto. Usa gli osservatori qui sotto (ogni ricerca costa punti scouting e un po' di denaro) "
+            "per trovare i primi ragazzi e inseriscili nel vivaio: crescono più in fretta e a 18 anni passano in Prima Squadra."
+        )
+        root.addWidget(self.empty_hint)
 
         squad_panel = QFrame()
         squad_panel.setObjectName("SectionPanel")
@@ -1848,6 +1892,7 @@ class YouthTab(QWidget):
 
     def refresh(self, state: GameState) -> None:
         youth = state.youth_squad
+        self.empty_hint.setVisible(not youth)
         self.squad_title.setText(f"Vivaio — {len(youth)}/{YOUTH_SQUAD_MAX} ragazzi")
         self.scout_title.setText(
             f"Osservatori — {state.scouting_points_left}/{WEEKLY_SCOUTING_POINTS} punti disponibili questa settimana"
@@ -2015,6 +2060,10 @@ class RelayTab(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
+        self.empty_hint = _empty_hint(
+            "Servono almeno 4 atleti dello stesso sesso per comporre una staffetta. " + EMPTY_SQUAD_TEXT
+        )
+        root.addWidget(self.empty_hint)
 
         top_bar = QHBoxLayout()
         hint = QLabel(
@@ -2103,6 +2152,7 @@ class RelayTab(QWidget):
         root.addLayout(row, stretch=1)
 
     def refresh(self, state: GameState) -> None:
+        self.empty_hint.setVisible(not state.main_squad)
         active = set(state.active_relays)
         gender = self.division_combo.currentData() or "M"
         relays = state.relays_for(gender)

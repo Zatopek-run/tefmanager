@@ -18,6 +18,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication, QComboBox
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.entities import FieldRisk, RaceKick, RacePace, RelayChange
 from views.main_window import MainWindow
@@ -27,7 +28,7 @@ _app = QApplication.instance() or QApplication([])
 
 def _controller(path: Path) -> GameController:
     ctrl = GameController(db_manager=DatabaseManager(db_path=path), rng=random.Random(3), auto_create=False)
-    ctrl.start_new_game(team_name="CUS Test", game_mode="vertical_slice")  # nel Prototipo c'è il 1500m
+    start_game(ctrl, team_name="CUS Test", game_mode="vertical_slice")  # nel Prototipo c'è il 1500m
     return ctrl
 
 
@@ -106,7 +107,7 @@ class TestRelayChangeCombo(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.path = Path(tmp.name) / "r.db"
         self.ctrl = GameController(db_manager=DatabaseManager(db_path=self.path), rng=random.Random(3), auto_create=False)
-        self.ctrl.start_new_game(team_name="CUS Test", game_mode="career")  # in Carriera ci sono entrambe le staffette
+        start_game(self.ctrl, team_name="CUS Test", game_mode="career")  # in Carriera ci sono entrambe le staffette
         self.win = MainWindow(controller=self.ctrl)
         self.addCleanup(self.win.close)
         self.tab = self.win.relay_tab
@@ -147,7 +148,7 @@ class TestRelayChangeCombo(unittest.TestCase):
         proto = GameController(
             db_manager=DatabaseManager(db_path=self.path.with_name("p.db")), rng=random.Random(3), auto_create=False
         )
-        proto.start_new_game(team_name="CUS Proto", game_mode="vertical_slice")
+        start_game(proto, team_name="CUS Proto", game_mode="vertical_slice")
         win = MainWindow(controller=proto)
         self.addCleanup(win.close)
         self.assertTrue(win.relay_tab._change_combos["4x100m"].isEnabled())

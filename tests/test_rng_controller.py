@@ -20,6 +20,7 @@ os.environ.setdefault("TEF_NO_GODOT", "1")
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from tests.support import start_game
 from models.database import DatabaseManager
 from models.rng_state import dump_rng_state
 
@@ -42,7 +43,7 @@ class TestReloadReplays(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
         first = _controller(self.dir / "a.db", seed=4)
-        first.start_new_game(team_name="CUS Test", game_mode="career")
+        start_game(first, team_name="CUS Test", game_mode="career")
         first.advance_week()
         first.advance_week()
 

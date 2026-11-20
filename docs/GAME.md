@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1-A.5, B.1, B.2 e B.3 di `PIANOLAVORO.md` fatti; **cifre di B.2 provvisorie**, quelle di B.3 misurate e confermate) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Aggiornamento 2026-11-20: fatti anche C.1-C.3 (ranking, Board, ritiro) e **tutto il lotto D** (agenti, trattative, finanze; §5.15-5.19), cifre provvisorie (Q26-Q31); schema 20. Suite di test: **532 test OK** (eseguita il 2026-11-20; i modelli nuovi girano senza PyQt6).
+**Aggiornamento 2026-11-20 (sera): avvio della Carriera senza atleti con Preparazione, schema 21, §5.0, 572 test OK.** Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1-A.5, B.1, B.2 e B.3 di `PIANOLAVORO.md` fatti; **cifre di B.2 provvisorie**, quelle di B.3 misurate e confermate) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Aggiornamento 2026-11-20: fatti anche C.1-C.3 (ranking, Board, ritiro) e **tutto il lotto D** (agenti, trattative, finanze; §5.15-5.19), cifre provvisorie (Q26-Q31); schema 20. Suite di test: **532 test OK** (eseguita il 2026-11-20; i modelli nuovi girano senza PyQt6).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -34,7 +34,7 @@ un visualizzatore Godot opzionale in stile «diretta TV»).
 | Modalità | Contenuto |
 | --- | --- |
 | **Prototipo Outdoor** (`vertical_slice`) | 10 atleti, 3 discipline (100m, Salto in Lungo, 1500m), 2 gare ufficiali (sett. 4 e 8), nessuna promozione. Serve a provare il ciclo allenamento/recupero/vento/scouting/staff/dilemmi. Nulla ferma il gioco dopo la sett. 8 (difetto noto). Fondo iniziale 10.000. |
-| **Carriera Completa** (`career`) | Rosa iniziale di 16 atleti (8 M + 8 F), 6 discipline (100m, 400m, **800m**, 1500m, Salto in Lungo, Getto del Peso) più staffette 4x100m e 4x400m, stagioni cicliche **Outdoor → Cross → Indoor** da 12 settimane l'una (36 sett. a stagione), promozioni/retrocessioni tra 4 categorie. Fondo iniziale 18.000. |
+| **Carriera Completa** (`career`) | **Società da fondare: parte con 0 atleti** (Prima Squadra e vivaio vuoti; budget 18.000 invariato, staff e 4 allenatori iniziali come sempre) e una **Preparazione** di 8 settimane senza gare (Q32; i salvataggi vecchi hanno il calendario di prima), 6 discipline (100m, 400m, **800m**, 1500m, Salto in Lungo, Getto del Peso) più staffette 4x100m e 4x400m, stagioni cicliche **[Preparazione →] Outdoor → Cross → Indoor** (Preparazione 8 sett., poi 12 settimane per fase: 44 sett. a stagione nelle Carriere nuove, 36 nei salvataggi vecchi), promozioni/retrocessioni tra 4 categorie. Fondo iniziale 18.000. |
 
 Categorie (`CompetitionTier`): **Provinciale → Regionale → Nazionale → Internazionale**. Nell'interfaccia hanno i nomi dei Campionati di Società (`TIER_DISPLAY_NAMES`, Q18): **Fase regionale CdS → Finale Bronzo → Finale Argento → Finale Oro / Coppa Europa**; il `value` dell'enum, salvato nel DB, non cambia. Ognuna ha livello medio dei rivali,
 sponsor settimanale, montepremi, costo di trasferta e prezzo dei biglietti crescenti (§6, §9).
@@ -134,7 +134,7 @@ sceglie l'atteggiamento, compone le staffette, spende soldi (staff, impianti, sc
 5. Se `budget < 0`: interessi 5% a settimana; sotto −20.000 la società **fallisce** (`bankrupt`: blocca i tick successivi).
 6. Decadimento abilità degli allenatori; affiatamento staffette; **evoluzione dei rivali**; usura della pista.
 7. Fedeltà sponsor +2; azzera i punti scouting; **`week += 1`**.
-8. Solo Carriera, ogni 12 settimane: cambio **fase** (Outdoor → Cross → Indoor). A fine ciclo (36 sett.): verdetto di lega, nuova stagione,
+8. Solo Carriera, a ogni inizio di fase: cambio **fase** ([Preparazione →] Outdoor → Cross → Indoor). A fine ciclo (44 sett. con la Preparazione, 36 senza): verdetto di lega, nuova stagione,
    azzeramento classifica di lega, +1 anno a tutti gli atleti, **ritiro dei veterani** (§5.16), rinnovo dei rivali, poi **contratti scaduti**: rinnovo automatico (1-3 stagioni, senza costo e senza RNG) o, per chi ha «Non rinnovare», uscita dalla società (§5.9).
 9. Promozione automatica dal vivaio a 18 anni; **convocazioni non più ammesse sostituite** (tetto di 2 gare individuali + 1 staffetta, under 20 fuori da «Finale Oro / Coppa Europa», `normalize_assignments`); notizie; valutazione obiettivi; possibile **dilemma etico**; troncamento dei registri.
 
@@ -193,7 +193,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 
 - **Punti squadra** per posizione: 1° = 8 … 8° = 1. Sommati per meeting danno la classifica del meeting (le prime 3 società prendono prestigio extra: 10/6/3) e una **classifica di lega
   cumulativa**, azzerata a ogni stagione. Una gara senza convocato regala punti ai rivali.
-- **Verdetto a fine stagione** (Carriera, dopo 36 settimane): le prime **2** salgono di categoria, l'**ultima** scende; in Internazionale il 1° posto è il **titolo**. A pari punti (A.2, 2026-11-20):
+- **Verdetto a fine stagione** (Carriera, dopo 44 settimane con la Preparazione, 36 senza): le prime **2** salgono di categoria, l'**ultima** scende; in Internazionale il 1° posto è il **titolo**. A pari punti (A.2, 2026-11-20):
   più **1° posti** nelle gare della stagione, poi più 2°, … (si contano i piazzamenti che danno punti, salvati per club in `league_places`, azzerati a fine stagione); se è ancora parità, un
   **sorteggio deterministico** (`hashlib` su stagione + posizione del club nell'elenco, non il nome: chiamare il club «Aaa» non serve). Stessa regola per la classifica del meeting
   (là contano i piazzamenti di quel meeting). Un salvataggio di metà stagione senza contatori (v11) ripiega sul sorteggio fino al meeting successivo. Il prestigio resta e fa crescere il pubblico dei meeting in casa.
@@ -250,6 +250,15 @@ La condizione della **pista** cala ogni settimana e ogni meeting in casa, e infl
 ### 5.12 Fan e sponsor
 
 Gli atleti guadagnano **fan** con piazzamenti, PB e record (i fan non calano mai: difetto di bilanciamento noto). I maggiorenni in prima squadra producono sponsor personali settimanali.
+
+### 5.0 Avvio senza atleti e Preparazione (Q32, 2026-11-20; cifre provvisorie)
+
+Una **Carriera nuova** nasce con rosa e vivaio **vuoti**: il generatore di atleti (`generate_initial_roster`) resta per mercato, scouting e rivali ma non si chiama più all'avvio. Il giocatore ha 18.000 € (invariato) e costruisce la squadra con **«Vivaio & Osservatori»** (scouting giovanile) e **«Rosa & Allenamenti» → «Mercato Svincolati»**, disponibili dalla settimana 1. Le notizie spiegano la situazione con un messaggio iniziale; schede e Dashboard mostrano un aiuto («Nessun atleta in rosa…») invece di tabelle vuote.
+
+- **Preparazione:** `SeasonPhase.PREPARAZIONE`, `GameState.prep_weeks` = 8 nelle Carriere nuove (0 nei vecchi salvataggi e nel Prototipo). **Nessuna gara**: `is_race_week` è falso in Preparazione e `weeks_until_competition` la salta (a settimana 1 la prima gara è la 12). Si ripete a inizio di ogni stagione; la stagione si chiude al giro del ciclo (settimana 45, 89, …). `start_date` parte 8 settimane prima, così l'Outdoor apre il 6 aprile.
+- **Non iscrizione:** se la Prima Squadra è vuota, il meeting si simula (i rivali corrono) ma la società non partecipa: niente trasferta, biglietti, usura pista, bonus squadra o diritti TV, **nessuna sanzione**, una notizia lo spiega e non si apre alcuna finestra di gara. Con atleti (anche tutti infortunati) il meeting va come prima.
+- **Stagione di fondazione (stagione 1):** il Board assegna tre obiettivi di fondazione (6 atleti in società, 2 ragazzi nel vivaio, 3 meeting con un atleta schierato). Il verdetto è **solo informativo**: non conta come stagione fallita, non tocca il conteggio per l'esonero, e dopo la stagione 1 non scattano il taglio dello sponsor né la penalità «resta fermo» degli agenti. **Stagione 2:** le tre chiavi standard (posto in lega, bilancio, record), con il posto in lega allargato di un posto ogni 5 punti di forza che la rosa ha sotto la media dei rivali (al massimo 3 posti); dalla stagione 3 tutto standard.
+- Aperto: economia senza atleti (AUDIT R29), cifre da confermare (QUESTIONS Q32).
 
 ### 5.13 Dilemmi etici e obiettivi
 
@@ -349,7 +358,7 @@ Taglia solo lo sponsor società (non gli individuali, il merchandising o le quot
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 20`** (v20 = `game_state.monthly_report_json`, D.3; v19 = `athletes.record_bonus`, D.2; v18 = `athletes.agent_id` e `game_state.agents_json`, D.1; v17 = `athletes.season_injuries` e `game_state.retired_json`, C.3; v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 21`** (v21 = `game_state.prep_weeks`, settimane di Preparazione, Q32, 2026-11-20, `0` = calendario di prima; la stagione di fondazione si riconosce da `prep_weeks` > 0 e stagione 1; `SeasonEndResult.board_foundation` sta nel JSON della storia stagioni; v20 = `game_state.monthly_report_json`, D.3; v19 = `athletes.record_bonus`, D.2; v18 = `athletes.agent_id` e `game_state.agents_json`, D.1; v17 = `athletes.season_injuries` e `game_state.retired_json`, C.3; v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -403,7 +412,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 532 test, ~60 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 572 test, ~65 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 

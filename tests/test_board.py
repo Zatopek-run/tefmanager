@@ -24,7 +24,7 @@ from models.entities import (
     BOARD_KEY_BUDGET,
     BOARD_KEY_LEAGUE,
     BOARD_KEY_RECORDS,
-    BOARD_KEYS,
+    STANDARD_BOARD_KEYS,
     BOARD_LEAGUE_TARGET,
     BOARD_MAX_FAILED_STREAK,
     BOARD_MIN_RECORDS,
@@ -89,7 +89,7 @@ class TestCreation(unittest.TestCase):
 
     def test_career_gets_the_board_objectives_and_the_prototype_keeps_its_own(self) -> None:
         career = create_season_objectives("career", CompetitionTier.PROVINCIALE, BUDGET)
-        self.assertEqual({o.key for o in career}, set(BOARD_KEYS))
+        self.assertEqual({o.key for o in career}, set(STANDARD_BOARD_KEYS))
         prototype = create_season_objectives("vertical_slice", CompetitionTier.PROVINCIALE)
         self.assertEqual([o.key for o in prototype], ["positive_budget", "win_event", "club_record"])
 
