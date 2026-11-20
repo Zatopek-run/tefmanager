@@ -206,6 +206,8 @@ TEAM_POINTS: Dict[int, int] = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
 # piazzamento che dà punti); se è ancora parità, un sorteggio deterministico (stagione + posizione del club, non il nome).
 LEAGUE_PLACE_SLOTS = len(TEAM_POINTS)
 TIEBREAK_DRAW_TAG = "spareggio"
+# Etichetta del seed di ripiego per un salvataggio senza stato dell'RNG (vedi `models/rng_state.py`).
+RNG_SEED_TAG = "rng"
 DNF_MARK = "Ritirato"
 
 
@@ -897,6 +899,8 @@ class GameState:
     league_table: Dict[str, int] = field(default_factory=dict)
     # Per club: quanti 1°, 2°, ... posti (indice 0 = 1°) ha ottenuto in stagione; serve allo spareggio (A.2).
     league_places: Dict[str, List[int]] = field(default_factory=dict)
+    # Stato completo dell'RNG della partita (`random.Random.getstate()` come lista JSON); vuoto = salvataggio vecchio (A.3).
+    rng_state: List = field(default_factory=list)
     coaches: List[Coach] = field(default_factory=list)
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week

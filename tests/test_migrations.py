@@ -569,5 +569,39 @@ class TestMigrationV12LeaguePlaces(_TmpCase):
         self.assertEqual(user_version(path), 11)
 
 
+class TestMigrationV13RngState(_TmpCase):
+    """v12 → v13 (A.3): colonna `rng_state_json` (stato dell'RNG della partita), default `'[]'` = salvataggio vecchio."""
+
+    def test_v12_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 13)
+        self.assertIn(12, MIGRATIONS)
+        path = make_save(self.slot("v12"), 12)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("rng_state_json", column_names(conn, "game_state"))  # la fixture è davvero v12
+            self.assertIn("league_places_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT rng_state_json FROM game_state WHERE id = 1").fetchone(), ("[]",))
+            self.assertIn(("rng_state_json", "TEXT", 1, "'[]'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 12)
+        backup = self.backups("v12")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 12)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("rng_state_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 12)
+
+    def test_failed_v12_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v12"), 12)
+        before = sha(path)
+        broken = {"game_state": [("rng_state_json", "TEXT NOT NULL DEFAULT '[]'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {12: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 12)
+
+
 if __name__ == "__main__":
     unittest.main()

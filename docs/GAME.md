@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1, A.2, A.4 e A.5 di `PIANOLAVORO.md` fatti) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 187 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6 più `test_tiebreaker`).
+Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1-A.5 di `PIANOLAVORO.md` fatti) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 201 test OK (eseguita il 2026-11-20; 77 di questi senza PyQt6).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -272,7 +272,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 12`** (v12 = `game_state.league_places_json`, A.2), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 13`** (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -281,7 +281,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
   e la schermata iniziale mostra un `QMessageBox.warning` con il traceback nei dettagli.
 - **Elenco slot**: `read_save_summary` (sola lettura) elenca anche gli slot non apribili («versione più recente», «non compatibile», «danneggiato») con i soli metadati affidabili; «Continua» usa il più recente slot apribile.
 - I campi mancanti dei vecchi salvataggi si riempiono al caricamento in modo deterministico (es. corpo degli atleti, seed = id atleta).
-- **Non salvati**: stato dell'RNG, risultati dello scouting e pool del mercato (solo in memoria: ricaricare «ritira i dadi»).
+- **Non salvati**: risultati dello scouting e pool del mercato (solo in memoria). Lo stato dell'RNG **sì** (A.3): ricaricare non «ritira i dadi». Resta una crepa: il pool del mercato si rigenera dall'RNG al momento in cui lo si apre; se dopo averlo aperto si fa un'altra azione che salva, il pool riaperto dopo la ricarica è diverso (AUDIT R5).
 
 ---
 
@@ -316,8 +316,8 @@ Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewe
 
 ## 10. Determinismo e RNG
 
-La simulazione riceve un `rng` iniettabile (`random.Random`), quindi a parità di stato e di RNG gli esiti sono identici. **Oggi però** il controller usa un `random.Random()` non seminato e lo stato dell'RNG non è salvato: stesso salvataggio → esiti diversi.
-Anche le azioni UI (scouting, mercato) consumano l'RNG del controller. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo; c'è ancora un caso in `views/dialogs.py:55`). Lotti 2.1/2.2 di `PLAN.md`.
+La simulazione riceve un `rng` iniettabile (`random.Random`), quindi a parità di stato e di RNG gli esiti sono identici. **Dal 2026-11-20 (A.3)** il controller ha un solo `rng` per partita (seme casuale a ogni avvio dell'app), il cui **stato completo** (`getstate()` come JSON, `GameState.rng_state`, schema v13) è scritto a ogni salvataggio e ripristinato al caricamento: lo stesso salvataggio caricato due volte dà gli stessi esiti, e ricaricare dopo una ricerca vivaio non permette di rifarla. Un salvataggio vecchio senza stato si semina in modo deterministico con `hashlib` da società, stagione e settimana (`legacy_seed`).
+Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti.
 
 ---
 
@@ -344,7 +344,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
-- Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). Poi: 2.x RNG seminato/salvato; 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
+- Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
 ---
 
@@ -354,7 +354,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 | --- | --- |
 | Economia (R3) | **Risolto** il 2026-11-20 (A.1) per le partite nuove: sponsor +40%, premi +25%, rimborsi −45%, bonus promozione 5.000 €. I salvataggi esistenti tengono i rimborsi vecchi. |
 | Dilemma bloccato (R4) | **Risolto** il 2026-11-20 (A.4): chiudere = «Ignora», nessun effetto. |
-| RNG (R5) | Non seminato né salvato; si può ricaricare per ritirare i dadi. |
+| RNG (R5) | **Risolto** il 2026-11-20 (A.3): stato salvato e ripristinato; resta la crepa del pool del mercato (non salvato). |
 | Debito azzerato (R7) | Rifiutare un dilemma porta a 0 un bilancio negativo (`max(0, budget − 600)`). |
 | Doppio click (R8) | **Risolto** il 2026-11-20 (A.5): tick non rientrante e pulsante spento durante il tick (non provato con mouse reale). |
 | Spareggio (R9) | **Risolto** il 2026-11-20 (A.2): piazzamenti, poi sorteggio deterministico indipendente dal nome. |

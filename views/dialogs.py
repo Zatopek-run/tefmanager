@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import zlib
 from typing import List, Optional
 
 from PyQt6.QtCore import Qt
@@ -52,7 +53,9 @@ def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
     fascia che lo contiene, con un piccolo scarto deterministico (per prospetto) così il
     centro della fascia non coincide sempre col valore vero.
     """
-    seed = hash((prospect.name, prospect.age, prospect.specialty.value, prospect.gender))
+    # crc32 e non `hash()`: quello è salato per processo e la fascia cambierebbe a ogni avvio (A.3 / PLAN 2.2)
+    key = f"{prospect.name}|{prospect.age}|{prospect.specialty.value}|{prospect.gender}"
+    seed = zlib.crc32(key.encode())
     offset = random.Random(seed).randint(-3, 3)
     lo = max(1, prospect.potential - half_width + offset)
     hi = min(99, prospect.potential + half_width + offset)

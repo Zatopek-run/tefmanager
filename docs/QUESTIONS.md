@@ -21,7 +21,9 @@ Oggi: `user_version` ≠ `SCHEMA_VERSION` e non in `MIGRATIONS` (v0, v1, o più 
 - **Alternativa B:** mantenere il DROP ma sempre dopo backup.
 - **Cosa cambia:** `database.py` (`_init_schema`: transazione esplicita `BEGIN`/`COMMIT`, copia del file, eccezione tipizzata `UnsupportedSaveVersion`), `game_controller.load_save_slot` (cattura l'eccezione e mostra il messaggio), `start_screen.py` (messaggio); nuovi test su fixture.
 
-## 2. In che forma salvare l'RNG?
+## 2. In che forma salvare l'RNG? — ✅ FATTA il 2026-11-20 (PIANOLAVORO A.3), come da raccomandazione
+
+**Fatto:** stato completo in `rng_state_json` (schema v13), un solo RNG condiviso da tick e azioni UI; ricaricare dopo un'azione che consuma RNG dà lo stesso esito (non si «ritirano i dadi»). Il piano diceva «seed = hash(id + stagione)»: l'id dello slot è sempre 1, quindi ogni nuova partita avrebbe avuto lo stesso seme; il seme resta casuale per partita e il seed deterministico (`hashlib`: società, stagione, settimana) vale solo per i vecchi salvataggi senza stato. **Non coperto:** il pool del mercato (non salvato).
 
 Hai deciso «seed/stato nel save». Non è deciso il formato (`game_controller.py:110`, nessun salvataggio oggi).
 - **Raccomandazione:** salvare lo **stato completo** (`random.Random.getstate()` serializzato in JSON) in una nuova colonna `rng_state_json` (schema v10), aggiornato a ogni `save_game`, un solo RNG per partita condiviso da tick e azioni UI (scouting `game_controller.py:500`, mercato `:388`). Così «ricarico e rigioco» dà lo stesso esito. **DA CONFERMARE:** accetti che ricaricare **dopo** un'azione che consuma RNG (es. una ricerca vivaio) produca la stessa ricerca (non puoi più «ritirare i dadi» ricaricando).

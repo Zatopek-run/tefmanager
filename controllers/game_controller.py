@@ -68,6 +68,7 @@ from models.generator import (
     generate_vertical_slice_roster,
     get_recruitment_fee,
 )
+from models.rng_state import dump_rng_state, restore_or_seed
 from models.simulation import (
     WeekAdvanceReport,
     advance_week,
@@ -145,9 +146,16 @@ class GameController(QObject):
         """Return available save slots ordered by most recently updated."""
         return list_save_slots(saves_dir=self.saves_dir, legacy_path=self.legacy_save_path)
 
+    def _persist(self, state: Optional[GameState] = None) -> None:
+        """Salva la partita insieme allo stato dell'RNG (A.3): ricaricare dà gli stessi esiti."""
+        target = self.state if state is None else state
+        target.rng_state = dump_rng_state(self.rng)
+        self.db.save_game(target)
+
     def _load_or_create_initial_state(self) -> GameState:
         saved = self.db.load_game()
         if saved is not None:
+            restore_or_seed(self.rng, saved)
             upgrade_legacy_state(saved, rng=self.rng)
             return saved
         return self._create_fresh_state(game_mode="vertical_slice")
@@ -219,7 +227,7 @@ class GameController(QObject):
         auto_build_all_relays(state)
         ensure_contracts(state)
         if persist:
-            self.db.save_game(state)
+            self._persist(state)
         return state
 
     def start_new_game(
@@ -245,7 +253,7 @@ class GameController(QObject):
         self.status_message.emit(f"Nuova partita avviata ({mode_label}): {team_name}.")
 
     def save_game(self) -> None:
-        self.db.save_game(self.state)
+        self._persist()
         self.has_active_game = True
         self.status_message.emit(f"Partita salvata in {self.db.db_path.name}.")
 
@@ -274,7 +282,13 @@ class GameController(QObject):
             if loaded is None:
                 self.status_message.emit("Nessun salvataggio trovato.")
                 return False
-            upgrade_legacy_state(loaded, rng=self.rng)
+            rng_before = self.rng.getstate()
+            try:
+                restore_or_seed(self.rng, loaded)
+                upgrade_legacy_state(loaded, rng=self.rng)
+            except BaseException:
+                self.rng.setstate(rng_before)  # un caricamento fallito non tocca l'RNG della partita in corso
+                raise
         except Exception as exc:  # noqa: BLE001 - mai far crashare l'app: vedi _record_load_failure
             self._record_load_failure(exc)
             return False
@@ -370,7 +384,7 @@ class GameController(QObject):
                 amount=-cost,
             ),
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Seduta recupero completata per {athlete.name} (-20 Fatica).")
         return True
@@ -397,7 +411,7 @@ class GameController(QObject):
             0,
             f"Sett. {self.state.week}: Pista in tartan riqualificata ({self.state.track_condition}%).",
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit("Manutenzione pista completata.")
         return True
@@ -411,7 +425,7 @@ class GameController(QObject):
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: {action} {member.name} ({member.role.value})."
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"{action}: {member.name}.")
 
@@ -505,7 +519,7 @@ class GameController(QObject):
         if prospect.is_youth_prospect:
             self.state.milestones.insert(0, msg)
 
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Tesserato {prospect.name} per €{fee:,}.")
         return True
@@ -532,7 +546,7 @@ class GameController(QObject):
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: {target.name} ha lasciato la società."
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Svincolato {target.name}.")
         return True
@@ -545,7 +559,7 @@ class GameController(QObject):
         if bool(target.contract_no_renew) == bool(no_renew):
             return True
         target.contract_no_renew = bool(no_renew)
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         if no_renew:
             self.status_message.emit(
@@ -603,7 +617,7 @@ class GameController(QObject):
                 ),
             )
         self.scouting_results = kids
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(
             f"Gli osservatori hanno segnalato {len(kids)} ragazzi (-{points} punti, -€{fee:,})."
@@ -629,7 +643,7 @@ class GameController(QObject):
             f"Sett. {self.state.week}: {prospect.name} ({prospect.age} anni, {prospect.specialty.value}) "
             "entra nel vivaio.",
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"{prospect.name} inserito nel vivaio.")
         return True
@@ -644,7 +658,7 @@ class GameController(QObject):
         msg = f"Sett. {self.state.week}: {athlete.name} promosso dal vivaio in Prima Squadra!"
         self.state.news_log.insert(0, msg)
         self.state.milestones.insert(0, msg)
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"{athlete.name} promosso (rimborso spese €{athlete.weekly_wage}/sett).")
         return True
@@ -672,7 +686,7 @@ class GameController(QObject):
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: Palestra ampliata al livello {self.state.gym_level}."
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Palestra al livello {self.state.gym_level}.")
         return True
@@ -685,7 +699,7 @@ class GameController(QObject):
         if not self._pay(cost, f"Nuove tribune (+{STAND_EXPANSION_SEATS} posti)", "Impianto"):
             return False
         self.state.stand_seats = min(STAND_MAX_SEATS, self.state.stand_seats + STAND_EXPANSION_SEATS)
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Tribune ampliate: {self.state.stand_seats:,} posti.")
         return True
@@ -734,7 +748,7 @@ class GameController(QObject):
             0,
             f"Sett. {state.week}: Ingaggiato l'allenatore {coach.name} ({coach.kind_label}: {skills}).",
         )
-        self.db.save_game(state)
+        self._persist(state)
         self.state_changed.emit(state)
         self.status_message.emit(f"Assunto {coach.name} (€{coach.weekly_wage}/sett).")
         return True
@@ -751,7 +765,7 @@ class GameController(QObject):
         self.state.news_log.insert(
             0, f"Sett. {self.state.week}: L'allenatore {coach.name} lascia la società."
         )
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Licenziato {coach.name}.")
         return True
@@ -791,7 +805,7 @@ class GameController(QObject):
             )
             return False
         relay = auto_build_relay(self.state, event, gender=gender)
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Staffetta {event} ({gender}) composta (affiatamento {relay.harmony}).")
         return True
@@ -850,7 +864,7 @@ class GameController(QObject):
             slots[slot] = athlete_id
         relay.member_ids = slots[:4]
         relay.reserve_id = slots[4]
-        self.db.save_game(state)
+        self._persist(state)
         self.state_changed.emit(state)
         self.status_message.emit(f"Staffetta {event} ({gender}) aggiornata (affiatamento {relay.harmony}).")
         return True
@@ -923,7 +937,7 @@ class GameController(QObject):
                 )
 
         self.state.pending_dilemma = None
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
 
     def dismiss_dilemma(self) -> bool:
@@ -940,7 +954,7 @@ class GameController(QObject):
             0, f"Sett. {self.state.week}: Dilemma «{dilemma.title}» ignorato: l'occasione è sfumata."
         )
         self.state.pending_dilemma = None
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         return True
 
@@ -976,7 +990,7 @@ class GameController(QObject):
         report = advance_week(self.state, rng=self.rng)
         self.scouting_results = []
         self.free_agent_pool = []
-        self.db.save_game(self.state)
+        self._persist()
         self.state_changed.emit(self.state)
         self.week_advanced.emit(report)
 

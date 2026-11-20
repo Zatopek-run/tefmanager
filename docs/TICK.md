@@ -2,6 +2,7 @@
 
 Fonte: `models/simulation.py:1259-1430` (`advance_week`) chiamata da `controllers/game_controller.py:838-867`.
 `r` è l'RNG del tick (`simulation.py:1264`): **l'ordine delle chiamate a `r` è parte del comportamento** (cambiarlo cambia ogni esito a parità di seed).
+Dal 2026-11-20 (A.3) `r` è `GameController.rng`, l'unico RNG della partita: il suo stato completo è salvato (`_persist`) dopo il tick e ripristinato al caricamento; l'ordine delle chiamate non cambia.
 Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il passo 20 `state.week` è già la nuova.
 
 ## A. Controller (prima del tick)

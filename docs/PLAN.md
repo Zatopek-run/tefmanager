@@ -42,7 +42,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 ## Area 2 — Riproducibilità e determinismo
 
-### Lotto 2.1 — Stato RNG salvato nel salvataggio
+### Lotto 2.1 — Stato RNG salvato nel salvataggio — ✅ FATTO (2026-11-20, come PIANOLAVORO A.3; schema v13, un solo RNG per tick e azioni UI)
 - **Obiettivo:** ricaricare e avanzare produce lo stesso risultato.
 - **File:** `models/entities.py` (campo `rng_state` in `GameState`), `models/database.py` (colonna `rng_state_json` con `DEFAULT '{}'` **sia** in `MIGRATIONS` **sia** nel `CREATE TABLE`, `SCHEMA_VERSION = 13` (la v12 l'ha presa `game_state.league_places_json`, A.2, 2026-11-20; indicativo: si usa la prima libera): la v10 è già presa da `athletes.contract_end_season` (Q22) e la v11 da `athletes.contract_no_renew`, 2026-11-19), `controllers/game_controller.py` (init/load/save).
 - **Rischio:** medio (nuova versione di schema; formato di `getstate` tra versioni Python: lo stato è una tupla di interi, JSON-serializzabile, ma da provare su 3.14).
@@ -50,7 +50,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 - **Accettazione:** B2 identico; v11 si migra senza perdita; i test esistenti restano verdi.
 - **Dipende da:** 1.1, QUESTIONS 2.
 
-### Lotto 2.2 — Eliminare `hash()` salato dalle viste
+### Lotto 2.2 — Eliminare `hash()` salato dalle viste — ✅ FATTO (2026-11-20, `zlib.crc32`, test in 3 processi)
 - **Obiettivo:** la fascia del potenziale è stabile tra avvii.
 - **File:** `views/dialogs.py:55` (sostituire `hash(...)` con `zlib.crc32` della stringa, come `race_viewer._rng`).
 - **Rischio:** basso.
