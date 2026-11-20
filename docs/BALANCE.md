@@ -9,16 +9,17 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 
 | Voce | Formula | Costanti | Unità | File:riga |
 | --- | --- | --- | --- | --- |
-| Sponsor società (entrata) | `weekly_sponsor × (0,65 + rep/100 × 0,55) × (0,8 + 0,2 × fedeltà/100)` | `TIER_CONFIG[...]["weekly_sponsor"]` 600/1250/2500/4800 | €/sett. | `simulation.py:1227-1229`; `entities.py:43-68` |
+| Sponsor società (entrata) | `weekly_sponsor × (0,65 + rep/100 × 0,55) × (0,8 + 0,2 × fedeltà/100)` | `TIER_CONFIG[...]["weekly_sponsor"]` **840/1750/3500/6720** (prima 600/1250/2500/4800: +40%, A.1 2026-11-20) | €/sett. | `simulation.py:1227-1229`; `entities.py:43-68` |
 | Sponsor individuali (entrata) | `Σ fans // 4` per atleta ≥18 anni, Prima Squadra | divisore 4, età 18 | €/sett. | `simulation.py:1230` |
 | Quote tesserati (entrata) | `member_fees_weekly` | 450 (mai modificato) | €/sett. | `entities.py:785`, `game_controller.py:185` |
-| Rimborsi spese atleti (uscita; campo `weekly_wage`) | `Σ weekly_wage` Prima Squadra, infortunati inclusi | `senior_wage = clamp(100|80 + overall×4,2; 95; 950)` | €/sett. | `simulation.py:1231`; `generator.py:410-413` |
+| Rimborsi spese atleti (uscita; campo `weekly_wage`) | `Σ weekly_wage` Prima Squadra, infortunati inclusi | `senior_wage = clamp(WAGE_BASE_ADULT 55 | WAGE_BASE_PROSPECT 45 + overall×WAGE_PER_OVERALL 2,3; WAGE_MIN 52; WAGE_MAX 520)` (**−45%** dal 2026-11-20, A.1; prima 100|80 + overall×4,2 tra 95 e 950; vale per atleti creati o promossi da ora, i salvataggi esistenti tengono i rimborsi già scritti) | €/sett. | `simulation.py:1231`; `generator.py:410-413` |
 | Staff medico/mentale (uscita) | `Σ weekly_cost` degli assunti | Fisio 300, Medico 340, Mentale 220 | €/sett. | `simulation.py:1232`; `generator.py:470-500` |
 | Stipendi allenatori (uscita) | `40 + round(Σ max(0, v−40) × 2,2)` | 40, 40, 2,2 | €/sett. | `entities.py:211-212`; `simulation.py:1233` |
 | Gestione palestra (uscita) | `livello × 40` | 40 | €/sett. | `entities.py:159`; `simulation.py:1234` |
 | Interessi sul debito (uscita) | `ceil(−budget × 0,05)` se `budget < 0` | 0,05 | %/sett. | `entities.py:168`; `simulation.py:1338-1341` |
-| Premi gara (entrata) | `prize_base × {1:1,0; 2:0,60; 3:0,35; 4:0,15}` per piazzamento (staffette idem) | `prize_base` 1200/2800/6000/12500 | €/gara | `simulation.py:890,897,1010`; `entities.py:43-68` |
+| Premi gara (entrata) | `prize_base × {1:1,0; 2:0,60; 3:0,35; 4:0,15}` per piazzamento (staffette idem) | `prize_base` **1500/3500/7500/15625** (prima 1200/2800/6000/12500: +25%, A.1) | €/gara | `simulation.py:890,897,1010`; `entities.py:43-68` |
 | Biglietti (entrata, solo casa) | `spettatori × TICKET_PRICE`; `spettatori = min(posti, (300 + prestigio×4 + ordine_tier×900) × (0,6 + rep/250) × U(0,85;1,15) [×0,7 pioggia all'aperto])` | prezzi 4/6/9/14 | €/gara | `simulation.py:598-607`; `entities.py:162-167` |
+| Bonus promozione (entrata) | `+PROMOTION_BONUS` alla chiusura della stagione se l'esito è PROMOZIONE; voce «Bonus promozione» nel libro mastro (categoria «Premi Gara») | `PROMOTION_BONUS` 5000 | € una tantum | `simulation.py: close_season`; `entities.py` |
 | Trasferta (uscita, solo fuori) | `travel_cost` | 350/750/1500/3000 | €/gara | `simulation.py:1050`; `entities.py:43-68` |
 | Seduta di recupero (uscita) | fisso | 250 | € una tantum | `game_controller.py:303` |
 | Manutenzione pista (uscita) | fisso | 900 (+25 condizione) | € una tantum | `game_controller.py:332,337` |

@@ -95,10 +95,10 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 *Tutti i lotti qui modificano solo costanti o una formula e hanno un test di sostenibilità. Dopo 5.2 le costanti stanno nel modulo di bilanciamento; prima, in `entities.py`/`generator.py`.*
 
-### Lotto 4.1 — Test di sostenibilità economica
+### Lotto 4.1 — Test di sostenibilità economica — ✅ FATTO (2026-11-20, `tests/test_economy.py`, PIANOLAVORO A.1)
 - **Obiettivo:** misurare, non decidere. **File:** `tests/` (nuovo): rosa iniziale, 12 settimane di autopilota su 5 seed, report del flusso netto. **Rischio:** nullo. **Accettazione:** il test documenta la situazione attuale (flusso negativo) e fallisce se cambia oltre una soglia scelta.
 
-### Lotto 4.2 — Riequilibrio dello stipendio di partenza
+### Lotto 4.2 — Riequilibrio dello stipendio di partenza — ✅ FATTO (2026-11-20, rimborsi −45%, PIANOLAVORO A.1)
 - **File:** `models/generator.py:413` (o costanti in 5.2). **Rischio:** medio (cambia la difficoltà). **Verifica:** 4.1 con il nuovo obiettivo. **Accettazione:** flusso netto entro l'intervallo deciso. **Dipende da:** QUESTIONS 3, 4.1.
 
 ### Lotto 4.3 — Fan/sponsor con decadimento o tetto

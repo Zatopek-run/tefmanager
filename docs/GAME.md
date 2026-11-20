@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-20, branch `main`, commit `099064d` (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 151 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6).
+Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1, A.4 e A.5 di `PIANOLAVORO.md` fatti) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 173 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -210,8 +210,7 @@ ambiziose e crescono più in fretta; quelle che ti staccano molto si rilassano. 
 Entrate settimanali: **sponsor società** (funzione di categoria, reputazione e fedeltà), **sponsor individuali** (fan/4 per atleta maggiorenne in prima squadra), **quote tesserati** (450 fisse).
 Uscite settimanali: **rimborsi spese atleti** (prima squadra, infortunati inclusi, mai rivisti), **staff** (Fisioterapista 300, Medico 340, Preparatore Mentale 220), **stipendi allenatori**
 (`40 + 2,2 × Σ max(0, abilità−40)`), **gestione palestra** (40 × livello). Per gara: premi e biglietti (casa) o trasferta (fuori). Una tantum: ingaggi (atleti, allenatori), scouting, recupero, pista, ampliamenti.
-**Debito**: con saldo negativo interessi del 5% a settimana; sotto −20.000 fallimento. Misura chiave: all'avvio la società perde soldi ogni settimana (Carriera ≈ −4.432, Prototipo ≈ −2.291), quindi il giocatore
-deve tagliare/gestire (difetto/decisione di bilanciamento aperta, `QUESTIONS.md` 3). Cifre complete: `BALANCE.md`.
+**Debito**: con saldo negativo interessi del 5% a settimana; sotto −20.000 fallimento. **Bilanciamento dell'avvio** (A.1, 2026-11-20): sponsor società e montepremi sono saliti del 40% e del 25%, i rimborsi spese degli atleti sono scesi del 45% (`WAGE_*` in `entities.py`) e la promozione di categoria dà un bonus una tantum di 5.000 € (`PROMOTION_BONUS`). In autopilota (nessuna spesa) la Carriera chiude le prime 12 settimane tra +4.700 e +15.300 € e le prime 36 tra +300 e +23.800 € (8 seed); i rimborsi vecchi restano nei salvataggi esistenti. Cifre complete: `BALANCE.md`.
 
 ### 5.8 Vivaio e scouting
 
@@ -260,10 +259,10 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 | Categoria | Livello rivali (pt) | Sponsor sett. | Montepremi base | Trasferta | Biglietto |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Provinciale | 42 | 600 | 1.200 | 350 | 4 |
-| Regionale | 56 | 1.250 | 2.800 | 750 | 6 |
-| Nazionale | 70 | 2.500 | 6.000 | 1.500 | 9 |
-| Internazionale | 84 | 4.800 | 12.500 | 3.000 | 14 |
+| Provinciale | 42 | 840 | 1.500 | 350 | 4 |
+| Regionale | 56 | 1.750 | 3.500 | 750 | 6 |
+| Nazionale | 70 | 3.500 | 7.500 | 1.500 | 9 |
+| Internazionale | 84 | 6.720 | 15.625 | 3.000 | 14 |
 
 ---
 
@@ -325,7 +324,7 @@ Anche le azioni UI (scouting, mercato) consumano l'RNG del controller. Regola di
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 151 test, ~4 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 173 test, ~5 s
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
@@ -351,7 +350,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 
 | Tema | Sintesi |
 | --- | --- |
-| Economia (R3) | L'avvio è in perdita netta ogni settimana: in autopilota bancarotta alla sett. 14. Decisione di design aperta (QUESTIONS 3). |
+| Economia (R3) | **Risolto** il 2026-11-20 (A.1) per le partite nuove: sponsor +40%, premi +25%, rimborsi −45%, bonus promozione 5.000 €. I salvataggi esistenti tengono i rimborsi vecchi. |
 | Dilemma bloccato (R4) | **Risolto** il 2026-11-20 (A.4): chiudere = «Ignora», nessun effetto. |
 | RNG (R5) | Non seminato né salvato; si può ricaricare per ritirare i dadi. |
 | Debito azzerato (R7) | Rifiutare un dilemma porta a 0 un bilancio negativo (`max(0, budget − 600)`). |

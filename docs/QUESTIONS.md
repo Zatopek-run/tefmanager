@@ -29,7 +29,9 @@ Hai deciso «seed/stato nel save». Non è deciso il formato (`game_controller.p
 - **Alternativa B:** RNG separati per tick e per UI (più semplice da testare, ma le azioni UI restano rilanciabili).
 - **Cosa cambia:** `entities.GameState` (campo), `database.py` (colonna + migrazione v10 + test), `GameController.__init__` (carica/ripristina), `advance_week` invariato (già riceve `rng`).
 
-## 3. L'economia di partenza deve essere in pareggio?
+## 3. L'economia di partenza deve essere in pareggio? — ✅ FATTA il 2026-11-20 (PIANOLAVORO A.1, cifre riviste dall'utente)
+
+**Fatto:** sponsor società +40%, montepremi +25%, rimborsi spese atleti **−45%** (non −20% come nel piano: con −20% il flusso restava a −3.237 €/sett. e −55.000 € in 36 sett.), bonus promozione +5.000 €. Misura su 8 seed in autopilota (nessuna spesa del giocatore): 12 sett. da +4.727 a +15.349 (media +9.485); 36 sett. da +286 a +23.775 (media +11.508); 108 sett. minimo +21.050. Con −50% la media a 36 sett. sarebbe +20.445, con −60% il peggior seed scende a −8.606. Test: `tests/test_economy.py`. **Limite:** i salvataggi esistenti tengono i rimborsi vecchi (nessuna migrazione): per loro l'economia resta in perdita.
 
 Misurato: Carriera −$4.432/sett. (stipendi $4.972 vs entrate $1.088), Prototipo −$2.291/sett.; in autopilota bancarotta a sett. 14 (una sola prova, seed 3).
 - **Raccomandazione:** puntare a un flusso netto settimanale ≈ 0 (o leggermente negativo) *prima* dei premi, con i premi che fanno la differenza; leva più semplice: scalare `senior_wage` (`generator.py:413`). **DA CONFERMARE:** che sia intenzionale che il giocatore debba tagliare la rosa nelle prime settimane; se lo è, serve almeno un messaggio all'avvio.
@@ -53,9 +55,9 @@ Oggi alfabetico per nome (`entities.py:826-829`): decide titolo, promozione e re
 - **Alternativa B:** tenere l'alfabetico ma con ordine inverso per il giocatore (non risolve il problema di fondo).
 - **Cosa cambia:** `GameState.league_standings`, `simulation.py:1033`; richiede di salvare i piazzamenti per gara (nuovo campo → migrazione) oppure ricavarli da `competition_history` (da verificare quante gare restano memorizzate: la storia non è troncata ma lo sono le notizie).
 
-## 6. Che cosa succede se chiudi il dilemma etico senza scegliere? — ✅ IMPLEMENTATA il 2026-11-20 (PIANOLAVORO A.4), **DA CONFERMARE**
+## 6. Che cosa succede se chiudi il dilemma etico senza scegliere? — ✅ FATTA il 2026-11-20 (PIANOLAVORO A.4), **chiudi = ignora CONFERMATO dall'utente**
 
-**Fatto:** chiudere (X, Esc) o «Ignora» = il dilemma decade **senza effetti** (`dismiss_dilemma`), non «rifiuto». Motivo: il rifiuto dà un premio (doping: +10 reputazione, +8 prestigio, −600 €; giovane: +6 resilienza, +8 forma), quindi «chiudi = rifiuta» renderebbe Esc la scelta migliore. Il piano diceva «applica l'opzione rifiuta (effetti negativi minimi)»: se si vuole la lettura letterale basta far chiamare `resolve_dilemma(False)` a `main_window._show_dilemma` e al tick.
+**Fatto:** chiudere (X, Esc) o «Ignora» = il dilemma decade **senza effetti** (`dismiss_dilemma`), non «rifiuto». Motivo: il rifiuto dà un premio (doping: +10 reputazione, +8 prestigio, −600 €; giovane: +6 resilienza, +8 forma), quindi «chiudi = rifiuta» renderebbe Esc la scelta migliore. Il piano diceva «applica l'opzione rifiuta (effetti negativi minimi)»: L'utente ha confermato il 2026-11-20 la lettura «chiudi = ignora» (nessun effetto).
 
 Oggi resta pendente per sempre e blocca tutti i dilemmi futuri (misurato).
 - **Raccomandazione:** il dialog non è chiudibile senza scelta, e un dilemma pendente nel salvataggio viene riproposto al caricamento. **DA CONFERMARE:** il dilemma deve essere obbligatorio.

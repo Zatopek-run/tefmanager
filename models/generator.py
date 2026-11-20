@@ -16,6 +16,11 @@ from models.entities import (
     RIVAL_SEASON_INFLATION,
     MAX_INDIVIDUAL_EVENTS,
     TIER_CONFIG,
+    WAGE_BASE_ADULT,
+    WAGE_BASE_PROSPECT,
+    WAGE_MAX,
+    WAGE_MIN,
+    WAGE_PER_OVERALL,
     Athlete,
     Coach,
     CompetitionTier,
@@ -410,8 +415,8 @@ def generate_academy_prospects(
 
 def senior_wage(athlete: Athlete) -> int:
     """Weekly wage for a main-squad athlete (academy kids are unpaid)."""
-    wage_base = 80 if athlete.is_youth_prospect else 100
-    return clamp_stat(wage_base + athlete.overall * 4.2, 95, 950)
+    wage_base = WAGE_BASE_PROSPECT if athlete.is_youth_prospect else WAGE_BASE_ADULT
+    return clamp_stat(wage_base + athlete.overall * WAGE_PER_OVERALL, WAGE_MIN, WAGE_MAX)
 
 
 # Main and secondary skill a coach of each specialty is usually hired for

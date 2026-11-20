@@ -54,28 +54,31 @@ TIER_DISPLAY_NAMES: Dict[CompetitionTier, str] = {
     CompetitionTier.INTERNAZIONALE: "Finale Oro / Coppa Europa",
 }
 
+# Economia (PIANOLAVORO A.1, 2026-11-20). Sponsor società +40% e montepremi +25% rispetto ai valori precedenti
+# (600/1250/2500/4800 e 1200/2800/6000/12500). I rimborsi spese degli atleti sono scesi del 45% (non del 20% del
+# piano: con -20% il flusso restava a -3.237 €/sett.): vedi WAGE_* sotto e docs/BALANCE.md §A.
 TIER_CONFIG: Dict[CompetitionTier, Dict[str, int]] = {
     CompetitionTier.PROVINCIALE: {
-        "weekly_sponsor": 600,
-        "prize_base": 1200,
+        "weekly_sponsor": 840,
+        "prize_base": 1500,
         "opponent_skill": 42,
         "travel_cost": 350,
     },
     CompetitionTier.REGIONALE: {
-        "weekly_sponsor": 1250,
-        "prize_base": 2800,
+        "weekly_sponsor": 1750,
+        "prize_base": 3500,
         "opponent_skill": 56,
         "travel_cost": 750,
     },
     CompetitionTier.NAZIONALE: {
-        "weekly_sponsor": 2500,
-        "prize_base": 6000,
+        "weekly_sponsor": 3500,
+        "prize_base": 7500,
         "opponent_skill": 70,
         "travel_cost": 1500,
     },
     CompetitionTier.INTERNAZIONALE: {
-        "weekly_sponsor": 4800,
-        "prize_base": 12500,
+        "weekly_sponsor": 6720,
+        "prize_base": 15625,
         "opponent_skill": 84,
         "travel_cost": 3000,
     },
@@ -176,6 +179,16 @@ SCOUTING_FEES: Dict[int, int] = {0: 0, 1: 0, 2: 150, 3: 350, 4: 600, 5: 1000, 6:
 GYM_MAX_LEVEL = 5
 GYM_TRAINING_BONUS_PER_LEVEL = 0.06
 GYM_UPKEEP_PER_LEVEL = 40
+# Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
+# (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
+# esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
+WAGE_BASE_ADULT = 55
+WAGE_BASE_PROSPECT = 45  # giovani promettenti (`is_youth_prospect`)
+WAGE_PER_OVERALL = 2.3
+WAGE_MIN = 52
+WAGE_MAX = 520
+# Bonus una tantum per la promozione di categoria, a fine stagione (PIANOLAVORO A.1).
+PROMOTION_BONUS = 5000
 STAND_EXPANSION_SEATS = 500
 STAND_MAX_SEATS = 20000
 TICKET_PRICE: Dict[str, int] = {

@@ -48,7 +48,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 164 test, OK, ~5 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 173 test, OK, ~5 s
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -77,7 +77,7 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
 tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (25 test, senza Qt: migrazioni e slot)
              test_assignments.py (9, convocazioni)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
-             test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   entrambi con PyQt6 offscreen
+             test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
 

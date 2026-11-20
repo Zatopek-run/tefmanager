@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
     ATTITUDE_EFFECTS,
+    PROMOTION_BONUS,
     COACH_BASE_SKILL,
     COACH_COMFORT_LOAD,
     COACH_NO_COACH_MULT,
@@ -1300,6 +1301,20 @@ def close_season(state: GameState) -> SeasonEndResult:
 
     if new_tier is not None:
         state.tier = new_tier
+    if outcome == SeasonOutcome.PROMOTED:
+        # Bonus una tantum di promozione (PIANOLAVORO A.1): il libro mastro lo riporta alla settimana appena chiusa.
+        state.budget += PROMOTION_BONUS
+        state.transactions.insert(
+            0,
+            Transaction(
+                id=None,
+                week=week,
+                description=f"Bonus promozione in {new_tier.display_name}",
+                category="Premi Gara",
+                amount=PROMOTION_BONUS,
+            ),
+        )
+        msg += f" Bonus promozione: +€{PROMOTION_BONUS:,}."
     state.news_log.insert(0, msg)
     if outcome != SeasonOutcome.STAYED:
         state.milestones.insert(0, msg)

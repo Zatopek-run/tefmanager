@@ -33,6 +33,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 14 | **`state.week += 1`** | `:1372` | no |
 | 15 | Solo Carriera e `(week − 1) % 12 == 0`: ruota la fase Outdoor→Cross→Indoor | `:1374-1378` | no |
 | 16 | Se la nuova fase è Outdoor (fine stagione): `close_season` (verdetto), `season_number += 1`, **azzera `league_table`**, età +1 a **tutti** gli atleti, `renew_rivals_for_season` | `:1379-1386`; `close_season :1167-1210` | sì (rinnovo rivali) |
+| 16a | Dentro `close_season` (passo 16), se l'esito è PROMOZIONE: `budget += PROMOTION_BONUS` (5.000) e voce «Bonus promozione» nel libro mastro, settimana appena chiusa (A.1, 2026-11-20). **Non usa `r`** | `simulation.py: close_season` | no |
 | 16b | Dentro il passo 16, dopo età +1: `renew_expiring_contracts`: i contratti con `contract_end_season < season_number` si rinnovano da soli (1-3 stagioni, `contract_length`: deterministica da id atleta e stagione), una sola notizia; nessun costo. Chi ha `contract_no_renew` (pulsante «non rinnovare») **lascia la società** (nessuna penale di fedeltà; l'ultimo atleta della Prima Squadra si rinnova comunque), con formazione e staffette ricomposte (`build_default_lineup`, `auto_build_relay`). **Non usa `r`** (Q22) | `simulation.py` | no |
 | 17 | Notizia «Inizia la stagione …» | `:1387-1390` | no |
 | 18 | Promozione automatica dei ragazzi del vivaio con età ≥ 18 (età già incrementata al passo 16) | `:1392-1398` | no |
