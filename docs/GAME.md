@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1, A.4 e A.5 di `PIANOLAVORO.md` fatti) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 173 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6).
+Stato descritto: 2026-11-20, branch `feature/gameplay-improvements` (da `main` `099064d`, lotto A.1, A.2, A.4 e A.5 di `PIANOLAVORO.md` fatti) (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 187 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6 più `test_tiebreaker`).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -187,8 +187,10 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 
 - **Punti squadra** per posizione: 1° = 8 … 8° = 1. Sommati per meeting danno la classifica del meeting (le prime 3 società prendono prestigio extra: 10/6/3) e una **classifica di lega
   cumulativa**, azzerata a ogni stagione. Una gara senza convocato regala punti ai rivali.
-- **Verdetto a fine stagione** (Carriera, dopo 36 settimane): le prime **2** salgono di categoria, l'**ultima** scende; in Internazionale il 1° posto è il **titolo**. A pari punti
-  l'ordine è alfabetico (difetto noto: decide il nome della società, vedi §13). Il prestigio resta e fa crescere il pubblico dei meeting in casa.
+- **Verdetto a fine stagione** (Carriera, dopo 36 settimane): le prime **2** salgono di categoria, l'**ultima** scende; in Internazionale il 1° posto è il **titolo**. A pari punti (A.2, 2026-11-20):
+  più **1° posti** nelle gare della stagione, poi più 2°, … (si contano i piazzamenti che danno punti, salvati per club in `league_places`, azzerati a fine stagione); se è ancora parità, un
+  **sorteggio deterministico** (`hashlib` su stagione + posizione del club nell'elenco, non il nome: chiamare il club «Aaa» non serve). Stessa regola per la classifica del meeting
+  (là contano i piazzamenti di quel meeting). Un salvataggio di metà stagione senza contatori (v11) ripiega sul sorteggio fino al meeting successivo. Il prestigio resta e fa crescere il pubblico dei meeting in casa.
 - Il Prototipo non ha promozioni né retrocessioni.
 
 ### 5.5 Staffette (4x100m, 4x400m)
@@ -270,7 +272,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 11`**, `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 12`** (v12 = `game_state.league_places_json`, A.2), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -342,7 +344,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
-- Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5) e **3.1** dilemma chiuso senza scelta (A.4). Poi: 2.x RNG seminato/salvato; 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
+- Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). Poi: 2.x RNG seminato/salvato; 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
 ---
 
@@ -355,7 +357,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 | RNG (R5) | Non seminato né salvato; si può ricaricare per ritirare i dadi. |
 | Debito azzerato (R7) | Rifiutare un dilemma porta a 0 un bilancio negativo (`max(0, budget − 600)`). |
 | Doppio click (R8) | **Risolto** il 2026-11-20 (A.5): tick non rientrante e pulsante spento durante il tick (non provato con mouse reale). |
-| Spareggio (R9) | Alfabetico: il giocatore può scegliere il nome del club per vincere tutti gli spareggi. |
+| Spareggio (R9) | **Risolto** il 2026-11-20 (A.2): piazzamenti, poi sorteggio deterministico indipendente dal nome. |
 | Fan e sponsor (R10) | Illimitati, non calano mai. |
 | Obiettivi (R11/R12) | Mai rinnovati; l'obiettivo «traguardo storico» femminile usa la soglia maschile. |
 | Validazione (R13) | Il controller non impedisce lo stesso atleta in più gare né la divisione sbagliata. |

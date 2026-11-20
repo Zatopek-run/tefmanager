@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
@@ -201,6 +202,10 @@ DEBT_WEEKLY_INTEREST = 0.05
 BANKRUPTCY_THRESHOLD = -20000
 # Team points per finishing place (1st..8th) for the club league table
 TEAM_POINTS: Dict[int, int] = {1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 3, 7: 2, 8: 1}
+# Spareggio in classifica (A.2): a pari punti vince chi ha più 1° posti, poi più 2°, ... (un contatore per ogni
+# piazzamento che dà punti); se è ancora parità, un sorteggio deterministico (stagione + posizione del club, non il nome).
+LEAGUE_PLACE_SLOTS = len(TEAM_POINTS)
+TIEBREAK_DRAW_TAG = "spareggio"
 DNF_MARK = "Ritirato"
 
 
@@ -890,6 +895,8 @@ class GameState:
     scouting_points_used: int = 0
     bankrupt: bool = False
     league_table: Dict[str, int] = field(default_factory=dict)
+    # Per club: quanti 1°, 2°, ... posti (indice 0 = 1°) ha ottenuto in stagione; serve allo spareggio (A.2).
+    league_places: Dict[str, List[int]] = field(default_factory=dict)
     coaches: List[Coach] = field(default_factory=list)
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
@@ -908,15 +915,32 @@ class GameState:
     def relays_for(self, gender: str = "M") -> Dict[str, Relay]:
         return self.relays_f if gender == "F" else self.relays
 
+    def tiebreak_draw(self, team: str) -> int:
+        """Sorteggio deterministico per l'ultimo spareggio: dipende da stagione e posizione del club, non dal nome.
+
+        La posizione è nell'elenco [società del giocatore, rivali della categoria]; `hashlib` e non `hash()`
+        (quello è salato per processo). Stesso salvataggio → stesso ordine, a ogni esecuzione.
+        """
+        order = [self.team_name] + [c.name for c in self.rivals_in()]
+        index = order.index(team) if team in order else len(order)
+        digest = hashlib.sha256(f"{TIEBREAK_DRAW_TAG}|{self.season_number}|{index}".encode()).digest()
+        return int.from_bytes(digest[:8], "big")
+
+    def rank_key(self, team: str, points: int, places: Optional[List[int]] = None):
+        """Chiave di ordinamento (crescente = meglio): punti, poi più 1°, 2°, ..., poi sorteggio."""
+        counts = list(places or [])[:LEAGUE_PLACE_SLOTS]
+        counts += [0] * (LEAGUE_PLACE_SLOTS - len(counts))
+        return (-points, tuple(-n for n in counts), self.tiebreak_draw(team))
+
     def league_standings(self) -> List[Tuple[str, int]]:
         """Current league table with every club of the category (0 points if not scored yet).
 
-        Ties are broken alphabetically so the order is stable.
+        Ties are broken by placements (more 1st places, then 2nd, ...), then by a deterministic draw (A.2).
         """
         table = {self.team_name: 0}
         table.update({c.name: 0 for c in self.rivals_in()})
         table.update({k: v for k, v in self.league_table.items() if k in table})
-        return sorted(table.items(), key=lambda kv: (-kv[1], kv[0]))
+        return sorted(table.items(), key=lambda kv: self.rank_key(kv[0], kv[1], self.league_places.get(kv[0])))
 
     @property
     def league_position(self) -> int:

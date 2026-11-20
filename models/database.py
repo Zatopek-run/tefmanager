@@ -40,7 +40,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -113,6 +113,10 @@ V10_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V11_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("contract_no_renew", "INTEGER NOT NULL DEFAULT 0")],
 }
+# Columns added in v12 (A.2: quanti 1°, 2°, ... posti ha ottenuto ogni club in stagione, per lo spareggio).
+V12_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("league_places_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -123,6 +127,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     8: V9_COLUMNS,
     9: V10_COLUMNS,
     10: V11_COLUMNS,
+    11: V12_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -633,7 +638,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     season_history_json TEXT NOT NULL DEFAULT '[]',
     event_lineup_f_json TEXT NOT NULL DEFAULT '{}',
     club_records_f_json TEXT NOT NULL DEFAULT '{}',
-    relays_f_json TEXT NOT NULL DEFAULT '{}'
+    relays_f_json TEXT NOT NULL DEFAULT '{}',
+    league_places_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -869,8 +875,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -906,6 +912,7 @@ class DatabaseManager:
                     json.dumps(state.event_lineup_f),
                     records_f_json,
                     _relays_to_json(state.relays_f),
+                    json.dumps(state.league_places),
                 ),
             )
 
@@ -1271,6 +1278,9 @@ class DatabaseManager:
                 bankrupt=bool(row["bankrupt"]),
                 league_table={
                     str(k): int(v) for k, v in json.loads(row["league_table_json"]).items()
+                },
+                league_places={
+                    str(k): [int(n) for n in v] for k, v in json.loads(row["league_places_json"]).items()
                 },
                 coaches=coaches,
                 relays=relays,

@@ -40,6 +40,7 @@ from models.entities import (
     MAX_INDIVIDUAL_EVENTS,
     PEAK_FORM_BONUS,
     RELAY_DQ_MULT,
+    LEAGUE_PLACE_SLOTS,
     TEAM_POINTS,
     TICKET_PRICE,
     TIER_CONFIG,
@@ -639,10 +640,21 @@ def _compute_ticket_income(
     return spectators, spectators * TICKET_PRICE[state.tier.value]
 
 
+def _score_place(
+    team_points: Dict[str, int], meet_places: Dict[str, List[int]], team: str, place: int
+) -> None:
+    """Assegna i punti squadra del piazzamento e lo conta per lo spareggio (A.2)."""
+    team_points[team] = team_points.get(team, 0) + TEAM_POINTS.get(place, 0)
+    if place in TEAM_POINTS:
+        counts = meet_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
+        counts[place - 1] += 1
+
+
 def _rival_only_points(
     clubs: List[RivalClub],
     event: str,
     team_points: Dict[str, int],
+    meet_places: Dict[str, List[int]],
     rng: random.Random,
     gender: str = "M",
 ) -> None:
@@ -653,7 +665,7 @@ def _rival_only_points(
 
     order = sorted(clubs, key=day_score, reverse=True)
     for place, club in enumerate(order, start=1):
-        team_points[club.name] = team_points.get(club.name, 0) + TEAM_POINTS.get(place, 0)
+        _score_place(team_points, meet_places, club.name, place)
 
 
 # ---------------------------------------------------------------- rival development
@@ -761,6 +773,7 @@ def simulate_competition(
     team_points: Dict[str, int] = {state.team_name: 0}
     for team in rivals:
         team_points.setdefault(team, 0)
+    meet_places: Dict[str, List[int]] = {}  # per squadra: quanti 1°, 2°, ... in questo meeting (spareggio)
     total_prize = 0
     total_prestige = 0
 
@@ -773,7 +786,7 @@ def simulate_competition(
             player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
 
             if player_athlete is None or player_athlete.is_injured:
-                _rival_only_points(clubs, event_name, team_points, r, gender=gender)
+                _rival_only_points(clubs, event_name, team_points, meet_places, r, gender=gender)
                 continue
 
             attitude = state.attitude_for(event_name)
@@ -863,7 +876,7 @@ def simulate_competition(
                 if standing.is_player:
                     player_place = idx
                 if not (standing.is_player and withdrew):
-                    team_points[standing.team_name] = team_points.get(standing.team_name, 0) + TEAM_POINTS.get(idx, 0)
+                    _score_place(team_points, meet_places, standing.team_name, idx)
 
             # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
             is_pb = False
@@ -973,7 +986,7 @@ def simulate_competition(
                     if runner is not None and not runner.is_injured:
                         legs.append(runner)
             if relay is None or len(legs) < 4:
-                _rival_only_points(clubs, rdef.requires_event, team_points, r, gender=gender)
+                _rival_only_points(clubs, rdef.requires_event, team_points, meet_places, r, gender=gender)
                 continue
 
             harmony = relay.harmony - (15 if substituted else 0)
@@ -1020,7 +1033,7 @@ def simulate_competition(
                 if st.is_player:
                     player_place = idx
                 if not (st.is_player and disqualified):
-                    team_points[st.team_name] = team_points.get(st.team_name, 0) + TEAM_POINTS.get(idx, 0)
+                    _score_place(team_points, meet_places, st.team_name, idx)
 
             is_club_rec = False
             records = state.records_for(gender)
@@ -1064,7 +1077,9 @@ def simulate_competition(
             )
 
     _adapt_rival_ambition(state, team_points)
-    team_standings = sorted(team_points.items(), key=lambda kv: kv[1], reverse=True)
+    team_standings = sorted(
+        team_points.items(), key=lambda kv: state.rank_key(kv[0], kv[1], meet_places.get(kv[0]))
+    )
     team_place = next(
         (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
         len(team_standings),
@@ -1073,6 +1088,10 @@ def simulate_competition(
     total_prestige += team_bonus
     for team, pts in team_points.items():
         state.league_table[team] = state.league_table.get(team, 0) + pts
+    for team, counts in meet_places.items():
+        total = state.league_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
+        for i, n in enumerate(counts):
+            total[i] += n
 
     # Home meets: no bus trip, but the gate brings ticket income and wears the track
     spectators, ticket_income = (0, 0)
@@ -1577,6 +1596,7 @@ def advance_week(
             season_end = close_season(state)
             state.season_number += 1
             state.league_table = {}
+            state.league_places = {}
             for a in state.athletes:
                 a.age += 1
             state.news_log[0:0] = renew_expiring_contracts(state)

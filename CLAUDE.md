@@ -48,7 +48,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 173 test, OK, ~5 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 187 test, OK, ~5 s
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -75,8 +75,8 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (25 test, senza Qt: migrazioni e slot)
-             test_assignments.py (9, convocazioni)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (27 test, senza Qt: migrazioni e slot)
+             test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
              test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
@@ -96,7 +96,7 @@ bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mer
   `docs/TICK.md` (se cambia l'ordine del tick o delle chiamate all'RNG), `docs/AUDIT.md` (difetti trovati o chiusi),
   `docs/QUESTIONS.md` (decisioni nuove) e le righe «Stato attuale» delle convenzioni qui sopra.
 - **Sovrapposizioni con `docs/PLAN.md`** (il piano dell'utente prevale dove differisce): A.1 ↔ lotti 4.x e QUESTIONS 3;
-  A.2 ↔ 3.3 e QUESTIONS 5; A.3 ↔ 2.1 (+2.2 per `hash()`) e QUESTIONS 2; A.4 ↔ 3.1 e QUESTIONS 6 (qui: chiusura senza
+  A.2 ↔ 3.3 e QUESTIONS 5 (✅ fatto 2026-11-20); A.3 ↔ 2.1 (+2.2 per `hash()`) e QUESTIONS 2; A.4 ↔ 3.1 e QUESTIONS 6 (qui: chiusura senza
   scelta = «rifiuta» + pulsante «Ignora», non «ignorare Esc»); A.5 ↔ 1.4 (guardia nel controller, testabile senza mouse,
   **più** pulsante disabilitato). Chiuso un sottopunto, segnare il lotto di `PLAN.md` corrispondente come fatto.
 - **Schema DB.** Il piano scrive «Lotto A: nessuna modifica schema», ma A.3 salva lo stato dell'RNG: serve una migrazione
@@ -133,7 +133,7 @@ bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mer
   sono **stime**, dichiarate come tali nei commenti dei test: sostituiscile se trovi dati FIDAL veri. I
   `historic_mark` in `entities.py` non sono stati ritoccati: con le nuove curve lungo/peso richiedono score più
   alti (es. peso M 18 m ≈ score 76, prima ≈ 62).
-- **Salvataggi.** `SCHEMA_VERSION = 11` (`database.py`; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19). Ogni nuova colonna va aggiunta in `database.py` con una voce in
+- **Salvataggi.** `SCHEMA_VERSION = 12` (`database.py`; v10 = `athletes.contract_end_season`, v11 = `athletes.contract_no_renew`, Q22, 2026-11-19; v12 = `game_state.league_places_json`, spareggio A.2, 2026-11-20). Ogni nuova colonna va aggiunta in `database.py` con una voce in
   `MIGRATIONS` (le colonne nuove con `DEFAULT`) *e* nella `CREATE TABLE`; `_drop_columns_after` nei test usa
   `MIGRATIONS` per simulare i vecchi salvataggi. I campi mancanti dei vecchi salvataggi si riempiono al
   caricamento in modo deterministico (es. `_backfill_bodies`, seed = id atleta). Backup e rifiuto delle versioni

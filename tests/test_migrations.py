@@ -505,14 +505,14 @@ class TestMigrationV11NoRenew(_TmpCase):
     """v10 → v11: colonna `contract_no_renew` («non rinnovare»), con 0 = rinnovo automatico."""
 
     def test_v10_save_gets_the_column_with_default_zero_and_a_verified_backup(self) -> None:
-        self.assertEqual(SCHEMA_VERSION, 11)
+        self.assertGreaterEqual(SCHEMA_VERSION, 11)
         self.assertIn(10, MIGRATIONS)
         path = make_save(self.slot("v10"), 10)
         with closing(sqlite3.connect(path)) as conn:
             self.assertNotIn("contract_no_renew", column_names(conn, "athletes"))  # la fixture è davvero v10
             self.assertIn("contract_end_season", column_names(conn, "athletes"))
         db = DatabaseManager(db_path=path)
-        self.assertEqual(user_version(path), 11)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
         with closing(sqlite3.connect(path)) as conn:
             self.assertEqual(conn.execute("SELECT contract_no_renew FROM athletes WHERE id = 1").fetchone(), (0,))
             self.assertIn(("contract_no_renew", "INTEGER", 1, "0", 0), columns(conn, "athletes"))
@@ -533,6 +533,40 @@ class TestMigrationV11NoRenew(_TmpCase):
                 DatabaseManager(db_path=path)
         self.assertEqual(sha(path), before)
         self.assertEqual(user_version(path), 10)
+
+
+class TestMigrationV12LeaguePlaces(_TmpCase):
+    """v11 → v12 (A.2): colonna `league_places_json` (piazzamenti per club, per lo spareggio), default `'{}'`."""
+
+    def test_v11_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 12)
+        self.assertIn(11, MIGRATIONS)
+        path = make_save(self.slot("v11"), 11)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("league_places_json", column_names(conn, "game_state"))  # la fixture è davvero v11
+            self.assertIn("contract_no_renew", column_names(conn, "athletes"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT league_places_json FROM game_state WHERE id = 1").fetchone(), ("{}",))
+            self.assertIn(("league_places_json", "TEXT", 1, "'{}'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 11)
+        backup = self.backups("v11")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 11)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("league_places_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 11)
+
+    def test_failed_v11_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v11"), 11)
+        before = sha(path)
+        broken = {"game_state": [("league_places_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {11: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 11)
 
 
 if __name__ == "__main__":

@@ -1420,8 +1420,10 @@ class TestPromotionAndRelegation(unittest.TestCase):
             self.assertEqual(s.weeks_to_season_end, 36)
             s.league_table = {s.rivals_in()[0].name: 3}
             self.assertEqual(s.league_standings()[0], (s.rivals_in()[0].name, 3))
-            zero_points = sorted(t for t, p in s.league_standings() if p == 0)
-            self.assertEqual([t for t, _p in s.league_standings()[1:]], zero_points)  # ties: alphabetical
+            # ties (A.2): not alphabetical any more, but a deterministic draw (see tests/test_tiebreaker.py)
+            zero_points = [t for t, p in s.league_standings() if p == 0]
+            self.assertEqual(len(zero_points), 7)
+            self.assertEqual(zero_points, [t for t, _p in s.league_standings()[1:]])
             self.assertEqual(s.league_position, 2 + zero_points.index(s.team_name))
 
     def test_season_history_roundtrip(self) -> None:

@@ -47,7 +47,9 @@ La tua regola cita «il modulo di bilanciamento», che oggi **non esiste** (`BAL
 - **Alternativa B:** restare in `entities.py` e solo vietare nuovi letterali.
 - **Cosa cambia:** spostamenti meccanici, un lotto per dominio; test di non regressione (valori identici prima/dopo).
 
-## 5. Come si risolve un pareggio in classifica?
+## 5. Come si risolve un pareggio in classifica? — ✅ FATTA il 2026-11-20 (PIANOLAVORO A.2), **scelta dell'utente: «salva i piazzamenti»**
+
+**Fatto:** più 1° posti, poi più 2°, …, poi sorteggio deterministico (`hashlib`, stagione + posizione del club; non il nome e non `random`). Piazzamenti per club in `GameState.league_places` (schema v12). Il piano scriveva «punti cumulativi, miglior piazzamento, sorteggio con seed = id società»: i punti sono già il criterio che va in pareggio e il club non ha un id; l'utente ha scelto il conteggio completo dei piazzamenti. Quando arriverà A.3 il sorteggio potrà passare al seed della partita.
 
 Oggi alfabetico per nome (`entities.py:826-829`): decide titolo, promozione e retrocessione, e il giocatore sceglie il proprio nome; il meeting usa un'altra regola (`simulation.py:1033`).
 - **Raccomandazione:** 1) più primi posti nelle gare della stagione, 2) più secondi, …, 3) sorteggio deterministico derivato dal seed della stagione. Stessa regola per lega e meeting. **DA CONFERMARE:** nessun requisito di realismo FIDAL sugli spareggi.

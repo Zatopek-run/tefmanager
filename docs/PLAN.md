@@ -44,7 +44,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 ### Lotto 2.1 — Stato RNG salvato nel salvataggio
 - **Obiettivo:** ricaricare e avanzare produce lo stesso risultato.
-- **File:** `models/entities.py` (campo `rng_state` in `GameState`), `models/database.py` (colonna `rng_state_json` con `DEFAULT '{}'` **sia** in `MIGRATIONS` **sia** nel `CREATE TABLE`, `SCHEMA_VERSION = 12`: la v10 è già presa da `athletes.contract_end_season` (Q22) e la v11 da `athletes.contract_no_renew`, 2026-11-19), `controllers/game_controller.py` (init/load/save).
+- **File:** `models/entities.py` (campo `rng_state` in `GameState`), `models/database.py` (colonna `rng_state_json` con `DEFAULT '{}'` **sia** in `MIGRATIONS` **sia** nel `CREATE TABLE`, `SCHEMA_VERSION = 13` (la v12 l'ha presa `game_state.league_places_json`, A.2, 2026-11-20; indicativo: si usa la prima libera): la v10 è già presa da `athletes.contract_end_season` (Q22) e la v11 da `athletes.contract_no_renew`, 2026-11-19), `controllers/game_controller.py` (init/load/save).
 - **Rischio:** medio (nuova versione di schema; formato di `getstate` tra versioni Python: lo stato è una tupla di interi, JSON-serializzabile, ma da provare su 3.14).
 - **Verifica:** test: stessa partita caricata due volte → 8 tick → stato identico (l'esperimento B2 di `AUDIT.md` deve invertire l'esito); test di migrazione v11→v12 su fixture.
 - **Accettazione:** B2 identico; v11 si migra senza perdita; i test esistenti restano verdi.
@@ -75,7 +75,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 - **File:** `controllers/game_controller.py:798,825`. **Rischio:** basso. **Verifica:** test con budget −5.000 → rifiuto → budget −5.600. **Accettazione:** il saldo negativo non viene mai riportato a 0 da un dilemma.
 - **Dipende da:** QUESTIONS 7.
 
-### Lotto 3.3 — Spareggio unico e deterministico
+### Lotto 3.3 — Spareggio unico e deterministico — ✅ FATTO (2026-11-20, come PIANOLAVORO A.2; più 1°, 2°, … poi sorteggio `hashlib` senza nome; schema v12, non attende 2.1)
 - **File:** `models/entities.py` (`league_standings`), `models/simulation.py:1033`. **Rischio:** medio (cambia il verdetto in caso di pareggio). **Verifica:** test con tabella in pareggio: stesso esito a ogni esecuzione e indipendente dal nome del club. **Accettazione:** lega e meeting usano la stessa regola.
 - **Dipende da:** QUESTIONS 5; 2.1 se si usa il sorteggio seminato.
 

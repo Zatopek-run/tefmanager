@@ -156,7 +156,7 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 | R6 | T | **models→views→PyQt6**: `models/race_export.py` non importabile senza Qt; i test di simulazione non possono girare senza Qt (l'intera suite importa PyQt6 a `test_game.py:15`) | `race_export.py:22` |
 | R7 | R/B | **Debito azzerato dai dilemmi**: `budget = max(0, budget − 600)` (e −300) porta a 0 un bilancio negativo | `game_controller.py:798,825` |
 | R8 | R | ✅ **CHIUSO il 2026-11-20 (PIANOLAVORO A.5)**: `GameController.advance_week` non è rientrante (`is_advancing`) e il pulsante si spegne durante il tick; il doppio click con mouse vero resta **non provato**. Originale: **Doppio click**: nessuna protezione sul tick (dedotto) | `main_window.py:142,312` |
-| R9 | R | **Spareggio alfabetico** modificabile dal giocatore (nome club) e diverso dalla regola del meeting | `entities.py:826-829`, `simulation.py:1033` |
+| R9 | R | ✅ **CHIUSO il 2026-11-20 (PIANOLAVORO A.2)**: piazzamenti salvati (v12) + sorteggio deterministico, stessa regola per lega e meeting. Originale: **Spareggio alfabetico** modificabile dal giocatore (nome club) e diverso dalla regola del meeting | `entities.py:826-829`, `simulation.py:1033` |
 | R10 | B | **Fan e sponsor illimitati**: i fan non calano mai; `fans//4` per atleta ≥18 a settimana senza tetto | `simulation.py:901,1230` |
 | R11 | R | **Obiettivi mai rinnovati**: creati solo alla nuova partita; «promote» non si riazzera dopo una retrocessione | `game_controller.py:172`; nessun altro chiamante |
 | R12 | R | **Obiettivo «traguardo storico» femminile** confronta con la soglia maschile (`ev.historic_mark`), mentre il momento storico usa quella femminile | `simulation.py:588` vs `:863-867` |
