@@ -2363,7 +2363,7 @@ class RecordsTab(QWidget):
         self.milestones_list.setWordWrap(True)
         self.milestones_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         milestones_lay.addWidget(self.milestones_list)
-        bottom_row.addWidget(milestones_panel, stretch=2)
+        bottom_row.addWidget(milestones_panel, stretch=3)
 
         retired_panel = QFrame()
         retired_panel.setObjectName("SectionPanel")
@@ -2378,7 +2378,9 @@ class RecordsTab(QWidget):
         self.retired_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.retired_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.retired_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.retired_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        header = self.retired_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # il nome prende lo spazio che resta
         self.retired_table.verticalHeader().setVisible(False)
         self.retired_table.itemSelectionChanged.connect(self._update_retired_button)
         retired_lay.addWidget(self.retired_table)
@@ -2386,7 +2388,7 @@ class RecordsTab(QWidget):
         self.hire_retired_button.setEnabled(False)
         self.hire_retired_button.clicked.connect(self._hire_selected_retired)
         retired_lay.addWidget(self.hire_retired_button)
-        bottom_row.addWidget(retired_panel, stretch=3)
+        bottom_row.addWidget(retired_panel, stretch=4)
 
         root.addLayout(bottom_row, stretch=2)
 

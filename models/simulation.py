@@ -1622,7 +1622,7 @@ def retire_veterans(state: GameState, rng: random.Random) -> List[str]:
         text = f"Sett. {state.week}: {a.name} ({a.age} anni, {a.specialty.value}) si ritira dall'attività"
         text += " per i troppi infortuni." if memory.reason == "Infortuni" else "."
         if memory.coach_offer:
-            text += " Si offre come allenatore della società (scheda Albo)."
+            text += " Si offre come allenatore della società (scheda Albo & Record)."
         notes.append(text)
     return notes
 

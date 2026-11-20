@@ -158,10 +158,11 @@ class TestRetireVeterans(unittest.TestCase):
 
     def test_probability_of_retiring_at_33_over_many_athletes(self) -> None:
         state = make_state(3)
-        clones(state, 400, 33)
+        clones(state, 1200, 33)
         retire_veterans(state, random.Random(11))
-        share = len(state.retired) / 400
-        self.assertTrue(0.18 <= share <= 0.32, share)  # attesi 25%
+        gone = 1200 - len(state.athletes)  # non `len(state.retired)`: la lista ricorda al massimo MAX_RETIRED_LIST
+        self.assertGreater(gone, MAX_RETIRED_LIST)  # il test deve poter vedere oltre il tetto della lista
+        self.assertTrue(0.21 <= gone / 1200 <= 0.29, gone / 1200)  # attesi 25%
 
     def test_everyone_retires_at_35_and_a_tenth_offers_to_coach(self) -> None:
         state = make_state(3)
@@ -171,10 +172,10 @@ class TestRetireVeterans(unittest.TestCase):
         self.assertEqual(len(state.main_squad), 1)  # l'ultimo resta
         state = make_state(3)
         clones(state, 301, 35)
-        retire_veterans(state, random.Random(5))
-        offers = sum(1 for r in state.retired if r.coach_offer)
-        self.assertGreater(offers, 8)
-        self.assertLess(offers, 55)  # attesi ~10 su 100 ricordati
+        notes = retire_veterans(state, random.Random(5))
+        self.assertEqual(len(notes), 300)  # tutti tranne l'ultimo, anche oltre i 100 ricordati
+        offers = sum(1 for n in notes if "Si offre come allenatore" in n)
+        self.assertTrue(15 <= offers <= 45, offers)  # attese ~30 su 300 (10%), sigma ~5
 
     def test_the_last_main_squad_athlete_cannot_retire(self) -> None:
         state = make_state(3)
@@ -212,6 +213,7 @@ class TestRetireVeterans(unittest.TestCase):
                 self.assertTrue(aid is None or aid in remaining, (gender, aid))
             for relay in state.relays_for(gender).values():
                 self.assertTrue(set(relay.all_ids()) <= remaining | {None})
+                self.assertIn(relay.reserve_id, remaining | {None})
 
     def test_coach_offers_expire_at_the_next_season_change(self) -> None:
         state = make_state(3)
