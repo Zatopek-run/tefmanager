@@ -5,7 +5,7 @@ Documento pensato per essere dato a un altro assistente (LLM) o a una persona ch
 righe di codice, ordine esatto del tick) stanno in `docs/BALANCE.md`, `docs/TICK.md`, `docs/AUDIT.md`, `docs/QUESTIONS.md`,
 `docs/PLAN.md` e in `CLAUDE.md`. Dove questo file e il codice divergono, **vince il codice**.
 
-Stato descritto: 2026-11-19, branch `main`, commit `c2256a0` (lotti 1.1 e 1.2 di `PLAN.md` fatti). Suite di test: 151 test OK (aggiornata dopo i lotti Q15-Q22 e l'800m).
+Stato descritto: 2026-11-20, branch `main`, commit `099064d` (lotti 1.1 e 1.2 di `PLAN.md` fatti; decisioni Q15-Q18 e Q20-Q22 e 800m, compreso Godot, implementate). Suite di test: 151 test OK (eseguita il 2026-11-20; 55 di questi senza PyQt6).
 
 **Che cosa è verificato e che cosa no.** Le regole e le cifre qui sotto vengono dalla lettura del codice e dagli esperimenti
 registrati in `AUDIT.md`. Non è mai stato provato il gioco con mouse e tastiera reali (solo test offscreen e screenshot), non è stata
@@ -99,14 +99,16 @@ Caratteristiche (0-100): `speed`, `stamina`, `strength`, `technique`, `resilienc
 `potential` (tetto di crescita); `specialty` (**Velocità, Mezzofondo, Salti, Lanci**); `personality` (**Perfezionista, Impulsivo, Leader,
 Resiliente**); `training_focus` (**Resistenza, Potenza Esplosiva, Tecnica, Riposo & Recupero**); `periodization`
 (**Prep. Generale, Prep. Specifica, Gara (Picco), Scarico (Tapering)**); `weekly_wage`, `injured_weeks`, `is_youth_prospect`,
-`in_youth_squad`, `fans`, `coach_id`, `personal_best` (per evento), `doping_boost_weeks`.
+`in_youth_squad`, `fans`, `coach_id`, `personal_best` (per evento), `doping_boost_weeks`, `contract_end_season` (ultima stagione di contratto, inclusa; 0 = nessuno, cioè vivaio)
+e `contract_no_renew` (il giocatore non vuole rinnovarlo: §5.9). La **fascia d'età** (`age_category`: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+) è solo un'etichetta
+calcolata da `age`, non salvata, mostrata nella scheda atleta.
 `overall` è una media pesata delle caratteristiche con pesi diversi per specialità. L'altezza e il peso concorrono al punteggio in gara
 (§5.3). Il picco di età dipende dalla specialità (`peak_age_range`: Velocità 20-27, Salti 20-28, Mezzofondo 21-30, Lanci 23-32).
 
 ### 3.3 Altre entità
 
 - `EventDefinition`: evento (nome, tipo corsa/concorso, sensibile al vento, record del mondo, ancore dei livelli). Eventi: `100m`, `400m`,
-  `1500m`, `Salto in Lungo`, `Getto del Peso`; `RelayDefinition`: `4x100m`, `4x400m`.
+  `800m`, `1500m`, `Salto in Lungo`, `Getto del Peso`; `RelayDefinition`: `4x100m`, `4x400m`.
 - `Coach`: 4 abilità 1-100 (Velocità, Resistenza, Forza, Tecnica), tier, tipo (specializzato su una disciplina o del vivaio).
 - `Relay`: 4 frazionisti in ordine + riserva, `harmony` (affiatamento 0-100), `last_change_week`.
 - `RivalClub`/`RivalAthlete`: società avversarie persistenti (livello, ambizione, storia del livello, un atleta per gara).
@@ -123,15 +125,15 @@ sceglie l'atteggiamento, compone le staffette, spende soldi (staff, impianti, sc
 (`GameController.advance_week` → `models.simulation.advance_week`). Il tick, in ordine (dettagli e numeri di riga in `TICK.md`):
 
 1. Se la settimana è **di gara** (`settimana % 4 == 0`): simula il meeting (meteo, vento, punteggi di tutti, classifica, premi, record, staffette, punti squadra, biglietti/trasferta).
-2. Per ogni atleta: allenamento settimanale (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio).
+2. Per ogni atleta: allenamento settimanale (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio). Nel tick che precede una gara la fase «Gara (Picco)» aggiunge `PEAK_FORM_BONUS` (+6) al bersaglio di forma.
 3. Note di infortunio; eventuale scandalo doping (reputazione −25, prestigio −45).
 4. Finanze settimanali: entrate (sponsor, individuali, quote) e uscite (rimborsi spese atleti, staff, allenatori, palestra); libro mastro.
 5. Se `budget < 0`: interessi 5% a settimana; sotto −20.000 la società **fallisce** (`bankrupt`: blocca i tick successivi).
 6. Decadimento abilità degli allenatori; affiatamento staffette; **evoluzione dei rivali**; usura della pista.
 7. Fedeltà sponsor +2; azzera i punti scouting; **`week += 1`**.
 8. Solo Carriera, ogni 12 settimane: cambio **fase** (Outdoor → Cross → Indoor). A fine ciclo (36 sett.): verdetto di lega, nuova stagione,
-   azzeramento classifica di lega, +1 anno a tutti gli atleti, rinnovo dei rivali.
-9. Promozione automatica dal vivaio a 18 anni; notizie; valutazione obiettivi; possibile **dilemma etico**; troncamento dei registri.
+   azzeramento classifica di lega, +1 anno a tutti gli atleti, rinnovo dei rivali, poi **contratti scaduti**: rinnovo automatico (1-3 stagioni, senza costo e senza RNG) o, per chi ha «Non rinnovare», uscita dalla società (§5.9).
+9. Promozione automatica dal vivaio a 18 anni; **convocazioni non più ammesse sostituite** (tetto di 2 gare individuali + 1 staffetta, under 20 fuori da «Finale Oro / Coppa Europa», `normalize_assignments`); notizie; valutazione obiettivi; possibile **dilemma etico**; troncamento dei registri.
 
 Dopo il tick il controller azzera in memoria i risultati dello scouting e il pool del mercato, **salva** su SQLite ed emette i segnali:
 se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la finestra di fine stagione; se è scattato un dilemma, la sua finestra.
@@ -147,7 +149,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 
 - Gara ogni 4 settimane. **Casa/trasferta alternate**: in casa non paghi la trasferta e incassi i biglietti (spettatori limitati dalla capienza,
   funzione di prestigio, categoria, reputazione, pioggia); in trasferta paghi il costo di trasferta. La pista subisce −3% di condizione in un meeting in casa.
-- Fasi in Carriera: Outdoor (sett. 1-12), Cross (13-24), Indoor (25-36). **Le discipline non cambiano con la fase** (sono sempre le 5): le differenze reali sono
+- Fasi in Carriera: Outdoor (sett. 1-12), Cross (13-24), Indoor (25-36). **Le discipline non cambiano con la fase** (in Carriera sono sempre le 6: 100m, 400m, 800m, 1500m, Lungo, Peso): le differenze reali sono
   che in Cross non si corrono staffette, in Indoor non c'è la 4x100m, il meteo indoor è sempre Sereno e il vento 0. Non esiste una gara di corsa campestre
   né un 60m indoor (si corre il 100m).
 - Meteo (Sereno, Ventoso, Pioggia, Caldo): Pioggia −1,8 e Caldo −0,8 punti di punteggio; il vento dipende dal meteo.
@@ -156,7 +158,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 
 - Ogni atleta ha un **focus** (Resistenza, Potenza Esplosiva, Tecnica, Riposo) e una **fase di periodizzazione**. Ogni settimana, in base al focus, c'è una probabilità di
   +1 (talvolta +2) alla caratteristica allenata, moltiplicata per: età (sotto il picco ×1,30, nel picco ×1,00, oltre ×0,65), allenatore adatto
-  (senza allenatore ×0,6), personalità (Perfezionista ×1,15), periodizzazione, palestra (+6% per livello), vivaio (×1,5) e margine rispetto al `potential`.
+  (senza allenatore ×0,6), personalità (Perfezionista ×1,15), periodizzazione (la fase «Gara (Picco)» ha ×0,90 di crescita e +2 fatica, ma +6 al bersaglio di forma nel tick pre-gara; lo Scarico dà +9), palestra (+6% per livello), vivaio (×1,5) e margine rispetto al `potential`.
   Tetto della probabilità 0,95.
 - **Fatica** sale con l'allenamento (a seconda del focus) e scende con Riposo, Scarico, fisioterapista, sonno e nutrizione. La **forma** converge a un bersaglio
   che dipende dalla fatica (fatica alta → forma bassa), con bonus per Riposo/Scarico, preparatore mentale, Leader, doping.
@@ -178,7 +180,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
    ma piazzamento, punti squadra, premi, prestigio e fan restano.
 4. **Atteggiamento** per ogni gara: Prudente (−2 punti, poca fatica, rischio infortunio 0,5%), Normale, Aggressivo (+2,5 punti, tanta fatica, rischio 5%, variabilità extra).
    Il rischio di ritiro in gara aumenta con la fatica ed è ridotto da medico (×0,55) e Resiliente (×0,7). Un ritirato (DNF) arriva ultimo, forma −15, 1-3 settimane di stop.
-5. Ogni società schiera **un solo atleta per evento e divisione**. Gli avversari sono i rivali (un atleta per società per gara, 7 società per categoria, quindi 8 partecipanti).
+5. Ogni società schiera **un solo atleta per evento e divisione**, e ogni atleta al massimo **2 gare individuali + 1 staffetta** per meeting (tetto FIDAL, Q15); gli under 20 non gareggiano nel livello «Finale Oro / Coppa Europa» (Q17). Gli avversari sono i rivali (un atleta per società per gara, 7 società per categoria, quindi 8 partecipanti).
 6. Premi in denaro per i primi 4 (1,00 / 0,60 / 0,35 / 0,15 del montepremi della categoria), prestigio per piazzamento (+5 se record), fan (più i piazzamenti alti, +5 per PB, +10 per record).
 
 ### 5.4 Classifiche: meeting, lega, promozioni
@@ -193,7 +195,7 @@ se c'è una gara si aprono la gara in diretta e i risultati; a fine stagione la 
 
 4 frazionisti in ordine + 1 riserva, per divisione; ogni atleta può stare in una sola staffetta; la 4x400m si corre solo in Carriera (serve la gara dei 400m). Il tempo dipende dai
 frazionisti (l'ultima frazione pesa 0,28 contro 0,24) e dall'**affiatamento** (E … A++, scala interna 0-100, parte da 30). L'affiatamento cresce ogni settimana con titolari sani e di più se si gareggia;
-cala se mancano. Con affiatamento basso c'è rischio di **squalifica** per cambio fuori zona. Riordinare è gratis; sostituire un titolare sano costa il 25% dell'affiatamento
+cala se mancano. Con affiatamento basso c'è rischio di **squalifica** per cambio fuori zona (la probabilità nella 4x400m è la metà di quella della 4x100m: `RELAY_DQ_MULT`, Q20). Riordinare è gratis; sostituire un titolare sano costa il 25% dell'affiatamento
 (una volta ogni 4 settimane); un infortunato è sostituito dalla riserva (che subentra con affiatamento −15 e +3% di rischio DQ). Le staffette contano per i punti squadra e hanno record propri;
 non consumano forma, non danno fan.
 
@@ -217,7 +219,12 @@ Il **vivaio** ospita fino a 8 ragazzi di 14-17 anni che non gareggiano e non cos
 prima si possono promuovere a mano. Ogni settimana si hanno **8 punti scouting**: una ricerca costa 2 punti (+1 per filtro: disciplina, potenziale ≥85) e un costo in denaro crescente con i punti già spesi.
 I ragazzi segnalati e non presi se ne vanno a fine settimana.
 
-### 5.9 Mercato (agenti liberi)
+### 5.9 Mercato (agenti liberi) e contratti
+
+**Contratti** (Q22): ogni atleta di Prima Squadra ha una scadenza stagionale (`contract_end_season`), assegnata alla firma (acquisto, promozione dal vivaio, nuova partita, vecchi salvataggi al caricamento) con una
+durata di 1-3 stagioni deterministica (da id atleta e stagione, nessun RNG). Il vivaio non ha contratto. A fine stagione i contratti scaduti si **rinnovano da soli**, senza costo; il rimborso spese non viene rivisto (R14).
+Dalla scheda atleta il pulsante **«Non rinnovare»** (annullabile con «Annulla non rinnovo») fa sì che, alla scadenza, l'atleta lasci la società **senza** la penale di fedeltà dello svincolo; l'ultimo atleta della
+Prima Squadra si rinnova comunque. Chi se ne va viene tolto da formazione e staffette, che si ricompongono da sole, con una notizia nel registro.
 
 Pool di 5 candidati a settimana (4 studenti di 15-17 anni + 1 adulto): si può solo **acquistare** (ingaggio una tantum) o **svincolare**. Nessun incasso dalle cessioni. Ogni acquisto/cessione abbassa la **fedeltà sponsor**
 (−6 per under 21, −12 altrimenti; −8 per la cessione), che riduce lo sponsor della società e si recupera di +2 a settimana.
@@ -293,7 +300,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewerDialog`) prima dei risultati. Mette in scena un `CompetitionSummary` già calcolato; non cambia mai tempi, ordine o misure
 (ogni atleta taglia il traguardo esattamente al suo tempo ufficiale, c'è un test).
 
-- **Modello di movimento** (funzioni pure e testate): `curve_progress`, `position_fraction`, `reaction_time` (0,12-0,22 s, incluso nel tempo ufficiale). Curva di velocità per gara (100m, 400m, 1500m, staffetta).
+- **Modello di movimento** (funzioni pure e testate): `curve_progress`, `position_fraction`, `reaction_time` (0,12-0,22 s, incluso nel tempo ufficiale). Curva di velocità per gara (100m, 400m, 800m, 1500m, staffetta).
 - **Viste PyQt**: 2D laterale (`TrackRaceWidget`) e 3D software con `QPainter` (`Track3DWidget`, senza OpenGL: camera a foro stenopeico, `clip_near`, antialiasing spento per le grandi superfici). Il 3D copre solo le corse in pista.
   Concorsi (lungo, peso): scena 2D + tabellone; le singole prove sono ricavate dal risultato finale con un generatore deterministico (`generate_attempts`).
 - **Controlli**: pausa, velocità 1×/2×/4×, vista 2D/3D, «Salta alla fine», «Prossima gara», «Vai ai risultati». Ralenti dell'arrivo.
@@ -333,6 +340,8 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 `PLAN.md` divide l'intervento in lotti piccoli: 1 sicurezza dei salvataggi → 2 determinismo → 3 ambiguità di regole → 4 economia → 5 refactor → 6 UI.
 
 - ✅ **1.1** migrazione transazionale con backup, ✅ **1.2** rifiuto delle versioni sconosciute (fatti).
+- Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
+  Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Poi: 1.4 protezione dal doppio click sul tick; 2.x RNG seminato/salvato; 3.x regole (spareggio, dilemma chiuso senza scelta, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
@@ -358,7 +367,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 | `hash()` (R17) | Salato per processo nella fascia del potenziale mostrata nel mercato. |
 | Tick (T1-T11) | Dettaglio dei punti d'ordine sospetti in `TICK.md` §E. |
 
-Le decisioni di design aperte (15 domande, es. «che cosa è il fallimento», «un atleta può correre più gare nello stesso meeting», «dove vivono le costanti di bilanciamento») sono in `docs/QUESTIONS.md` e **spettano all'utente**.
+Le decisioni di design aperte (parte delle 22 domande, es. «che cosa è il fallimento», «dove vivono le costanti di bilanciamento») sono in `docs/QUESTIONS.md` e **spettano all'utente**.
 
 ---
 

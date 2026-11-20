@@ -1,6 +1,6 @@
 # PLAN — piano di intervento a lotti piccoli
 
-Nessun lotto richiede di riscrivere l'app. Ogni lotto è indipendente salvo dove indicato in «Dipende da». Un lotto = un commit (o pochi) e una sessione. Prima di ogni lotto: `git status` pulito e suite verde (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v`, 80 test, ~3 s). Le decisioni citate sono in `QUESTIONS.md`; **nessun lotto parte senza la risposta indicata**. Rischi e riferimenti in `AUDIT.md`; ordine del tick in `TICK.md`.
+Nessun lotto richiede di riscrivere l'app. Ogni lotto è indipendente salvo dove indicato in «Dipende da». Un lotto = un commit (o pochi) e una sessione. Prima di ogni lotto: `git status` pulito e suite verde (`QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v`, 151 test, ~4 s). Le decisioni citate sono in `QUESTIONS.md`; **nessun lotto parte senza la risposta indicata**. Rischi e riferimenti in `AUDIT.md`; ordine del tick in `TICK.md`.
 
 Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 economia → 5 refactor → 6 UI.
 
@@ -110,7 +110,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 ## Area 5 — Refactor architetturale
 
 ### Lotto 5.1 — Test di simulazione senza Qt
-- **Obiettivo:** poter eseguire i test dei modelli con un Python privo di PyQt6. **File:** spezzare `tests/test_game.py` (2.187 righe, importa PyQt6 a `:15`): nuovo `tests/test_sim_*.py` solo con `models/` (classi `TestVerticalSliceAndMechanics`, `TestMaxithlonInspiredMechanics`, `TestCoachesAndRelays`, `TestRivalClubs`, `TestPromotionAndRelegation`, `TestBodyBuild`, parti di `TestGenderDivisions`), lasciando in `test_game.py` i test GUI. **Rischio:** basso (spostamento). **Verifica:** `python3 -m unittest tests.test_sim_*` con il `python3` di sistema **senza** PyQt6; suite totale = stessi 80 test. **Accettazione:** nessun test perso (conteggio identico), i nuovi file non importano `PyQt6` né `controllers`/`views`.
+- **Obiettivo:** poter eseguire i test dei modelli con un Python privo di PyQt6. **File:** spezzare `tests/test_game.py` (2.661 righe, importa PyQt6 a `:15`): nuovo `tests/test_sim_*.py` solo con `models/` (classi `TestVerticalSliceAndMechanics`, `TestMaxithlonInspiredMechanics`, `TestCoachesAndRelays`, `TestRivalClubs`, `TestPromotionAndRelegation`, `TestBodyBuild`, parti di `TestGenderDivisions`), lasciando in `test_game.py` i test GUI. **Stato (2026-11-20):** i test di migrazioni, convocazioni, contratti e 800m (55) sono già in file senza Qt; restano in `test_game.py` (96 test) quelli di simulazione. **Rischio:** basso (spostamento). **Verifica:** `python3 -m unittest tests.test_sim_*` con il `python3` di sistema **senza** PyQt6; suite totale = stessi 151 test. **Accettazione:** nessun test perso (conteggio identico), i nuovi file non importano `PyQt6` né `controllers`/`views`.
 - **Nota:** i test che usano `GameController` richiedono Qt; vanno rifattorizzati in test del modello (stato costruito con `generator`) o restano GUI.
 
 ### Lotto 5.2 — Modulo di bilanciamento
