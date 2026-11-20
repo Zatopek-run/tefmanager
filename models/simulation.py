@@ -872,6 +872,7 @@ def simulate_competition(
     meet_places: Dict[str, List[int]] = {}  # per squadra: quanti 1°, 2°, ... in questo meeting (spareggio)
     total_prize = 0
     total_prestige = 0
+    record_bonuses: List[Tuple[Athlete, str, int]] = []  # bonus record da pagare (D.2): atleta, gara, importo
 
     for gender in ("M", "F"):
         lineup = state.lineup_for(gender)
@@ -1024,6 +1025,8 @@ def simulate_competition(
                         0,
                         f"Sett. {state.week}: Nuovo Record Sociale ({gender}) nei {event_name}! {player_athlete.name} segna {p_disp}.",
                     )
+                    if player_athlete.record_bonus > 0:
+                        record_bonuses.append((player_athlete, event_name, player_athlete.record_bonus))
                 elif is_pb and had_previous_pb:
                     # PB migliorato ma non è (ancora) il record sociale: merita comunque una riga di cronaca.
                     state.news_log.insert(
@@ -1235,7 +1238,8 @@ def simulate_competition(
         state.track_condition = clamp_stat(state.track_condition - 3, 25, 100)
     else:
         travel_cost = tier_cfg["travel_cost"]
-    state.budget += total_prize + ticket_income - travel_cost
+    bonus_total = sum(amount for _a, _e, amount in record_bonuses)
+    state.budget += total_prize + ticket_income - travel_cost - bonus_total
     state.prestige += total_prestige
 
     meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
@@ -1249,6 +1253,20 @@ def simulate_competition(
                 category="Premi Gara",
                 amount=total_prize,
             ),
+        )
+    for bonus_athlete, bonus_event, amount in record_bonuses:  # D.2: bonus per risultati pattuiti in trattativa
+        state.transactions.insert(
+            0,
+            Transaction(
+                id=None,
+                week=state.week,
+                description=f"Bonus record sociale: {bonus_athlete.name} ({bonus_event})",
+                category="Bonus Atleti",
+                amount=-amount,
+            ),
+        )
+        state.news_log.insert(
+            0, f"Sett. {state.week}: bonus record di €{amount:,} a {bonus_athlete.name} ({bonus_event})."
         )
     if is_home:
         state.transactions.insert(
@@ -1584,6 +1602,7 @@ def renew_expiring_contracts(state: GameState) -> List[str]:
             adjust_relation(state, a.agent_id, AGENT_RELATION_NOT_RENEWED)  # D.1
         else:
             a.contract_no_renew = False
+            a.record_bonus = 0  # il bonus pattuito valeva per il contratto che scade (D.2)
             assign_contract(state, a)
             renewed.append(a)
             adjust_relation(state, a.agent_id, AGENT_RELATION_RENEWED)  # D.1

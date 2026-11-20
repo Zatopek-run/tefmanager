@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -31,6 +32,7 @@ from models.entities import (
     COACH_STAT_LABELS,
     COACH_STATS,
     GAME_MODE_OPTIONS,
+    MIN_NEGOTIATED_FEE,
     BOARD_MAX_FAILED_STREAK,
     BOARD_OBJECTIVES_TO_PASS,
     Agent,
@@ -49,6 +51,7 @@ from models.entities import (
 )
 from models.agents import negotiated_fee
 from models.generator import LAZIO_PROVINCES
+from models.market import Negotiation, NegotiationState, Terms
 
 
 def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
@@ -279,6 +282,7 @@ class RecruitAthleteDialog(QDialog):
         self.roster: List[Athlete] = list(roster) if roster is not None else []
         self.agents: Dict[int, Agent] = {a.id: a for a in (agents or [])}  # D.1: senza agenti vale l'ingaggio standard
         self.selected_prospect: Optional[Athlete] = None
+        self.selected_terms: Optional[Terms] = None  # condizioni concordate in trattativa (D.2); None = richiesta standard
         self.setWindowTitle("Scouting & Mercato Svincolati")
         self.resize(1240, 470)
         self._build_ui()
@@ -440,6 +444,15 @@ class RecruitAthleteDialog(QDialog):
         if not rows:
             return
         prospect = self.prospects[rows[0].row()]
+        agent = self._agent(prospect)
+        if agent is not None:  # D.2: con un agente si tratta (richiesta, offerta, controfferta)
+            terms = self._negotiate(prospect, agent)
+            if terms is None:
+                return
+            self.selected_terms = terms
+            self.selected_prospect = prospect
+            self.accept()
+            return
         fee = self._fee(prospect)
         if fee > self.budget:
             QMessageBox.warning(
@@ -450,6 +463,181 @@ class RecruitAthleteDialog(QDialog):
             return
         self.selected_prospect = prospect
         self.accept()
+
+    def _negotiate(self, prospect: Athlete, agent: Agent) -> Optional[Terms]:
+        """Apre la finestra di trattativa; restituisce le condizioni concordate o None se si rinuncia."""
+        dlg = NegotiationDialog(prospect, agent, self.budget, parent=self)
+        return dlg.selected_terms if dlg.exec() else None
+
+
+def release_question_text(athlete: Athlete, budget: int) -> str:
+    """Testo della conferma di svincolo (D.2): per un atleta di Prima Squadra ricorda la clausola rescissoria da pagare."""
+    text = f"Svincolare {athlete.name}?"
+    clause = athlete.release_clause_cost
+    if clause > 0:
+        text += f"\n\nClausola rescissoria: €{clause:,} (budget €{budget:,})."
+        text += "\nLasciarlo andare gratis: «Non rinnovare» (esce alla scadenza del contratto)."
+    return text
+
+
+class NegotiationDialog(QDialog):
+    """Trattativa con l'agente di un atleta del mercato (D.2): richiesta → offerta → controfferta → accetto/rifiuto.
+
+    Tutta la logica è in `models.market.Negotiation` (senza RNG); qui ci sono solo i controlli. A trattativa accettata
+    `selected_terms` ha ingaggio e bonus concordati.
+    """
+
+    def __init__(self, athlete: Athlete, agent: Agent, budget: int, parent=None) -> None:
+        super().__init__(parent)
+        self.athlete = athlete
+        self.agent = agent
+        self.budget = budget
+        self.negotiation = Negotiation(athlete, agent)
+        self.selected_terms: Optional[Terms] = None
+        self.setWindowTitle(f"Trattativa — {athlete.name}")
+        self.resize(560, 380)
+        self._build_ui()
+        self.offer_spin.setValue(self.negotiation.ask.fee)  # si parte dalla richiesta dell'agente
+        self._refresh()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        title = QLabel(f"Trattativa per {self.athlete.name}")
+        title.setObjectName("SectionHeader")
+        layout.addWidget(title)
+        info = QLabel(
+            f"{self.athlete.specialty.value} · {self.athlete.age} anni · OVR {self.athlete.overall} · "
+            f"Potenziale {potential_band_display(self.athlete)}"
+        )
+        info.setObjectName("SubTitle")
+        layout.addWidget(info)
+        agent_label = QLabel(
+            f"Agente: {self.agent.name} — {self.agent.personality.value}, relazione {self.agent.relation}/100 "
+            f"({self.agent.relation_label})"
+        )
+        agent_label.setWordWrap(True)
+        layout.addWidget(agent_label)
+
+        form = QFormLayout()
+        self.bonus_combo = QComboBox()
+        for b in self.negotiation.bonus_choices:
+            label = "Nessun bonus" if b == 0 else f"€{b:,} a ogni record sociale (ingaggio −€{b:,})"
+            self.bonus_combo.addItem(label, b)
+        self.bonus_combo.setToolTip(
+            "Bonus pagato a ogni record sociale individuale dell'atleta finché dura il contratto. "
+            "L'agente abbassa l'ingaggio dello stesso importo: si paga dopo, e solo se il record arriva."
+        )
+        self.bonus_combo.currentIndexChanged.connect(self._on_bonus_changed)
+        form.addRow("Bonus per risultati", self.bonus_combo)
+        self.ask_label = QLabel("")
+        self.ask_label.setStyleSheet("font-weight: 700;")
+        form.addRow("Richiesta dell'agente", self.ask_label)
+        self.offer_spin = QSpinBox()
+        self.offer_spin.setPrefix("€")
+        self.offer_spin.setRange(MIN_NEGOTIATED_FEE, 1_000_000)
+        form.addRow("La tua offerta (ingaggio)", self.offer_spin)
+        layout.addLayout(form)
+
+        self.status_label = QLabel("")
+        self.status_label.setWordWrap(True)
+        self.status_label.setObjectName("SubTitle")
+        layout.addWidget(self.status_label)
+        layout.addStretch()
+
+        row = QHBoxLayout()
+        row.addStretch()
+        self.btn_refuse = QPushButton("Rifiuta")
+        self.btn_refuse.clicked.connect(self._refuse)
+        self.btn_accept_ask = QPushButton("Accetta la richiesta")
+        self.btn_accept_ask.clicked.connect(self._accept_ask)
+        self.btn_offer = QPushButton("Proponi offerta")
+        self.btn_offer.clicked.connect(self._propose)
+        self.btn_accept_counter = QPushButton("Accetta la controfferta")
+        self.btn_accept_counter.setObjectName("PrimaryButton")
+        self.btn_accept_counter.clicked.connect(self._accept_counter)
+        for b in (self.btn_refuse, self.btn_accept_ask, self.btn_offer, self.btn_accept_counter):
+            row.addWidget(b)
+        layout.addLayout(row)
+
+    # ------------------------------------------------------------------ stato della finestra
+    def _afford(self, fee: int) -> bool:
+        return fee <= self.budget
+
+    def _refresh(self) -> None:
+        neg = self.negotiation
+        ask = neg.ask
+        self.ask_label.setText(f"€{ask.fee:,}" + (f" + bonus €{ask.bonus:,} a record" if ask.bonus else ""))
+        countered = neg.state is NegotiationState.COUNTERED
+        self.bonus_combo.setEnabled(not countered)
+        self.offer_spin.setEnabled(not countered)
+        self.btn_accept_ask.setVisible(not countered)
+        self.btn_offer.setVisible(not countered)
+        self.btn_accept_counter.setVisible(countered)
+        if countered:
+            assert neg.counter is not None
+            self.btn_accept_counter.setEnabled(self._afford(neg.counter.fee))
+            text = (
+                f"L'agente rilancia: ingaggio €{neg.counter.fee:,}"
+                + (f" + bonus €{neg.counter.bonus:,} a record" if neg.counter.bonus else "")
+                + ". Puoi accettare o rifiutare: non si rilancia di nuovo."
+            )
+            if not self._afford(neg.counter.fee):
+                text += f"\nFondi insufficienti (hai €{self.budget:,})."
+            self.status_label.setText(text)
+            return
+        self.offer_spin.setMaximum(ask.fee)
+        self.offer_spin.setValue(min(max(self.offer_spin.value(), MIN_NEGOTIATED_FEE), ask.fee))
+        self.btn_accept_ask.setEnabled(self._afford(ask.fee))
+        self.status_label.setText(
+            f"Budget disponibile: €{self.budget:,}. Un'offerta bassa può essere accettata subito, rilanciata una volta "
+            "o respinta: dipende dall'agente."
+            + ("" if self._afford(ask.fee) else "\nLa richiesta supera il budget: prova con un'offerta più bassa.")
+        )
+
+    def _on_bonus_changed(self, index: int) -> None:
+        bonus = self.bonus_combo.itemData(index)
+        if bonus is None or self.negotiation.state is not NegotiationState.OPEN:
+            return
+        self.negotiation.set_bonus(int(bonus))
+        self.offer_spin.setMaximum(1_000_000)  # `_refresh` lo riporta alla nuova richiesta
+        self.offer_spin.setValue(self.negotiation.ask.fee)
+        self._refresh()
+
+    # ------------------------------------------------------------------ mosse
+    def _conclude(self, terms: Terms) -> None:
+        self.selected_terms = terms
+        self.accept()
+
+    def _accept_ask(self) -> None:
+        if not self._afford(self.negotiation.ask.fee):
+            return
+        self._conclude(self.negotiation.accept_ask())
+
+    def _propose(self) -> None:
+        fee = self.offer_spin.value()
+        if not self._afford(fee):
+            self.status_label.setText(f"Fondi insufficienti per un'offerta di €{fee:,} (hai €{self.budget:,}).")
+            return
+        state = self.negotiation.offer(fee)
+        if state is NegotiationState.ACCEPTED:
+            assert self.negotiation.terms is not None
+            self._conclude(self.negotiation.terms)
+        else:
+            self._refresh()
+
+    def _accept_counter(self) -> None:
+        counter = self.negotiation.counter
+        if counter is None or not self._afford(counter.fee):
+            return
+        self._conclude(self.negotiation.accept_counter())
+
+    def _refuse(self) -> None:
+        if not self.negotiation.is_closed:
+            self.negotiation.refuse()
+        self.reject()
 
 
 class EthicalDilemmaDialog(QDialog):

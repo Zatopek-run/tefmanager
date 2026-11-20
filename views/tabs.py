@@ -86,6 +86,7 @@ from views.dialogs import (
     HireCoachDialog,
     RecruitAthleteDialog,
     potential_band_display,
+    release_question_text,
 )
 
 
@@ -843,7 +844,7 @@ class RosterTab(QWidget):
             agents=self.controller.state.agents,
         )
         if dlg.exec() and dlg.selected_prospect is not None:
-            self.controller.recruit_athlete(dlg.selected_prospect)
+            self.controller.recruit_athlete(dlg.selected_prospect, terms=dlg.selected_terms)
 
     def _release_selected(self) -> None:
         rows = self.table.selectionModel().selectedRows()
@@ -854,7 +855,9 @@ class RosterTab(QWidget):
         if 0 <= row < len(self._athlete_row_ids):
             aid = self._athlete_row_ids[row]
             athlete = next((a for a in self.controller.state.athletes if a.id == aid), None)
-            if athlete and QMessageBox.question(self, "Conferma", f"Svincolare {athlete.name}?") == QMessageBox.StandardButton.Yes:
+            if athlete and QMessageBox.question(
+                self, "Conferma", release_question_text(athlete, self.controller.state.budget)
+            ) == QMessageBox.StandardButton.Yes:
                 self.controller.release_athlete(aid)
 
 

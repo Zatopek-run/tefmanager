@@ -69,6 +69,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 13 | **Somma dei punti nella `league_table`** | `:1040-1041` |
 | 13b | **Atleti sintetici del ranking** (C.1): ogni sintetico muove il livello (`gauss`) e simula un piazzamento contro un campo virtuale (`gauss` per la prestazione, una `random()` per ciascuno dei 7 avversari virtuali, nell'ordine della lista `ranking_pool`: `update_synthetic_field`). **Usa `r`**: aggiungerli sposta tutte le estrazioni successive a parità di seme (2026-11-20, decisione dell'utente). Senza campo (stato costruito a mano) non fa nulla e non consuma `r`. Il campo si crea fuori dal tick: alla partita nuova (`_create_fresh_state`) e al caricamento di un salvataggio vecchio (`upgrade_legacy_state`), con `rng` | `ranking.py: update_synthetic_field` |
 | 14 | Casa: biglietti e usura pista −3; trasferta: costo; `budget += premi + biglietti − trasferta`; `prestige += …` | `:1043-1052` |
+| 14b | Insieme al passo 14: per ogni record sociale **individuale** segnato in questo meeting da un atleta con `record_bonus > 0` (D.2), `budget −= bonus` e una voce «Bonus Atleti» nel libro mastro (più una notizia). Il bonus si azzera al rinnovo del contratto (passo 16b). **Non usa `r`** | `simulation.py: simulate_competition` | no |
 | 15 | Transazioni (premi, biglietti o trasferta), `CompetitionSummary` in testa alla storia, notizia | `:1054-1117` |
 | 16 | `_evaluate_objectives` (prima chiamata) | `:1118` |
 

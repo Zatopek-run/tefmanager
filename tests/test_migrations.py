@@ -830,5 +830,52 @@ class TestMigrationV18Agents(_TmpCase):
         self.assertEqual(user_version(path), 17)
 
 
+class TestMigrationV19RecordBonus(_TmpCase):
+    """v18 → v19 (D.2): `athletes.record_bonus` (default 0, nessun bonus)."""
+
+    def test_v18_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 19)
+        self.assertIn(18, MIGRATIONS)
+        path = make_save(self.slot("v18"), 18)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("record_bonus", column_names(conn, "athletes"))  # la fixture è davvero v18
+            self.assertIn("agent_id", column_names(conn, "athletes"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT record_bonus FROM athletes WHERE id = 1").fetchone(), (0,))
+            self.assertIn(("record_bonus", "INTEGER", 1, "0", 0), columns(conn, "athletes"))
+        sentinel_ok(self, path, 18)
+        backup = self.backups("v18")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 18)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("record_bonus", column_names(conn, "athletes"))
+        sentinel_ok(self, backup, 18)
+
+    def test_a_migrated_save_loads_with_no_bonus(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v19")
+        state = make_state(3)
+        state.athletes[0].record_bonus = 600
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # come dopo la migrazione: la colonna ha il valore di default
+            conn.execute("UPDATE athletes SET record_bonus = 0")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertTrue(all(a.record_bonus == 0 for a in loaded.athletes))
+
+    def test_failed_v18_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v18"), 18)
+        before = sha(path)
+        broken = {"athletes": [("record_bonus", "INTEGER NOT NULL DEFAULT 0"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {18: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 18)
+
+
 if __name__ == "__main__":
     unittest.main()

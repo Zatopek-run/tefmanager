@@ -232,7 +232,7 @@ durata di 1-3 stagioni deterministica (da id atleta e stagione, nessun RNG). Il 
 Dalla scheda atleta il pulsante **«Non rinnovare»** (annullabile con «Annulla non rinnovo») fa sì che, alla scadenza, l'atleta lasci la società **senza** la penale di fedeltà dello svincolo; l'ultimo atleta della
 Prima Squadra si rinnova comunque. Chi se ne va viene tolto da formazione e staffette, che si ricompongono da sole, con una notizia nel registro.
 
-Pool di 5 candidati a settimana (4 studenti di 15-17 anni + 1 adulto): si può solo **acquistare** (ingaggio una tantum, **chiesto dall'agente**, §5.17) o **svincolare**. Nessun incasso dalle cessioni. Ogni acquisto/cessione abbassa la **fedeltà sponsor**
+Pool di 5 candidati a settimana (4 studenti di 15-17 anni + 1 adulto): si può solo **acquistare** (ingaggio una tantum, **trattato con l'agente**, §5.17-5.18) o **svincolare** (con **clausola rescissoria**, §5.18). Nessun incasso dalle cessioni. Ogni acquisto/cessione abbassa la **fedeltà sponsor**
 (−6 per under 21, −12 altrimenti; −8 per la cessione), che riduce lo sponsor della società e si recupera di +2 a settimana.
 
 ### 5.10 Allenatori e staff
@@ -291,7 +291,7 @@ giocatore con l'agente, non con il singolo atleta. L'agente ha nome di fantasia 
 
 **Dove agisce oggi:** solo sull'**ingaggio una tantum** del Mercato svincolati (`negotiated_fee` = ingaggio standard × (1 + personalità + relazione)). La finestra del mercato mostra una colonna **Agente** (nome, personalità, relazione;
 il tooltip dà la percentuale chiesta) e il costo già con la richiesta dell'agente. Il rimborso spese settimanale non cambia (R14), e il vivaio non ha ingaggio. La scheda atleta mostra l'agente nella riga **Agente**.
-Con D.2 la stessa percentuale diventerà la richiesta iniziale della trattativa.
+Con D.2 la stessa richiesta è l'apertura della trattativa (§5.18).
 
 **Come cambia la relazione:** **+3** per ogni suo atleta che alla scadenza del contratto viene rinnovato, **+1** per ogni **podio** (1°-3°) in una gara individuale di un suo atleta (le staffette non contano); **−10** se si
 **svincola** un atleta della Prima Squadra (peggiora anche con i suoi altri assistiti), **−5** per ogni atleta non rinnovato che lascia la società, **−2** per ogni atleta della Prima Squadra che **resta fermo** (mai convocato
@@ -301,6 +301,21 @@ tra 67 e 77 a regime, mai bloccata a 100. In autopilota quasi nessuno resta ferm
 
 **Mantenimento:** gli agenti senza clienti e con relazione neutra si tolgono a fine settimana (sono i candidati del mercato non presi); se ne ricordano al più 20 senza clienti, quelli con la relazione più lontana da 50. Nessuna
 estrazione dell'RNG della partita: nome e personalità di un agente nuovo derivano da id e nome del primo assistito; l'assegnazione di un atleta a un agente esistente o nuovo dal suo nome (`zlib.crc32`).
+
+### 5.18 Trattative, clausola rescissoria e bonus per record (D.2, 2026-11-20; cifre provvisorie, `QUESTIONS.md` Q30)
+
+**Trattativa** (`models/market.py`, senza RNG). Dal Mercato svincolati, «Tessera Atleta Selezionato» apre la finestra di **trattativa** con l'agente del candidato (se non ha agente si paga l'ingaggio standard come prima):
+1. L'agente **apre** con la sua richiesta (§5.17: ingaggio standard × personalità × relazione).
+2. Puoi **accettare**, **rifiutare** o **offrire** una cifra più bassa. Se l'offerta arriva alla **soglia** dell'agente (la sua richiesta meno la **flessibilità**) è accettata subito (si paga l'offerta, mai più della richiesta).
+   La flessibilità è **5%** per un Aggressivo, **15%** per un Ragionevole, **25%** per un Leale, ±10 punti secondo la relazione (a 100 +10, a 0 −10; tra 0 e 50%).
+3. Sotto la soglia l'agente **controffre una volta**, a metà strada tra la tua offerta e la sua richiesta ma mai sotto la soglia; puoi solo accettare o rifiutare (non si rilancia). Rifiutare non costa nulla e non cambia la relazione.
+L'ingaggio minimo trattabile è €100. Il controller (`recruit_athlete(prospect, terms)`) ricontrolla che le condizioni siano ottenibili da quell'agente (ingaggio tra soglia e richiesta, bonus ammesso): una finestra «falsificata» non paga meno.
+
+**Bonus per risultati.** Nella trattativa si può scegliere un bonus (€300, €600 o €1.000) pagato a **ogni record sociale individuale** dell'atleta finché dura il contratto (le staffette non contano): l'agente abbassa l'ingaggio **dello stesso importo**.
+È quindi un pagamento rimandato: conviene se pensi che i record non arrivino o vuoi liquidità subito, e costa di più se ne arrivano molti (AUDIT R27). Il bonus esce dal budget nel meeting (libro mastro «Bonus Atleti», con una notizia) e **scade al rinnovo del contratto**.
+
+**Clausola rescissoria.** Svincolare un atleta di **Prima Squadra** costa **20 settimane del suo rimborso spese** (circa €1.000-10.400; `Athlete.release_clause_cost`, calcolata, non salvata): senza i fondi lo svincolo è rifiutato; il vivaio non ha clausola. **«Non rinnovare»** e la scadenza del contratto restano **gratuiti**. La conferma di svincolo mostra
+la clausola; restano la penale di fedeltà (−8) e il calo di relazione con l'agente (−10). La scheda atleta mostra la riga **Clausola** (con il bonus per record, se c'è).
 
 ---
 
@@ -319,7 +334,7 @@ estrazione dell'RNG della partita: nome e personalità di un agente nuovo deriva
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 18`** (v18 = `athletes.agent_id` e `game_state.agents_json`, D.1; v17 = `athletes.season_injuries` e `game_state.retired_json`, C.3; v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 19`** (v19 = `athletes.record_bonus`, D.2; v18 = `athletes.agent_id` e `game_state.agents_json`, D.1; v17 = `athletes.season_injuries` e `game_state.retired_json`, C.3; v16 = `game_state.board_json`, C.2; soglie e avanzamento degli obiettivi in `objectives_json`, verdetto in `season_history_json`) — (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -373,7 +388,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 428 test, ~60 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 490 test, ~60 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
@@ -390,7 +405,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - ✅ **1.1** migrazione transazionale con backup, ✅ **1.2** rifiuto delle versioni sconosciute (fatti).
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
-- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). **D.1** (agenti con personalità e relazione, 2026-11-20; cifre da confermare, Q29). Prossimo: D.2 (trattative avanzate) e D.3 (finanze).
+- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). **D.1** (agenti con personalità e relazione, 2026-11-20; cifre da confermare, Q29). **D.2** (trattative, clausola rescissoria, bonus per record, 2026-11-20; cifre da confermare, Q30). Prossimo: D.3 (finanze).
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 

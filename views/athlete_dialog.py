@@ -27,6 +27,7 @@ from models.agents import agent_of
 from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, PeriodizationPhase, Specialty, TrainingFocus
 from models.ranking import athlete_rankings
 from models.simulation import body_fit_score
+from views.dialogs import release_question_text
 
 SPECIALTY_COLORS = {
     Specialty.SPRINTS: "#ef4444",
@@ -102,7 +103,7 @@ class AthleteDetailDialog(QDialog):
         self.controller = controller
         self.athlete_id = athlete_id
         self.released = False
-        self.setMinimumSize(860, 640)
+        self.setMinimumSize(860, 780)  # la scheda anagrafica ha 17 righe (agente e clausola comprese)
 
         athlete = self._athlete()
         self.setWindowTitle(f"Scheda Atleta — {athlete.name if athlete else ''}")
@@ -194,6 +195,16 @@ class AthleteDetailDialog(QDialog):
         """Agente dell'atleta (D.1): nome, personalità e relazione con la società."""
         agent = agent_of(self.controller.state, a)
         return agent.name if agent is not None else "—"
+
+    @staticmethod
+    def _clause_text(a: Athlete) -> str:
+        """Clausola rescissoria (D.2) e, se pattuito, bonus per ogni record sociale individuale."""
+        if a.in_youth_squad:
+            return "—"
+        text = f"€{a.release_clause_cost:,}"
+        if a.record_bonus > 0:
+            text += f" + €{a.record_bonus:,}/rec."  # bonus per ogni record sociale pattuito
+        return text
 
     def _relation_text(self, a: Athlete) -> str:
         """Personalità dell'agente e relazione con la società (D.1), su una riga a parte perché la colonna è stretta."""
@@ -297,6 +308,7 @@ class AthleteDetailDialog(QDialog):
             ("Contratto", self._contract_text(a)),
             ("Agente", self._agent_text(a)),
             ("Rapporto", self._relation_text(a)),
+            ("Clausola", self._clause_text(a)),
             ("Fan", f"{a.fans:,}"),
             ("Primato", a.personal_best_display or "—"),
             ("Allenatore", coach.name if coach else "Nessuno"),
@@ -501,7 +513,9 @@ class AthleteDetailDialog(QDialog):
         athlete = self._athlete()
         if athlete is None:
             return
-        answer = QMessageBox.question(self, "Conferma", f"Svincolare {athlete.name}?")
+        answer = QMessageBox.question(
+            self, "Conferma", release_question_text(athlete, self.controller.state.budget)
+        )
         if answer == QMessageBox.StandardButton.Yes and self.controller.release_athlete(self.athlete_id):
             self.released = True
             self.accept()

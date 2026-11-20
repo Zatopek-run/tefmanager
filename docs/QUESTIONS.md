@@ -391,3 +391,23 @@ atleti (può capitare un omonimo); (4b) nome e personalità di un agente dipendo
 
 **Da decidere:** (a) confermare le cifre; (b) se l'agente debba pesare anche sul rimborso spese settimanale o sul rinnovo (oggi no, vedi R26); (c) se serva un effetto della relazione oltre al prezzo (sconto sul rinnovo, atleti
 che rifiutano di firmare con chi ha una relazione pessima).
+
+
+## Q30 — Trattative, clausola rescissoria e bonus (PIANOLAVORO D.2) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+
+**Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) **un giro di controfferta, senza RNG** (richiesta → offerta → controfferta → accetto/rifiuto); (2) la clausola rescissoria è una **penale in scala per lo svincolo anticipato**
+(20 settimane di rimborso spese, non i 50.000 € fissi del piano: irraggiungibili con 18.000 € di budget iniziale); (3) il **bonus per risultati è facoltativo in trattativa**, con importi in scala (€300 / €600 / €1.000) e uno sconto sull'ingaggio uguale al bonus.
+
+**Cosa c'è** (`models/market.py`, schema v19): `Negotiation` (macchina a stati: aperta → controfferta → accettata/rifiutata), `Terms` (ingaggio e bonus), flessibilità dell'agente per personalità e relazione, `NegotiationDialog` nel mercato, `Athlete.record_bonus` (salvato),
+`Athlete.release_clause_cost` (calcolata) e pagamento del bonus nel meeting (TICK 14b). Dettagli in `GAME.md` §5.18, cifre in `BALANCE.md` §O.
+
+**Cifre PROVVISORIE:** tutte quelle di §O (flessibilità 5/15/25% ± relazione, minimo €100, bonus 300/600/1.000, clausola 20 settimane).
+
+**Scostamenti dal piano:** (1) il piano mette `transfer_clause` in `Athlete` come campo e il sistema in `market.py` (fatto) e `simulation.py`: la clausola è una **proprietà calcolata** (nessuna colonna: dipende solo dal rimborso spese e cambia da sola con esso); (2) «Paghi 50.000 € per liberare un atleta» e
+«10.000 € se fa record sociale» sono scalati (scelta dell'utente); (3) il piano non dice che cosa succede ai bonus quando il contratto scade: **scadono al rinnovo** (decisione mia, non dell'utente); (4) il testo della domanda sul bonus diceva che l'agente «lo conta come valore e abbassa la richiesta»
+e che «conviene se pensi che il record arrivi»: con lo sconto **uguale** al bonus è il contrario (conviene se pensi che **non** arrivi, AUDIT R27).
+
+**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen sui metodi collegati ai pulsanti e screenshot); (2) non si tratta il **rinnovo** (resta automatico, Q22) né la clausola (uguale per tutti, non negoziabile); (3) rifiutare non ha costo: AUDIT R27; (4) la clausola rende lo svincolo
+molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus vale solo per i record **individuali**.
+
+**Da decidere:** (a) confermare le cifre; (b) se rifiutare debba costare qualcosa (relazione) per evitare di «provare» offerte; (c) se la clausola debba valere anche per gli atleti già in rosa al caricamento di un vecchio salvataggio o solo per i nuovi firmati; (d) se il rinnovo del contratto debba passare da una trattativa.

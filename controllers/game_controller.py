@@ -64,7 +64,8 @@ from models.entities import (
     gym_upgrade_cost,
     stand_expansion_cost,
 )
-from models.agents import adjust_relation, assign_agent, ensure_agents, negotiated_fee, prune_idle_agents
+from models.agents import adjust_relation, assign_agent, ensure_agents, prune_idle_agents
+from models.market import Terms, is_valid_terms, opening_terms
 from models.generator import (
     build_default_lineup,
     clamp_stat,
@@ -493,8 +494,16 @@ class GameController(QObject):
                 assign_agent(self.state, candidate)  # D.1: l'agente (e la sua richiesta) si vede prima di tesserare
         return list(self.free_agent_pool)
 
-    def recruit_athlete(self, prospect: Athlete) -> bool:
-        fee = negotiated_fee(prospect, assign_agent(self.state, prospect))  # D.1: ingaggio chiesto dall'agente
+    def recruit_athlete(self, prospect: Athlete, terms: Optional[Terms] = None) -> bool:
+        """Tessera un atleta del mercato. Senza `terms` si paga la richiesta dell'agente (D.1); con le condizioni di una
+        trattativa (D.2: ingaggio e bonus record) si verifica che siano davvero ottenibili da quell'agente."""
+        agent = assign_agent(self.state, prospect)
+        if terms is None:
+            terms = opening_terms(prospect, agent)  # D.1: ingaggio chiesto dall'agente, nessun bonus
+        elif not is_valid_terms(prospect, agent, terms):
+            self.status_message.emit(f"Condizioni non valide per {prospect.name}: la trattativa va rifatta.")
+            return False
+        fee = terms.fee
         if self.state.budget < fee:
             self.status_message.emit(
                 f"Fondi insufficienti per tesserare {prospect.name} (servono €{fee:,})."
@@ -510,6 +519,7 @@ class GameController(QObject):
         auto_assign_coach(self.state, prospect)
         if not prospect.in_youth_squad:
             assign_contract(self.state, prospect)
+        prospect.record_bonus = terms.bonus
         self.state.budget -= fee
         # Sponsors dislike squad turnover; young signings hurt fidelity less
         self.state.fidelity = max(0, self.state.fidelity - (6 if prospect.age < 21 else 12))
@@ -546,9 +556,18 @@ class GameController(QObject):
         if not target.in_youth_squad and len(self.state.main_squad) <= 1:
             self.status_message.emit("Impossibile svincolare l'ultimo atleta rimasto.")
             return False
+        clause = target.release_clause_cost
+        if clause > self.state.budget:
+            self.status_message.emit(
+                f"Clausola rescissoria di {target.name}: servono €{clause:,}, ne hai €{self.state.budget:,}. "
+                "Con «Non rinnovare» lascia gratis alla scadenza del contratto."
+            )
+            return False
         if not target.in_youth_squad:
             self.state.fidelity = max(0, self.state.fidelity - 8)
             adjust_relation(self.state, target.agent_id, AGENT_RELATION_RELEASED)  # D.1: l'agente non lo dimentica
+        if clause > 0:
+            self._pay(clause, f"Clausola rescissoria: {target.name}", "Clausola")  # D.2
 
         self.state.athletes = [a for a in self.state.athletes if a.id != athlete_id]
         self._remove_from_relays(athlete_id)
@@ -564,7 +583,9 @@ class GameController(QObject):
         )
         self._persist()
         self.state_changed.emit(self.state)
-        self.status_message.emit(f"Svincolato {target.name}.")
+        self.status_message.emit(
+            f"Svincolato {target.name}." + (f" Clausola rescissoria pagata: €{clause:,}." if clause > 0 else "")
+        )
         return True
 
     def set_contract_no_renew(self, athlete_id: int, no_renew: bool) -> bool:

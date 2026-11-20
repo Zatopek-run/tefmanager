@@ -347,6 +347,18 @@ SEASON_WEEKS = 36  # settimane di una stagione di Carriera (3 fasi da 12): la se
 # A ogni cambio stagione la relazione si avvicina a quella neutra di questa frazione della distanza: senza, in autopilota
 # (podi e rinnovi automatici) tutti gli agenti arrivavano a 100 entro la quarta stagione e la relazione non diceva più nulla.
 AGENT_RELATION_DRIFT = 0.25
+# Trattative (D.2). CIFRE PROVVISORIE (QUESTIONS Q30). L'agente apre con la sua richiesta (D.1) e accetta un'offerta fino a
+# una soglia sotto di essa; la flessibilità dipende dalla personalità (`AGENT_FLEXIBILITY`) e dalla relazione. Un solo giro di
+# controfferta, nessuna estrazione casuale.
+AGENT_FLEXIBILITY_RELATION_SPAN = 0.10  # a relazione 100 la flessibilità sale di 10 punti percentuali, a 0 scende di 10
+AGENT_FLEXIBILITY_MAX = 0.50
+MIN_NEGOTIATED_FEE = 100  # ingaggio minimo trattabile (€), anche con un bonus alto
+# Bonus per risultati: €X pagati a ogni record sociale individuale dell'atleta finché dura il contratto; l'agente abbassa la
+# richiesta sull'ingaggio dello stesso importo (si paga dopo, e solo se il record arriva).
+RECORD_BONUS_OPTIONS = (300, 600, 1000)
+# Clausola rescissoria: per svincolare un atleta di Prima Squadra prima della scadenza si paga questo numero di settimane
+# del suo rimborso spese (circa €1.000-10.400). «Non rinnovare» e la scadenza del contratto restano gratuiti; il vivaio non ne ha.
+RELEASE_CLAUSE_WEEKS = 20
 
 
 def age_category(age: int) -> str:
@@ -641,6 +653,12 @@ class Athlete:
     ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1)
     season_injuries: int = 0  # infortuni subiti nella stagione in corso (C.3: ritiro anticipato)
     agent_id: Optional[int] = None  # agente (D.1); None = ancora da assegnare (vecchi salvataggi, atleti creati a mano)
+    record_bonus: int = 0  # € pagati a ogni record sociale individuale finché dura il contratto (D.2); 0 = nessun bonus
+
+    @property
+    def release_clause_cost(self) -> int:
+        """Clausola rescissoria (D.2): quanto costa svincolarlo prima della scadenza. 0 per il vivaio (non ha contratto)."""
+        return 0 if self.in_youth_squad else RELEASE_CLAUSE_WEEKS * self.weekly_wage
 
     @property
     def gender_label(self) -> str:
@@ -803,6 +821,12 @@ AGENT_FEE_MARKUP: Dict[AgentPersonality, float] = {
     AgentPersonality.AGGRESSIVE: 0.20,
     AgentPersonality.REASONABLE: 0.0,
     AgentPersonality.LOYAL: -0.10,
+}
+# Quanto sotto la sua richiesta un agente accetta di scendere in trattativa (frazione), per personalità: il Leale cede di più.
+AGENT_FLEXIBILITY: Dict[AgentPersonality, float] = {
+    AgentPersonality.AGGRESSIVE: 0.05,
+    AgentPersonality.REASONABLE: 0.15,
+    AgentPersonality.LOYAL: 0.25,
 }
 # Peso nella scelta della personalità di un agente nuovo (somma 100).
 AGENT_PERSONALITY_WEIGHTS: Dict[AgentPersonality, int] = {

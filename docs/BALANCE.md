@@ -261,3 +261,17 @@ Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 
 
 Misura in autopilota (6 partite, 8 stagioni, Carriera): 6-8 agenti; **senza** `AGENT_RELATION_DRIFT` la relazione media saliva a 90-100 entro la 4ª-5ª stagione (inutile), **con** 0,25 sta tra 67 e 77 a regime e tocca 100 solo
 raramente (Q29). La penalità `AGENT_RELATION_IDLE` non cambia la misura in autopilota (quasi nessuno resta fermo).
+
+## O. Trattative, clausola e bonus (PIANOLAVORO D.2, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q30)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `AGENT_FLEXIBILITY` | quanto sotto la richiesta l'agente accetta: Aggressivo 5% · Ragionevole 15% · Leale 25% | `entities.py` |
+| `AGENT_FLEXIBILITY_RELATION_SPAN` | ±10 punti percentuali di flessibilità secondo la relazione (100 → +10, 0 → −10) | `entities.py` |
+| `AGENT_FLEXIBILITY_MAX` | 0,50: tetto della flessibilità | `entities.py` |
+| `MIN_NEGOTIATED_FEE` | €100: ingaggio minimo trattabile | `entities.py` |
+| `RECORD_BONUS_OPTIONS` | bonus per record sociale individuale: €300 · €600 · €1.000 (sconto sull'ingaggio uguale al bonus) | `entities.py` |
+| `RELEASE_CLAUSE_WEEKS` | 20 settimane di rimborso spese per svincolare un atleta di Prima Squadra (≈ €1.000-10.400) | `entities.py` |
+
+Controfferta: un solo giro, a metà strada tra offerta e richiesta, mai sotto la soglia. Nessuna estrazione casuale.
+Esempio (atleta con ingaggio standard €1.770, agente Ragionevole a relazione 50): richiesta €1.770, soglia €1.504, un'offerta di €100 riceve la controfferta €1.504.

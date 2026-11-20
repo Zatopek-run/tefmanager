@@ -45,7 +45,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -151,6 +151,10 @@ V18_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("agent_id", "INTEGER")],
     "game_state": [("agents_json", "TEXT NOT NULL DEFAULT '[]'")],
 }
+# Columns added in v19 (D.2: bonus per record sociale pattuito in trattativa, € per record; 0 = nessuno).
+V19_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("record_bonus", "INTEGER NOT NULL DEFAULT 0")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -168,6 +172,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     15: V16_COLUMNS,
     16: V17_COLUMNS,
     17: V18_COLUMNS,
+    18: V19_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -805,7 +810,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     contract_no_renew INTEGER NOT NULL DEFAULT 0,
     ranking_json TEXT NOT NULL DEFAULT '{}',
     season_injuries INTEGER NOT NULL DEFAULT 0,
-    agent_id INTEGER
+    agent_id INTEGER,
+    record_bonus INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -1061,8 +1067,8 @@ class DatabaseManager:
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
                     in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
-                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id, record_bonus
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -1101,6 +1107,7 @@ class DatabaseManager:
                         json.dumps(a.ranking_points),
                         a.season_injuries,
                         a.agent_id,
+                        a.record_bonus,
                     )
                     for a in state.athletes
                 ],
@@ -1258,6 +1265,7 @@ class DatabaseManager:
                     ranking_points={str(k): float(v) for k, v in json.loads(r["ranking_json"]).items()},
                     season_injuries=int(r["season_injuries"]),
                     agent_id=(int(r["agent_id"]) if r["agent_id"] is not None else None),
+                    record_bonus=int(r["record_bonus"]),
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
