@@ -368,8 +368,10 @@ cambio stagione; abbassare le probabilità; (c) se l'ex campione allenatore debb
 **Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) la personalità agisce, in D.1, sull'**ingaggio al tesseramento** (il rimborso spese settimanale non cambia); (2) **un agente per più atleti, relazione
 condivisa** (non un agente a testa come nel piano alla lettera); (3) la relazione sposta la richiesta di **±15 punti percentuali** (50 = nessuna modifica, 100 = −15, 0 = +15).
 
+**Deviazione dalla convenzione 3** (RNG): `models/agents.py` non usa `GameController.rng` ma un `random.Random(intero)` locale seminato da `zlib.crc32` di id e nome (come `_backfill_bodies`): il motivo è non spostare le estrazioni del tick e non avere stato da salvare; la personalità di un agente, che decide il prezzo, è però una funzione di id e nome e non del seme della partita.
+
 **Cosa c'è** (`models/agents.py`, schema v18): `Agent` (nome, personalità, relazione 0-100), `Athlete.agent_id`, `GameState.agents`. Aggressivo +20%, Ragionevole 0, Leale −10% sull'ingaggio; relazione +3 per rinnovo, +1 per podio
-individuale, −10 per svincolo, −5 per mancato rinnovo; a ogni cambio stagione si avvicina a 50 di un quarto della distanza. Il mercato mostra l'agente e la richiesta; la scheda atleta mostra l'agente. Nessuna estrazione dall'RNG
+individuale, −10 per svincolo, −5 per mancato rinnovo, −2 per ogni atleta della Prima Squadra rimasto fermo (mai convocato in una stagione); a ogni cambio stagione si avvicina a 50 di un quarto della distanza (passo minimo 1). Il mercato mostra l'agente e la richiesta; la scheda atleta mostra l'agente. Nessuna estrazione dall'RNG
 della partita: l'ordine del tick e le sequenze casuali non cambiano (solo righe nuove senza `r`: TICK 8b, 16b0, C3).
 
 **Cifre PROVVISORIE (`BALANCE.md` §N):** tutte quelle sopra, i pesi delle personalità (30/50/20), la potatura (al più 20 agenti senza clienti), `AGENT_NEW_SLOTS` = 2.
@@ -379,11 +381,13 @@ della partita: l'ordine del tick e le sequenze casuali non cambiano (solo righe 
 la **deriva verso 50** a ogni stagione: l'ho aggiunta perché la misura mostrava la relazione satura a 100 (AUDIT R26); la REVIEW_REALISMO e Q22 sconsigliavano gli agenti per una ASD laziale (vivono solo nell'élite): il piano
 dell'utente prevale, ma resta una scelta di realismo.
 
-**Misura (autopilota, 6 partite, 8 stagioni):** 6-8 agenti; relazione media 68-77 a regime (senza deriva 90-100 dalla 4ª-5ª stagione).
+**Misura (autopilota, 6 partite, 8 stagioni):** 5-8 agenti; relazione media 67-77 a regime (senza deriva 90-100 dalla 4ª-5ª stagione). In autopilota quasi nessuno resta fermo: la penalità «resta fermo» è coperta dai
+test ma **non misurata in partita**.
 
 **Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen e lettura di tabelle ed etichette); (2) l'agente non ha ancora effetto sul rimborso settimanale, sui rinnovi o sugli sponsor (AUDIT R26); (3) i
-candidati del mercato si rigenerano a ogni apertura dopo una ricarica (R5): il loro agente è ricalcolato dal nome, quindi resta lo stesso se il candidato è lo stesso; (4) i nomi degli agenti pescano dagli stessi elenchi degli
-atleti (può capitare un omonimo); (5) il vivaio e i ragazzi scoperti con lo scouting hanno un agente ma non pagano ingaggio, quindi la sua personalità non incide su di loro finché non vengono promossi (e la promozione è gratuita).
+candidati del mercato si rigenerano a ogni apertura dopo una ricarica (R5) e **il loro agente non è stabile**: `assign_agent` sceglie `crc32(nome) % (agenti noti + AGENT_NEW_SLOTS)`, quindi dipende da quanti agenti esistono in
+quel momento, e un agente nuovo prende `max(id)+1` (nome e personalità derivano da quell'id): dopo una ricarica o una potatura lo stesso candidato può avere un agente diverso, con un'altra richiesta; (4) i nomi degli agenti pescano dagli stessi elenchi degli
+atleti (può capitare un omonimo); (4b) nome e personalità di un agente dipendono solo da id e dal nome del primo assistito, non dal seme della partita: lo stesso atleta nello stesso ordine ha lo stesso agente in partite diverse; (5) il vivaio e i ragazzi scoperti con lo scouting hanno un agente ma non pagano ingaggio, quindi la sua personalità non incide su di loro finché non vengono promossi (e la promozione è gratuita).
 
 **Da decidere:** (a) confermare le cifre; (b) se l'agente debba pesare anche sul rimborso spese settimanale o sul rinnovo (oggi no, vedi R26); (c) se serva un effetto della relazione oltre al prezzo (sconto sul rinnovo, atleti
 che rifiutano di firmare con chi ha una relazione pessima).

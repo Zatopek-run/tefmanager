@@ -253,9 +253,11 @@ Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 
 | `AGENT_RELATION_PODIUM` | +1 per podio in una gara individuale | `entities.py` |
 | `AGENT_RELATION_RELEASED` | −10 per svincolo di un atleta della Prima Squadra | `entities.py` |
 | `AGENT_RELATION_NOT_RENEWED` | −5 per atleta non rinnovato che lascia | `entities.py` |
-| `AGENT_RELATION_DRIFT` | 0,25: a ogni cambio stagione la relazione chiude un quarto della distanza da 50 | `entities.py` |
+| `AGENT_RELATION_IDLE` | −2 per atleta della Prima Squadra mai convocato in una stagione («resta fermo»): né gara individuale né staffetta in formazione | `entities.py` |
+| `SEASON_WEEKS` | 36 settimane per stagione (3 fasi da 12; la settimana è continua): serve a ritrovare le gare di una stagione nello storico | `entities.py` |
+| `AGENT_RELATION_DRIFT` | 0,25: a ogni cambio stagione la relazione chiude un quarto della distanza da 50 (passo minimo 1 punto: arrotondato per eccesso) | `entities.py` |
 | `AGENT_NEW_SLOTS` | 2: un atleta nuovo va a un agente noto o ne ha uno nuovo con probabilità slot/(agenti+slot) | `entities.py` |
 | `AGENT_MAX_IDLE` | 20 agenti senza clienti ricordati al massimo | `entities.py` |
 
-Misura in autopilota (6 partite, 8 stagioni, Carriera): 6-8 agenti; **senza** `AGENT_RELATION_DRIFT` la relazione media saliva a 90-100 entro la 4ª-5ª stagione (inutile), **con** 0,25 sta tra 68 e 77 a regime e tocca 100 solo
-raramente (Q29).
+Misura in autopilota (6 partite, 8 stagioni, Carriera): 6-8 agenti; **senza** `AGENT_RELATION_DRIFT` la relazione media saliva a 90-100 entro la 4ª-5ª stagione (inutile), **con** 0,25 sta tra 67 e 77 a regime e tocca 100 solo
+raramente (Q29). La penalità `AGENT_RELATION_IDLE` non cambia la misura in autopilota (quasi nessuno resta fermo).

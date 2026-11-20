@@ -342,6 +342,8 @@ AGENT_RELATION_RENEWED = 3
 AGENT_RELATION_PODIUM = 1
 AGENT_RELATION_RELEASED = -10
 AGENT_RELATION_NOT_RENEWED = -5
+AGENT_RELATION_IDLE = -2  # per ogni atleta della Prima Squadra che in una stagione non è mai stato convocato («resta fermo»)
+SEASON_WEEKS = 36  # settimane di una stagione di Carriera (3 fasi da 12): la settimana è continua, non riparte
 # A ogni cambio stagione la relazione si avvicina a quella neutra di questa frazione della distanza: senza, in autopilota
 # (podi e rinnovi automatici) tutti gli agenti arrivavano a 100 entro la quarta stagione e la relazione non diceva più nulla.
 AGENT_RELATION_DRIFT = 0.25

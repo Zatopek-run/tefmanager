@@ -7,7 +7,8 @@ non cambiano (convenzione 3: un `random.Random(intero)` locale, come `_backfill_
 - **Personalità:** Aggressivo chiede +20% sull'ingaggio al tesseramento, Ragionevole 0, Leale −10%. La relazione sposta la
   richiesta di ±`AGENT_RELATION_FEE_SPAN` punti percentuali (a 50 nulla, a 100 −15, a 0 +15).
 - **Relazione:** sale con i rinnovi (`AGENT_RELATION_RENEWED`) e i podi (`AGENT_RELATION_PODIUM`) dei suoi atleti, scende con lo
-  svincolo (`AGENT_RELATION_RELEASED`) e con il mancato rinnovo (`AGENT_RELATION_NOT_RENEWED`). A ogni cambio stagione si
+  svincolo (`AGENT_RELATION_RELEASED`), con il mancato rinnovo (`AGENT_RELATION_NOT_RENEWED`) e con ogni atleta della Prima
+  Squadra «lasciato fermo» una stagione intera (`AGENT_RELATION_IDLE`, `penalize_idle_athletes`). A ogni cambio stagione si
   raffredda verso 50 (`drift_relations`), così non satura a 100 da sola.
 - Oggi l'agente agisce solo sull'ingaggio una tantum (`negotiated_fee`); con D.2 la stessa percentuale sarà la richiesta iniziale
   della trattativa.
@@ -15,6 +16,7 @@ non cambiano (convenzione 3: un `random.Random(intero)` locale, come `_backfill_
 
 from __future__ import annotations
 
+import math
 import random
 import zlib
 from typing import List, Optional
@@ -22,10 +24,13 @@ from typing import List, Optional
 from models.entities import (
     AGENT_MAX_IDLE,
     AGENT_RELATION_DRIFT,
+    AGENT_RELATION_IDLE,
     AGENT_NEW_SLOTS,
     AGENT_PERSONALITY_WEIGHTS,
     AGENT_RELATION_MAX,
     AGENT_RELATION_START,
+    RELAYS,
+    SEASON_WEEKS,
     Agent,
     AgentPersonality,
     Athlete,
@@ -119,9 +124,43 @@ def adjust_relation(state: GameState, agent_id: Optional[int], delta: int) -> Op
 
 
 def drift_relations(state: GameState) -> None:
-    """Al cambio stagione ogni relazione si avvicina a quella neutra di `AGENT_RELATION_DRIFT` della distanza (nessun RNG)."""
+    """Al cambio stagione ogni relazione si avvicina a quella neutra di `AGENT_RELATION_DRIFT` della distanza (nessun RNG).
+
+    Il passo è arrotondato per eccesso: chi non è a 50 si muove sempre di almeno un punto, così arriva davvero al neutro
+    (con `round()` i valori 48-52 non si sarebbero mai mossi e gli agenti inattivi non sarebbero mai stati potati).
+    """
     for agent in state.agents:
-        agent.relation += round((AGENT_RELATION_START - agent.relation) * AGENT_RELATION_DRIFT)
+        gap = AGENT_RELATION_START - agent.relation
+        if gap:
+            agent.relation += int(math.copysign(math.ceil(abs(gap) * AGENT_RELATION_DRIFT), gap))
+
+
+def raced_names(state: GameState, season: int) -> set:
+    """Nomi degli atleti del club convocati in una gara individuale (anche ritirati prima del via) nella stagione `season`."""
+    first, last = (season - 1) * SEASON_WEEKS + 1, season * SEASON_WEEKS
+    return {
+        er.player_athlete_name
+        for summary in state.competition_history
+        if first <= summary.week <= last
+        for er in summary.event_results
+        if er.event_name not in RELAYS
+    }
+
+
+def penalize_idle_athletes(state: GameState, season: int) -> int:
+    """«Resta fermo»: ogni atleta della Prima Squadra mai convocato nella stagione `season` (né in una gara individuale
+    né in una staffetta, quella in formazione al cambio stagione) abbassa di `AGENT_RELATION_IDLE` la relazione con il suo
+    agente. Restituisce quanti atleti. Nessun RNG. Chi è arrivato a stagione quasi finita è penalizzato come gli altri."""
+    raced = raced_names(state, season)
+    in_relay = {
+        mid
+        for relay in list(state.relays.values()) + list(state.relays_f.values())
+        for mid in relay.all_ids()
+    }
+    idle = [a for a in state.main_squad if a.name not in raced and a.id not in in_relay]
+    for athlete in idle:
+        adjust_relation(state, athlete.agent_id, AGENT_RELATION_IDLE)
+    return len(idle)
 
 
 def prune_idle_agents(state: GameState) -> int:

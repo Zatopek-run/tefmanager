@@ -23,7 +23,7 @@ sicurezza/refactor), `docs/PIANOLAVORO.md` (**piano di lavoro corrente**: lotti 
    completo è in `GameState.rng_state` (`models/rng_state.py`, colonna `rng_state_json`, schema v13) e si salva in ogni
    `_persist()` (**mai** `db.save_game` diretto nel controller) e si ripristina in `load_game`; un salvataggio vecchio
    senza stato si semina con `legacy_seed` (`hashlib`). `views/dialogs.py` usa `zlib.crc32`. **Resta:** il ripiego
-   `rng or random.Random()` nelle funzioni di `simulation.py`/`generator.py` (usato solo se non si passa l'RNG). Gli atleti sintetici del ranking (C.1) usano `GameController.rng` (campo creato con `rng`, estrazioni al passo C-13b del tick).
+   `rng or random.Random()` nelle funzioni di `simulation.py`/`generator.py` (usato solo se non si passa l'RNG). Gli atleti sintetici del ranking (C.1) usano `GameController.rng` (campo creato con `rng`, estrazioni al passo C-13b del tick). **Deviazione:** gli agenti (D.1, `models/agents.py`) non usano `GameController.rng` ma un `random.Random(zlib.crc32(id/nome))` locale, per non spostare le estrazioni del tick: deterministico e senza stato da salvare, ma la personalità di un agente non dipende dal seme della partita (Q29).
 4. **Ogni migrazione ha backup + transazione + test su fixture**; mai `DROP` di dati su una versione sconosciuta.
    *Stato attuale: conforme* (lotti 1.1 e 1.2, 2026-11-19). Prima di ogni migrazione `_init_schema` crea un backup
    verificato con `Connection.backup()` in `<cartella dello slot>/backups/<slot>.v{N}.{timestamp-µs}.db.bak` (sempre
@@ -51,7 +51,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 419 test, OK, ~60 s su Windows (~6 s su Linux)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 428 test, OK, ~60 s su Windows (~6 s su Linux)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -78,9 +78,9 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (39 test, senza Qt: migrazioni e slot)
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (42 test, senza Qt: migrazioni e slot)
              test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_rng.py (6, stato RNG A.3)   test_race_strategy.py (15, piano gara B.1)   test_field_strategy.py (15, rischio concorsi B.2)   test_relay_strategy.py (23, cambio staffette B.3)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
-             test_ranking.py (31, ranking C.1, senza Qt)   test_board.py (21, Board C.2, senza Qt)   test_retirement.py (19, ritiro e post-carriera C.3, senza Qt)   test_agents.py (26, agenti D.1, senza Qt)   test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (13, colonna «Piano gara / Rischio» e menu «Cambio» delle staffette B.3)   test_ranking_ui.py (7, scheda «Ranking», scheda atleta, ricarica)   test_board_ui.py (12, Board: Dashboard, dialoghi, esonero)   test_retirement_ui.py (10, lista «Ex atleti» e assunzione come allenatore C.3)   test_agents_ui.py (13, agenti nel mercato, nella scheda atleta e nel controller D.1)   tutti con PyQt6 offscreen
+             test_ranking.py (31, ranking C.1, senza Qt)   test_board.py (21, Board C.2, senza Qt)   test_retirement.py (19, ritiro e post-carriera C.3, senza Qt)   test_agents.py (35, agenti D.1, senza Qt)   test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (13, colonna «Piano gara / Rischio» e menu «Cambio» delle staffette B.3)   test_ranking_ui.py (7, scheda «Ranking», scheda atleta, ricarica)   test_board_ui.py (12, Board: Dashboard, dialoghi, esonero)   test_retirement_ui.py (10, lista «Ex atleti» e assunzione come allenatore C.3)   test_agents_ui.py (13, agenti nel mercato, nella scheda atleta e nel controller D.1)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
 ```
 

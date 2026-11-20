@@ -83,7 +83,7 @@ from models.entities import (
     Transaction,
     WeatherCondition,
 )
-from models.agents import adjust_relation, drift_relations, ensure_agents
+from models.agents import adjust_relation, drift_relations, ensure_agents, penalize_idle_athletes
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.career import make_retired, retirement_chance
 from models.ranking import (
@@ -1805,6 +1805,7 @@ def advance_week(
             for a in state.athletes:
                 a.age += 1
             drift_relations(state)  # D.1: le relazioni con gli agenti si raffreddano verso il neutro (nessun RNG)
+            penalize_idle_athletes(state, state.season_number - 1)  # D.1: chi non ha mai gareggiato (nessun RNG)
             state.news_log[0:0] = retire_veterans(state, r)  # ritiro e post-carriera (C.3)
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):

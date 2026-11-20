@@ -294,8 +294,10 @@ il tooltip dà la percentuale chiesta) e il costo già con la richiesta dell'age
 Con D.2 la stessa percentuale diventerà la richiesta iniziale della trattativa.
 
 **Come cambia la relazione:** **+3** per ogni suo atleta che alla scadenza del contratto viene rinnovato, **+1** per ogni **podio** (1°-3°) in una gara individuale di un suo atleta (le staffette non contano); **−10** se si
-**svincola** un atleta della Prima Squadra (peggiora anche con i suoi altri assistiti), **−5** per ogni atleta non rinnovato che lascia la società. A ogni **cambio stagione** la relazione si avvicina a 50 di un quarto della
-distanza (senza questo, in autopilota tutti gli agenti arrivavano a 100 entro la quarta stagione). Misura in autopilota (6 partite, 8 stagioni): relazione media tra 70 e 75 a regime, mai bloccata a 100.
+**svincola** un atleta della Prima Squadra (peggiora anche con i suoi altri assistiti), **−5** per ogni atleta non rinnovato che lascia la società, **−2** per ogni atleta della Prima Squadra che **resta fermo** (mai convocato
+in una gara individuale della stagione appena chiusa, né in una staffetta in formazione: non conta l'atleta del vivaio). A ogni **cambio stagione** la relazione si avvicina a 50 di un quarto della distanza, con passo minimo
+di 1 punto (senza questo, in autopilota tutti gli agenti arrivavano a 100 entro la quarta stagione); la penalità dei «fermi» si applica **dopo** l'attenuazione. Misura in autopilota (6 partite, 8 stagioni): relazione media
+tra 67 e 77 a regime, mai bloccata a 100. In autopilota quasi nessuno resta fermo, quindi la penalità si vede solo lasciando in panchina qualcuno per un'intera stagione (coperta dai test, non misurata in partita).
 
 **Mantenimento:** gli agenti senza clienti e con relazione neutra si tolgono a fine settimana (sono i candidati del mercato non presi); se ne ricordano al più 20 senza clienti, quelli con la relazione più lontana da 50. Nessuna
 estrazione dell'RNG della partita: nome e personalità di un agente nuovo derivano da id e nome del primo assistito; l'assegnazione di un atleta a un agente esistente o nuovo dal suo nome (`zlib.crc32`).
@@ -371,7 +373,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 419 test, ~60 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 428 test, ~60 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 

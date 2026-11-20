@@ -20,7 +20,9 @@ from models.agents import (
     ensure_agents,
     make_agent,
     negotiated_fee,
+    penalize_idle_athletes,
     prune_idle_agents,
+    raced_names,
 )
 from models.database import DatabaseManager
 from models.entities import (
@@ -28,15 +30,22 @@ from models.entities import (
     AGENT_MAX_IDLE,
     AGENT_PERSONALITY_WEIGHTS,
     AGENT_RELATION_FEE_SPAN,
+    AGENT_RELATION_IDLE,
     AGENT_RELATION_NOT_RENEWED,
     AGENT_RELATION_PODIUM,
     AGENT_RELATION_RENEWED,
     AGENT_RELATION_START,
     RELAYS,
+    SEASON_WEEKS,
     Agent,
     AgentPersonality,
+    CompetitionSummary,
+    CompetitionTier,
+    EventResult,
     GameState,
+    Relay,
     SeasonPhase,
+    WeatherCondition,
 )
 from models.generator import generate_initial_roster, get_recruitment_fee
 from models.simulation import advance_week, renew_expiring_contracts
@@ -227,10 +236,17 @@ class TestDrift(unittest.TestCase):
     def test_each_season_the_relation_closes_a_quarter_of_the_distance_to_neutral(self) -> None:
         state = GameState(agents=[agent(REA, 90, 1), agent(REA, 20, 2), agent(REA, 50, 3), agent(REA, 100, 4)])
         drift_relations(state)
-        self.assertEqual([a.relation for a in state.agents], [80, 28, 50, 88])
+        self.assertEqual([a.relation for a in state.agents], [80, 28, 50, 87])  # 7,5 → 8 e 12,5 → 13: per eccesso
+
+    def test_the_step_is_at_least_one_point_so_values_near_neutral_reach_it(self) -> None:
+        state = GameState(agents=[agent(REA, 52, 1), agent(REA, 48, 2), agent(REA, 51, 3), agent(REA, 49, 4)])
+        drift_relations(state)
+        self.assertEqual([a.relation for a in state.agents], [51, 49, 50, 50])
+        drift_relations(state)
+        self.assertEqual([a.relation for a in state.agents], [50, 50, 50, 50])
 
     def _quiet_state(self, week: int, phase: SeasonPhase) -> GameState:
-        """Stato senza podi né rinnovi possibili: l'unica cosa che può muovere la relazione è l'attenuazione."""
+        """Stato senza podi né rinnovi possibili e senza staffette: muovono la relazione solo l'attenuazione e i «fermi»."""
         state = make_state(3)
         ensure_agents(state)
         state.week, state.season_phase = week, phase
@@ -241,19 +257,88 @@ class TestDrift(unittest.TestCase):
             ag.relation = 90
         state.event_lineup = {e: None for e in state.event_lineup}
         state.event_lineup_f = {e: None for e in state.event_lineup_f}
+        state.relays, state.relays_f = {}, {}
         return state
 
     def test_it_runs_at_the_season_change(self) -> None:
         state = self._quiet_state(36, SeasonPhase.INDOOR)
         advance_week(state, rng=random.Random(4))
         self.assertEqual(state.season_number, 2)
-        self.assertTrue(all(ag.relation == 80 for ag in state.agents))
+        for ag in state.agents:  # 90 → 80 per l'attenuazione, poi −2 per ogni suo atleta della Prima Squadra rimasto fermo
+            fermi = len([a for a in state.main_squad if a.agent_id == ag.id])
+            self.assertEqual(ag.relation, 80 + AGENT_RELATION_IDLE * fermi, ag.name)
 
     def test_it_does_not_run_in_the_middle_of_the_season(self) -> None:
         state = self._quiet_state(8, SeasonPhase.OUTDOOR)
         advance_week(state, rng=random.Random(4))
         self.assertEqual(state.season_number, 1)
         self.assertTrue(all(ag.relation == 90 for ag in state.agents))
+
+
+def _result(name: str, event: str = "100m") -> EventResult:
+    return EventResult(event, name, 5, 8, "11.20", 0, 0)
+
+
+def _meet(week: int, *results: EventResult) -> CompetitionSummary:
+    return CompetitionSummary(
+        week, CompetitionTier.PROVINCIALE, SeasonPhase.OUTDOOR, "Meeting", next(iter(WeatherCondition)), "Tartan",
+        list(results), 0, 0,
+    )
+
+
+class TestIdleAthletes(unittest.TestCase):
+    """«Resta fermo»: scende la relazione con l'agente di chi non è mai stato convocato in una stagione."""
+
+    def setUp(self) -> None:
+        roster = generate_initial_roster(rng=random.Random(1))[:4]
+        for i, a in enumerate(roster, start=1):
+            a.id, a.in_youth_squad, a.agent_id = i, False, i
+        self.state = GameState(athletes=roster, agents=[agent(REA, 60, i) for i in range(1, 5)], season_number=2)
+        self.names = [a.name for a in roster]
+        self.rel = lambda: [ag.relation for ag in self.state.agents]
+
+    def test_only_athletes_never_called_up_lose_relation(self) -> None:
+        self.state.competition_history = [_meet(5, _result(self.names[0]), _result(self.names[1], "Salto in Lungo"))]
+        self.assertEqual(penalize_idle_athletes(self.state, 1), 2)
+        self.assertEqual(self.rel(), [60, 60, 60 + AGENT_RELATION_IDLE, 60 + AGENT_RELATION_IDLE])
+
+    def test_a_meeting_of_another_season_does_not_count(self) -> None:
+        self.state.competition_history = [_meet(SEASON_WEEKS + 3, _result(self.names[0]))]  # stagione 2
+        penalize_idle_athletes(self.state, 1)
+        self.assertEqual(self.rel(), [60 + AGENT_RELATION_IDLE] * 4)
+        self.assertEqual(sorted(raced_names(self.state, 2)), [self.names[0]])
+
+    def test_the_first_and_the_last_week_of_the_season_count(self) -> None:
+        self.state.competition_history = [_meet(1, _result(self.names[0])), _meet(SEASON_WEEKS, _result(self.names[1]))]
+        self.assertEqual(penalize_idle_athletes(self.state, 1), 2)
+
+    def test_a_relay_slot_counts_as_racing_and_so_does_being_withdrawn_before_the_start(self) -> None:
+        withdrawn = _result(self.names[1])
+        withdrawn.withdrew_injured = True
+        self.state.competition_history = [_meet(5, withdrawn)]
+        self.state.relays = {"4x100m": Relay("4x100m", member_ids=[3, None, None, None], reserve_id=4)}
+        self.assertEqual(penalize_idle_athletes(self.state, 1), 1)  # solo il primo è rimasto fermo
+        self.assertEqual(self.rel(), [60 + AGENT_RELATION_IDLE, 60, 60, 60])
+
+    def test_relay_results_in_the_history_are_not_athlete_names(self) -> None:
+        self.state.competition_history = [_meet(5, _result("A. Rossi / B. Bianchi / C. Verdi / D. Neri", "4x100m"))]
+        self.assertEqual(raced_names(self.state, 1), set())  # le staffette si riconoscono dalla formazione, non dal nome
+
+    def test_the_academy_is_not_penalized(self) -> None:
+        self.state.athletes[3].in_youth_squad = True
+        self.assertEqual(penalize_idle_athletes(self.state, 1), 3)
+        self.assertEqual(self.rel()[3], 60)
+
+    def test_clients_of_the_same_agent_stack(self) -> None:
+        for a in self.state.athletes:
+            a.agent_id = 1
+        penalize_idle_athletes(self.state, 1)
+        self.assertEqual(self.state.agents[0].relation, 60 + 4 * AGENT_RELATION_IDLE)
+
+    def test_an_athlete_without_agent_is_ignored(self) -> None:
+        self.state.athletes[0].agent_id = None
+        self.assertEqual(penalize_idle_athletes(self.state, 1), 4)  # lo conta, ma non c'è relazione da muovere
+        self.assertEqual(self.rel(), [60, 60 + AGENT_RELATION_IDLE, 60 + AGENT_RELATION_IDLE, 60 + AGENT_RELATION_IDLE])
 
 
 class TestPrune(unittest.TestCase):
