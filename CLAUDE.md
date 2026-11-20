@@ -53,7 +53,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 595 test, OK, ~85 s su Windows (~6 s su Linux)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 86 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
 ```
 
@@ -78,7 +78,7 @@ views/       main_window.py  tabs.py  dialogs.py  start_screen.py  styles.py (QS
              athlete_dialog.py  Scheda Atleta       results_board.py  tabellone risultati
              race_viewer.py     Gare in diretta (modello di movimento, 2D, concorsi, dialog)
              race_3d.py  field_3d.py  viste 3D software      godot_launcher.py  lancio di Godot
-tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (48 test, senza Qt: migrazioni e slot)
+tests/       test_game.py   (96 test, importa PyQt6)    test_migrations.py   (56 test, senza Qt: migrazioni e slot)
              test_empty_start.py (19, avvio senza atleti, Preparazione, fondazione, senza Qt)   test_empty_start_ui.py (17, controller e viste con società vuota, Qt offscreen)   test_assignments.py (9, convocazioni)   test_tiebreaker.py (12, spareggio A.2)   test_rng.py (6, stato RNG A.3)   test_race_strategy.py (15, piano gara B.1)   test_field_strategy.py (15, rischio concorsi B.2)   test_relay_strategy.py (23, cambio staffette B.3)   test_contracts.py (12)   test_event_800m.py (9)   tutti senza Qt
              test_ranking.py (31, ranking C.1, senza Qt)   test_board.py (21, Board C.2, senza Qt)   test_retirement.py (19, ritiro e post-carriera C.3, senza Qt)   test_agents.py (35, agenti D.1, senza Qt)   test_negotiations.py (33, trattativa e bonus D.2, senza Qt)   test_finances.py (25, finanze D.3, senza Qt)   test_staff_attributes.py (16, attributi dello staff E.1, senza Qt)   test_advance_guard.py (4, tick non rientrante)   test_dilemma.py (9, dilemma ignorato)   test_economy.py (9, sostenibilità)   test_rng_controller.py (6, ricarica = stessi esiti)   test_race_strategy_ui.py (13, colonna «Piano gara / Rischio» e menu «Cambio» delle staffette B.3)   test_ranking_ui.py (7, scheda «Ranking», scheda atleta, ricarica)   test_board_ui.py (12, Board: Dashboard, dialoghi, esonero)   test_retirement_ui.py (10, lista «Ex atleti» e assunzione come allenatore C.3)   test_agents_ui.py (13, agenti nel mercato, nella scheda atleta e nel controller D.1)   test_negotiations_ui.py (26, finestra di trattativa, clausola allo svincolo D.2)   test_finances_ui.py (14, tab Finanze con il bilancio mensile D.3)   test_staff_attributes_ui.py (3, colonna «Attributi» della scheda staff E.1)   tutti con PyQt6 offscreen
 data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO, GAME, REVIEW_REALISMO
