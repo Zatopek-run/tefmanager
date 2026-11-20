@@ -119,6 +119,7 @@ class GameController(QObject):
         # Esito dell'ultimo caricamento fallito: «messaggio per l'utente», riga vuota, dettagli
         # (percorso del backup e traceback completo). Vuoto se l'ultimo caricamento è riuscito.
         self.last_load_error: str = ""
+        self._advancing: bool = False  # guardia di rientro di `advance_week` (A.5)
         if auto_create:
             self.state: GameState = self._load_or_create_initial_state()
             self.has_active_game = True
@@ -925,12 +926,53 @@ class GameController(QObject):
         self.db.save_game(self.state)
         self.state_changed.emit(self.state)
 
+    def dismiss_dilemma(self) -> bool:
+        """Chiude il dilemma pendente senza sceglierlo (finestra chiusa, Esc, «Ignora»): A.4.
+
+        L'opportunità decade **senza effetti** su soldi, reputazione o atleti: né il bonus dell'accettazione né il
+        premio del rifiuto (che dà reputazione e prestigio). Così chiudere la finestra non è una scelta gratuita e
+        il dilemma non resta pendente per sempre bloccando i successivi. Non usa l'RNG. Ritorna True se c'era un dilemma.
+        """
+        dilemma = self.state.pending_dilemma
+        if dilemma is None:
+            return False
+        self.state.news_log.insert(
+            0, f"Sett. {self.state.week}: Dilemma «{dilemma.title}» ignorato: l'occasione è sfumata."
+        )
+        self.state.pending_dilemma = None
+        self.db.save_game(self.state)
+        self.state_changed.emit(self.state)
+        return True
+
+    @property
+    def is_advancing(self) -> bool:
+        """Vero mentre un tick è in corso (compresi i dialoghi modali aperti dai suoi segnali)."""
+        return self._advancing
+
     def advance_week(self) -> Optional[WeekAdvanceReport]:
+        """Avanza di una settimana. Non rientrante (A.5): una seconda chiamata durante il tick è ignorata.
+
+        I segnali `competition_completed`, `season_ended` e `dilemma_triggered` aprono dialoghi modali che fanno
+        girare un ciclo di eventi annidato: un secondo clic su «Avanza settimana» (o una scorciatoia) potrebbe
+        arrivare lì in mezzo e far correre due settimane. Il flag si abbassa sempre, anche se il tick solleva.
+        """
+        if self._advancing:
+            self.status_message.emit("Avanzamento già in corso: attendi la fine della settimana.")
+            return None
+        self._advancing = True
+        try:
+            return self._advance_week_unguarded()
+        finally:
+            self._advancing = False
+
+    def _advance_week_unguarded(self) -> Optional[WeekAdvanceReport]:
         if self.state.bankrupt:
             self.status_message.emit(
                 f"Società fallita (debito oltre €{-BANKRUPTCY_THRESHOLD:,}): avvia una nuova partita."
             )
             return None
+        # Un dilemma ancora pendente (salvataggio vecchio, finestra mai chiusa bene) non blocca più i successivi (A.4).
+        self.dismiss_dilemma()
         report = advance_week(self.state, rng=self.rng)
         self.scouting_results = []
         self.free_agent_pool = []

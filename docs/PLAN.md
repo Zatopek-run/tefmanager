@@ -33,7 +33,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 - **Verifica:** test con `advance_week` forzato a sollevare (monkeypatch di `progress_rivals`): `state` identico a prima, nessun `save_game`.
 - **Accettazione:** il test passa; durata del tick misurata e riportata nel commit.
 
-### Lotto 1.4 — Protezione contro il doppio tick
+### Lotto 1.4 — Protezione contro il doppio tick — ✅ FATTO (2026-11-20, come PIANOLAVORO A.5)
 - **Obiettivo:** due click ravvicinati non producono due settimane.
 - **File:** `views/main_window.py` (disabilitare il pulsante durante il tick, riabilitare in `_refresh_all`) oppure guardia di rientro nel controller.
 - **Rischio:** basso. Preferire la guardia nel controller (testabile senza mouse).
@@ -66,7 +66,7 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 
 ## Area 3 — Ambiguità di regole
 
-### Lotto 3.1 — Dilemma chiuso senza scelta
+### Lotto 3.1 — Dilemma chiuso senza scelta — ✅ FATTO (2026-11-20, come PIANOLAVORO A.4; scelta: «Ignora» neutro, non rifiuto)
 - **File:** `views/dialogs.py` (`EthicalDilemmaDialog`: ignorare Esc/chiusura), `views/main_window.py` (riproporre `pending_dilemma` al caricamento).
 - **Rischio:** basso. **Verifica:** smoke test: dialog istanziato, `reject()` non chiude/non lascia pendente; stato con dilemma pendente → riproposto. **Accettazione:** nessun dilemma pendente permanente (esperimento A di `AUDIT.md` ripetuto: dilemmi di nuovo generati).
 - **Dipende da:** QUESTIONS 6.

@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
 
         self.advance_btn = QPushButton("Avanza Settimana")
         self.advance_btn.setObjectName("AdvanceWeekButton")
-        self.advance_btn.clicked.connect(self.controller.advance_week)
+        self.advance_btn.clicked.connect(self._on_advance_clicked)
         header_layout.addWidget(self.advance_btn)
 
         main_layout.addWidget(header)
@@ -297,6 +297,14 @@ class MainWindow(QMainWindow):
         for i, btn in enumerate(self._nav_buttons):
             btn.setText(self._nav_base_labels[i] + badges.get(i, ""))
 
+    def _on_advance_clicked(self) -> None:
+        """Disabilita il pulsante per tutta la durata del tick (anche con i dialoghi modali aperti) e lo riabilita."""
+        self.advance_btn.setEnabled(False)
+        try:
+            self.controller.advance_week()
+        finally:
+            self.advance_btn.setEnabled(not self.controller.state.bankrupt)
+
     def _refresh_all(self, state: GameState) -> None:
         mode_tag = "Prototipo Outdoor" if state.game_mode == "vertical_slice" else f"Stagione {state.season_number}"
         self.club_title.setText(state.team_name)
@@ -309,7 +317,8 @@ class MainWindow(QMainWindow):
         self.hud_budget.setText(f"Bilancio: €{state.budget:,}")
         self.hud_prestige.setText(f"Prestigio: {state.prestige}")
 
-        self.advance_btn.setEnabled(not state.bankrupt)
+        # Durante il tick `state_changed` arriva a metà: non riabilitare il pulsante finché non è finito.
+        self.advance_btn.setEnabled(not state.bankrupt and not self.controller.is_advancing)
         if state.bankrupt:
             self.advance_btn.setText("Società Fallita")
         elif state.is_competition_week:
@@ -341,8 +350,11 @@ class MainWindow(QMainWindow):
 
     def _show_dilemma(self, dilemma: EthicalDilemma) -> None:
         dlg = EthicalDilemmaDialog(dilemma, parent=self)
-        if dlg.exec():
+        dlg.exec()
+        if dlg.chose:
             self.controller.resolve_dilemma(dlg.accepted_shortcut)
+        else:  # finestra chiusa o «Ignora»: il dilemma non resta pendente (A.4)
+            self.controller.dismiss_dilemma()
 
     def _on_new_game(self) -> None:
         dlg = NewGameDialog(self.controller.state.team_name, parent=self)

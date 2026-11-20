@@ -421,6 +421,8 @@ class EthicalDilemmaDialog(QDialog):
         super().__init__(parent)
         self.dilemma = dilemma
         self.accepted_shortcut: bool = False
+        # Falso solo se il giocatore preme «Accetta» o «Rifiuta»: chiudere la finestra (X, Esc) o «Ignora» = ignorato.
+        self.chose: bool = False
         self.setWindowTitle(f"Dilemma Etico — {dilemma.title}")
         self.resize(540, 280)
         self._build_ui()
@@ -452,16 +454,24 @@ class EthicalDilemmaDialog(QDialog):
         reject_btn.setObjectName("PrimaryButton")
         reject_btn.clicked.connect(self._choose_reject)
 
+        ignore_btn = QPushButton("Ignora (l'occasione sfuma, nessun effetto)")
+        ignore_btn.setObjectName("IgnoreDilemmaButton")
+        ignore_btn.clicked.connect(self.reject)
+        self.ignore_btn = ignore_btn
+
         btn_col.addWidget(accept_btn)
         btn_col.addWidget(reject_btn)
+        btn_col.addWidget(ignore_btn)
         layout.addLayout(btn_col)
 
     def _choose_accept(self) -> None:
         self.accepted_shortcut = True
+        self.chose = True
         self.accept()
 
     def _choose_reject(self) -> None:
         self.accepted_shortcut = False
+        self.chose = True
         self.accept()
 
 

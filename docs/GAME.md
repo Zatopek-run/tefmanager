@@ -246,8 +246,8 @@ Gli atleti guadagnano **fan** con piazzamenti, PB e record (i fan non calano mai
 
 ### 5.13 Dilemmi etici e obiettivi
 
-- **Dilemmi**: nelle settimane 3 e 7 sempre, altrove 22% di probabilità; due tipi (doping / giovane promettente). Si accettano o rifiutano con effetti su soldi, reputazione, prestigio, forma. Chiudere la finestra senza scegliere
-  lascia il dilemma pendente e **blocca per sempre i successivi** (difetto noto).
+- **Dilemmi**: nelle settimane 3 e 7 sempre, altrove 22% di probabilità; due tipi (doping / giovane promettente). Si accettano o rifiutano con effetti su soldi, reputazione, prestigio, forma. Chiudere la finestra (X, Esc) o premere «Ignora» fa decadere il dilemma **senza effetti** (`dismiss_dilemma`: né il bonus
+  dell'accettazione né il premio del rifiuto), con una notizia; un dilemma ancora pendente (vecchio salvataggio) viene scartato dal tick successivo. Non blocca più i successivi (A.4).
 - **Obiettivi stagionali**: creati alla nuova partita (es. bilancio positivo, traguardo storico, promozione); non vengono rinnovati a fine stagione (difetto noto).
 
 ### 5.14 Record e PB
@@ -343,7 +343,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
-- Poi: 1.4 protezione dal doppio click sul tick; 2.x RNG seminato/salvato; 3.x regole (spareggio, dilemma chiuso senza scelta, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
+- Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5) e **3.1** dilemma chiuso senza scelta (A.4). Poi: 2.x RNG seminato/salvato; 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
 ---
 
@@ -352,10 +352,10 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 | Tema | Sintesi |
 | --- | --- |
 | Economia (R3) | L'avvio è in perdita netta ogni settimana: in autopilota bancarotta alla sett. 14. Decisione di design aperta (QUESTIONS 3). |
-| Dilemma bloccato (R4) | Chiudere la finestra senza scegliere lascia il dilemma pendente e impedisce i successivi. |
+| Dilemma bloccato (R4) | **Risolto** il 2026-11-20 (A.4): chiudere = «Ignora», nessun effetto. |
 | RNG (R5) | Non seminato né salvato; si può ricaricare per ritirare i dadi. |
 | Debito azzerato (R7) | Rifiutare un dilemma porta a 0 un bilancio negativo (`max(0, budget − 600)`). |
-| Doppio click (R8) | Nessuna protezione sul tick (dedotto, non provato con mouse reale). |
+| Doppio click (R8) | **Risolto** il 2026-11-20 (A.5): tick non rientrante e pulsante spento durante il tick (non provato con mouse reale). |
 | Spareggio (R9) | Alfabetico: il giocatore può scegliere il nome del club per vincere tutti gli spareggi. |
 | Fan e sponsor (R10) | Illimitati, non calano mai. |
 | Obiettivi (R11/R12) | Mai rinnovati; l'obiettivo «traguardo storico» femminile usa la soglia maschile. |

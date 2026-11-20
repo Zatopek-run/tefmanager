@@ -8,7 +8,9 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga |
 | ---: | --- | --- |
+| C0 | **Guardia di rientro** (A.5, 2026-11-20): se un tick è già in corso (`is_advancing`, anche con dialoghi modali aperti dai segnali) la chiamata è ignorata con un messaggio; il flag si abbassa sempre (`finally`) | `game_controller.py`: `advance_week` |
 | C1 | Se `state.bankrupt`: messaggio e **stop** (nessun tick) | `game_controller.py:839-843` |
+| C1b | **Dilemma pendente scartato** (A.4, 2026-11-20): se `pending_dilemma` non è `None` si chiama `dismiss_dilemma` (nessun effetto, una notizia). Non usa `r`, quindi l'ordine dell'RNG non cambia | `game_controller.py`: `_advance_week_unguarded` |
 | C2 | Chiama `advance_week(state, rng=self.rng)` | `game_controller.py:844` |
 
 ## B. Modello: `advance_week`

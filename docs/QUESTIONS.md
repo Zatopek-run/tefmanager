@@ -53,7 +53,9 @@ Oggi alfabetico per nome (`entities.py:826-829`): decide titolo, promozione e re
 - **Alternativa B:** tenere l'alfabetico ma con ordine inverso per il giocatore (non risolve il problema di fondo).
 - **Cosa cambia:** `GameState.league_standings`, `simulation.py:1033`; richiede di salvare i piazzamenti per gara (nuovo campo → migrazione) oppure ricavarli da `competition_history` (da verificare quante gare restano memorizzate: la storia non è troncata ma lo sono le notizie).
 
-## 6. Che cosa succede se chiudi il dilemma etico senza scegliere?
+## 6. Che cosa succede se chiudi il dilemma etico senza scegliere? — ✅ IMPLEMENTATA il 2026-11-20 (PIANOLAVORO A.4), **DA CONFERMARE**
+
+**Fatto:** chiudere (X, Esc) o «Ignora» = il dilemma decade **senza effetti** (`dismiss_dilemma`), non «rifiuto». Motivo: il rifiuto dà un premio (doping: +10 reputazione, +8 prestigio, −600 €; giovane: +6 resilienza, +8 forma), quindi «chiudi = rifiuta» renderebbe Esc la scelta migliore. Il piano diceva «applica l'opzione rifiuta (effetti negativi minimi)»: se si vuole la lettura letterale basta far chiamare `resolve_dilemma(False)` a `main_window._show_dilemma` e al tick.
 
 Oggi resta pendente per sempre e blocca tutti i dilemmi futuri (misurato).
 - **Raccomandazione:** il dialog non è chiudibile senza scelta, e un dilemma pendente nel salvataggio viene riproposto al caricamento. **DA CONFERMARE:** il dilemma deve essere obbligatorio.
