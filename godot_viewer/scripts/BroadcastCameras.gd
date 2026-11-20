@@ -68,6 +68,12 @@ var _o_far: Camera3D
 var _o_curve: Camera3D
 # concorsi (Salto in Lungo)
 var _field_cam: Camera3D
+# getto del peso (regia guidata dalla fase del tentativo, vedi _direct_shot)
+var _sp_sector: Camera3D   # panoramica sul settore (prima dei tentativi e per i tentativi non animati)
+var _sp_wide: Camera3D     # ingresso, posizione iniziale e uscita: larga, dal lato del settore
+var _sp_spin: Camera3D     # rotazione: teleobiettivo laterale (lato del braccio che lancia)
+var _sp_fly: Camera3D      # volo: teleobiettivo laterale che segue il peso
+var _sp_land: Camera3D     # atterraggio: sul cratere, poi nastro e bandierina
 # ralenti dell'arrivo (corse)
 var _replay_cam: Camera3D
 
@@ -98,6 +104,12 @@ func _ready() -> void:
 	_o_far = _make_static_cam(Vector3(-s * 0.5, 5.0, 34.0), Vector3(-s * 0.5, 0.8, -78.0), 9.0, 600.0)   # teleobiettivo dall'altro lato
 	_o_curve = _make_static_cam(Vector3(-s - 72.0, 18.0, -36.8), Vector3(-s - 30.0, 0.8, -36.8), 30.0, 150.0)
 	_field_cam = _make_static_cam(Vector3(-12.0, 3.4, -3.5), Vector3(-12.0, 0.9, -14.0), 34.0, 80.0)
+	var sp_c: Vector3 = ShotPutMotion.CENTER
+	_sp_sector = _make_static_cam(sp_c + Vector3(-7.0, 6.0, 13.0), sp_c + Vector3(9.0, 0.0, 0.0), 40.0, 200.0)
+	_sp_wide = _make_static_cam(sp_c + Vector3(-3.4, 1.9, 6.6), sp_c + Vector3(-0.9, 1.0, 0.0), 30.0, 90.0)
+	_sp_spin = _make_static_cam(sp_c + Vector3(0.8, 1.55, 6.8), sp_c + Vector3(0.0, 1.2, 0.0), 24.0, 60.0)
+	_sp_fly = _make_static_cam(sp_c + Vector3(8.0, 2.4, 16.0), sp_c + Vector3(8.0, 3.0, 0.0), 22.0, 400.0)
+	_sp_land = _make_static_cam(sp_c + Vector3(10.0, 1.1, 4.0), sp_c + Vector3(12.0, 0.2, 0.0), 30.0, 120.0)
 	# Ralenti: teleobiettivo basso a bordo pista oltre il traguardo, guarda i corridori che arrivano (3/4 frontale).
 	_replay_cam = _make_static_cam(Vector3(TrackGeometry.FINISH_X + REPLAY_CAM_AHEAD, REPLAY_CAM_Y, REPLAY_CAM_Z),
 		Vector3(TrackGeometry.FINISH_X - 20.0, 1.0, TRACK_Z_CENTER), REPLAY_FOV, 120.0)
@@ -185,7 +197,43 @@ func _direct() -> void:
 
 
 func _direct_field() -> void:
-	_apply(_field_cam)
+	if RaceController.event_kind == "Getto del Peso":
+		_direct_shot()
+	else:
+		_apply(_field_cam)
+
+
+## Regia del getto del peso, legata alla FASE del tentativo (ShotPutMotion.phase_at), non al tempo reale: vale a 1x come a 8x.
+## ingresso/posizione iniziale = larga di lato e un po' da dietro (si vede il volto dell'atleta, di spalle al settore) ->
+## rotazione e rilascio = teleobiettivo dal lato del braccio che lancia -> volo = teleobiettivo laterale che segue il peso ->
+## atterraggio = sul cratere (poi nastro e bandierina) -> uscita = di nuovo larga. Senza tentativo animato: panoramica del settore.
+func _direct_shot() -> void:
+	var rc: Node = RaceController
+	var plan: ShotPutMotion.Plan = rc.shot_plan
+	var cam: Camera3D = _sp_sector
+	if plan != null and not plan.instant and rc.state == rc.State.RUNNING:
+		var t: float = rc.shot_t
+		var pose: ShotPutMotion.Pose = rc.shot_pose
+		var focus: Vector3 = (pose.root if pose != null else ShotPutMotion.CENTER) + Vector3(0.0, 1.0, 0.0)
+		match rc.shot_phase:
+			ShotPutMotion.Phase.ENTER, ShotPutMotion.Phase.SET, ShotPutMotion.Phase.EXIT:
+				cam = _sp_wide
+				cam.look_at(focus, Vector3.UP)
+			ShotPutMotion.Phase.SPIN:
+				cam = _sp_spin
+				var u: float = clampf((t - float(ShotPutMotion.KEY_T[1])) / (ShotPutMotion.T_REL + 0.25 - float(ShotPutMotion.KEY_T[1])), 0.0, 1.0)
+				cam.position = ShotPutMotion.CENTER + Vector3(lerpf(-0.6, 1.4, u), 1.55, 6.8 - 1.0 * u)   # lento avvicinamento
+				cam.look_at(focus + Vector3(0.0, 0.2, 0.0), Vector3.UP)
+			ShotPutMotion.Phase.FLIGHT:
+				cam = _sp_fly
+				var mid: Vector3 = (plan.release + plan.landing) * 0.5
+				cam.position = Vector3(mid.x, 4.5, mid.z + 11.0 + 0.5 * plan.mark)
+				cam.look_at(rc.shot_pos, Vector3.UP)
+			ShotPutMotion.Phase.LAND:
+				cam = _sp_land
+				cam.position = plan.landing + Vector3(-2.6, 1.1, 3.6)
+				cam.look_at(plan.landing + Vector3(0.0, 0.15, 0.0), Vector3.UP)
+	_apply(cam)
 
 
 ## Ralenti: camera fissa bassa vicino al traguardo, mira esatta sul primo (come le altre camere che seguono la gara).

@@ -111,44 +111,7 @@ static func build(parent: Node3D, kind: String = "400m") -> void:
 			ml.rotation_degrees.x = -90.0
 			parent.add_child(ml)
 	elif kind == "Getto del Peso":
-		# Pedana circolare in cemento (centro x = -42, z = -36), fermapiedi e settore 34.92° verso +X.
-		var sp_z: float = -36.0
-		var cx: float = -42.0
-		var concrete: StandardMaterial3D = _material(Color(0.68, 0.71, 0.76), 0.9)
-		var rim_mat: StandardMaterial3D = _material(Color(0.92, 0.93, 0.95), 0.7)
-		var circle_mesh: CylinderMesh = CylinderMesh.new()
-		circle_mesh.top_radius = 1.07
-		circle_mesh.bottom_radius = 1.07
-		circle_mesh.height = 0.04
-		var circle: MeshInstance3D = MeshInstance3D.new()
-		circle.mesh = circle_mesh
-		circle.material_override = concrete
-		circle.position = Vector3(cx, 0.01, sp_z)
-		parent.add_child(circle)
-		_box(parent, Vector3(0.14, 0.12, 1.22), Vector3(cx + 1.07, 0.06, sp_z), rim_mat)  # fermapiedi
-		# Linee del settore (34.92° -> +/-17.46°) lunghe 26 m
-		for sgn: float in [-1.0, 1.0]:
-			var ang: float = sgn * deg_to_rad(17.46)
-			var seg_len: float = 26.0
-			var sec_line: MeshInstance3D = _box(
-				parent,
-				Vector3(seg_len, 0.012, 0.06),
-				Vector3(cx + 1.07 + cos(ang) * seg_len * 0.5, 0.008, sp_z + sin(ang) * seg_len * 0.5),
-				line
-			)
-			sec_line.rotation.y = -ang
-		for dm: int in [12, 14, 16, 18, 20, 22]:
-			var mx: float = cx + 1.07 + float(dm)
-			var half_w: float = float(dm) * tan(deg_to_rad(17.46))
-			_box(parent, Vector3(0.05, 0.012, half_w * 2.0), Vector3(mx, 0.008, sp_z), line)
-			var ml: Label3D = Label3D.new()
-			ml.text = "%dm" % dm
-			ml.font_size = 64
-			ml.pixel_size = 0.0045
-			ml.modulate = Color(0.96, 0.96, 0.96)
-			ml.position = Vector3(mx, 0.05, sp_z + half_w + 0.55)
-			ml.rotation_degrees.x = -90.0
-			parent.add_child(ml)
+		_build_shot_put(parent, line)
 	else:
 		# Linee di partenza: una per corsia, sfalsate; orientate di traverso alla corsia.
 		for lane in range(1, lanes + 1):
@@ -258,3 +221,139 @@ static func _material(color: Color, roughness: float) -> StandardMaterial3D:
 	m.albedo_color = color
 	m.roughness = roughness
 	return m
+
+
+## Getto del peso (geometria da ShotPutMotion: stessa fonte di atleta, peso e camere). Terra battuta attorno alla pedana, settore
+## d'erba falciata (piu' chiaro del prato interno), pedana in cemento con bordo dipinto, fermapiedi AD ARCO (corda 1,22 m) con il
+## bordo interno sul cerchio, linee del settore che partono dal bordo della pedana e archi di distanza centrati sul centro.
+## Il disegno si ferma a SECTOR_LENGTH metri (30): il settore vero ne ha 100 ma lungo l'asse la curva 1 e' a ~78 m.
+static func _build_shot_put(parent: Node3D, line: StandardMaterial3D) -> void:
+	var c: Vector3 = ShotPutMotion.CENTER
+	var rc: float = ShotPutMotion.CIRCLE_RADIUS
+	var half: float = ShotPutMotion.SECTOR_HALF_ANGLE
+	var length: float = ShotPutMotion.SECTOR_LENGTH
+	var grass_cut: StandardMaterial3D = _material(Color(0.12, 0.34, 0.15), 1.0)
+	var dirt: StandardMaterial3D = _material(Color(0.33, 0.24, 0.15), 1.0)
+	var concrete: StandardMaterial3D = _material(Color(0.68, 0.71, 0.76), 0.9)
+	var paint: StandardMaterial3D = _material(Color(0.95, 0.95, 0.95), 0.7)
+	var board_mat: StandardMaterial3D = _material(Color(0.93, 0.94, 0.96), 0.6)
+
+	# Settore: erba falciata (piano a quota 0, come i piedi dell'atleta) + terra battuta attorno alla pedana.
+	_sector_band(parent, c, rc, rc + length, -half, half, 0.0005, grass_cut, 32)
+	var dirt_mesh: CylinderMesh = CylinderMesh.new()
+	dirt_mesh.top_radius = 3.4
+	dirt_mesh.bottom_radius = 3.4
+	dirt_mesh.height = 0.05
+	dirt_mesh.radial_segments = 40
+	var dirt_disc: MeshInstance3D = MeshInstance3D.new()
+	dirt_disc.mesh = dirt_mesh
+	dirt_disc.material_override = dirt
+	dirt_disc.position = Vector3(c.x, -0.025, c.z)
+	dirt_disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(dirt_disc)
+
+	# Pedana in cemento (quota ShotPutMotion.CIRCLE_TOP) con il bordo dipinto.
+	var pad_mesh: CylinderMesh = CylinderMesh.new()
+	pad_mesh.top_radius = rc
+	pad_mesh.bottom_radius = rc
+	pad_mesh.height = ShotPutMotion.CIRCLE_TOP + 0.05
+	pad_mesh.radial_segments = 48
+	var pad: MeshInstance3D = MeshInstance3D.new()
+	pad.mesh = pad_mesh
+	pad.material_override = concrete
+	pad.position = Vector3(c.x, ShotPutMotion.CIRCLE_TOP * 0.5 - 0.025, c.z)
+	pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(pad)
+	_sector_band(parent, c, rc - 0.05, rc, 0.0, TAU, ShotPutMotion.CIRCLE_TOP + 0.001, paint, 48)
+
+	# Fermapiedi: arco largo 0,112 m e alto 0,10 m, bordo interno sul cerchio, centrato sull'asse del settore.
+	var board_half: float = asin(ShotPutMotion.STOPBOARD_CHORD * 0.5 / rc)
+	_arc_block(parent, c, rc, rc + ShotPutMotion.STOPBOARD_WIDTH, -board_half, board_half, ShotPutMotion.STOPBOARD_HEIGHT, board_mat)
+
+	# Linee del settore (+/-17,46 gradi) dal bordo della pedana, e archi di distanza centrati sul centro (misura dal bordo).
+	for sgn: float in [-1.0, 1.0]:
+		var ang: float = sgn * half
+		var mid: Vector3 = c + ShotPutMotion.dir_at(ang) * (rc + length * 0.5)
+		var sec_line: MeshInstance3D = _box(parent, Vector3(length, 0.012, 0.06), Vector3(mid.x, 0.004, mid.z), line)
+		sec_line.rotation.y = ang
+	for dm: int in range(5, int(length) + 1, 5):
+		_sector_band(parent, c, rc + float(dm) - 0.03, rc + float(dm) + 0.03, -half, half, 0.004, line, 24)
+		var label_at: Vector3 = c + ShotPutMotion.dir_at(-half - 0.045) * (rc + float(dm))
+		var ml: Label3D = Label3D.new()
+		ml.text = "%d m" % dm
+		ml.font_size = 64
+		ml.pixel_size = 0.0045
+		ml.modulate = Color(0.96, 0.96, 0.96)
+		ml.position = Vector3(label_at.x, 0.012, label_at.z)
+		ml.rotation_degrees.x = -90.0
+		parent.add_child(ml)
+
+
+## Settore anulare piatto fra i raggi r0 e r1 e gli angoli a0..a1 (antiorari da +X, vedi ShotPutMotion.dir_at), a quota y.
+static func _sector_band(parent: Node3D, center: Vector3, r0: float, r1: float, a0: float, a1: float, y: float, mat: Material, steps: int) -> void:
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var up: Vector3 = Vector3(0.0, y, 0.0)
+	for i in range(steps):
+		var aa: float = lerpf(a0, a1, float(i) / steps)
+		var ab: float = lerpf(a0, a1, float(i + 1) / steps)
+		var p00: Vector3 = center + ShotPutMotion.dir_at(aa) * r0 + up
+		var p01: Vector3 = center + ShotPutMotion.dir_at(aa) * r1 + up
+		var p10: Vector3 = center + ShotPutMotion.dir_at(ab) * r0 + up
+		var p11: Vector3 = center + ShotPutMotion.dir_at(ab) * r1 + up
+		_tri_out(st, p00, p01, p10, Vector3.UP)
+		_tri_out(st, p10, p01, p11, Vector3.UP)
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+
+
+## Blocco ad arco (fermapiedi): faccia superiore, pareti interna ed esterna e le due testate, tutte rivolte verso l'esterno.
+static func _arc_block(parent: Node3D, center: Vector3, r0: float, r1: float, a0: float, a1: float, height: float, mat: Material) -> void:
+	var st: SurfaceTool = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var steps: int = 12
+	var top: Vector3 = Vector3(0.0, height, 0.0)
+	for i in range(steps):
+		var aa: float = lerpf(a0, a1, float(i) / steps)
+		var ab: float = lerpf(a0, a1, float(i + 1) / steps)
+		var da: Vector3 = ShotPutMotion.dir_at(aa)
+		var db: Vector3 = ShotPutMotion.dir_at(ab)
+		var mida: Vector3 = ShotPutMotion.dir_at(0.5 * (aa + ab))
+		# superiore
+		_tri_out(st, center + da * r0 + top, center + da * r1 + top, center + db * r0 + top, Vector3.UP)
+		_tri_out(st, center + db * r0 + top, center + da * r1 + top, center + db * r1 + top, Vector3.UP)
+		# esterna (normale = radiale) e interna (normale = -radiale)
+		for pair: Array in [[r1, mida], [r0, -mida]]:
+			var r: float = pair[0]
+			var n: Vector3 = pair[1]
+			_tri_out(st, center + da * r, center + da * r + top, center + db * r, n)
+			_tri_out(st, center + db * r, center + da * r + top, center + db * r + top, n)
+	# testate
+	for end: Array in [[a0, -1.0], [a1, 1.0]]:
+		var d: Vector3 = ShotPutMotion.dir_at(end[0])
+		var tangent: Vector3 = Vector3(d.z, 0.0, -d.x) * float(end[1])    # perpendicolare al raggio (verso gli angoli crescenti), verso l'esterno dell'arco
+		_tri_out(st, center + d * r0, center + d * r0 + top, center + d * r1, tangent)
+		_tri_out(st, center + d * r1, center + d * r0 + top, center + d * r1 + top, tangent)
+	var mi: MeshInstance3D = MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	parent.add_child(mi)
+
+
+## Triangolo con la faccia anteriore verso `outward` (in Godot e' quella oraria: normale = (c - a) x (b - a)).
+static func _tri_out(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, outward: Vector3) -> void:
+	var n: Vector3 = (c - a).cross(b - a)
+	if n.dot(outward) < 0.0:
+		var tmp: Vector3 = b
+		b = c
+		c = tmp
+		n = -n
+	st.set_normal(n.normalized())
+	st.add_vertex(a)
+	st.set_normal(n.normalized())
+	st.add_vertex(b)
+	st.set_normal(n.normalized())
+	st.add_vertex(c)

@@ -25,7 +25,7 @@ var _quit_scheduled: bool = false
 var _world_kind: String = ""       # "100m" (rettilineo) oppure "oval": quale scena e' costruita
 var _crowd_material: StandardMaterial3D = null
 var _field_marker: MeshInstance3D = null
-var _shot_mesh: MeshInstance3D = null
+var _shot_view: ShotPutView = null     # getto del peso: peso in volo, cratere, nastro e bandierina
 
 
 func _ready() -> void:
@@ -47,19 +47,14 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _field_marker != null:
-		var is_sp: bool = RaceController.event_kind == "Getto del Peso"
+	if _field_marker != null:   # salto in lungo: il peso ha la sua vista (ShotPutView)
 		var m_x: float = RaceController.field_landed_mark
-		_field_marker.visible = RaceController.is_field(RaceController.event_kind) and m_x > (-40.9 if is_sp else -9.9)
+		_field_marker.visible = RaceController.is_field(RaceController.event_kind) and m_x > -9.9
 		if _field_marker.visible:
-			_field_marker.position = Vector3(m_x, 0.25, -36.0 if is_sp else -14.0)
+			_field_marker.position = Vector3(m_x, 0.25, -14.0)
 			var mat: StandardMaterial3D = _field_marker.material_override as StandardMaterial3D
 			if mat != null:
 				mat.albedo_color = Color(0.92, 0.22, 0.22) if RaceController.field_landed_foul else Color(0.18, 0.88, 0.56)
-	if _shot_mesh != null:
-		_shot_mesh.visible = RaceController.event_kind == "Getto del Peso" and RaceController.shot_visible
-		if _shot_mesh.visible:
-			_shot_mesh.position = RaceController.shot_pos
 	if _autoquit and not _quit_scheduled and RaceController.state == RaceController.State.FINISHED:
 		_quit_scheduled = true
 		get_tree().create_timer(AUTOQUIT_DELAY).timeout.connect(get_tree().quit)
@@ -114,10 +109,12 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 	if _field_marker != null:
 		_field_marker.queue_free()
 		_field_marker = null
-	if _shot_mesh != null:
-		_shot_mesh.queue_free()
-		_shot_mesh = null
-	if RaceController.is_field(RaceController.event_kind):
+	_shot_view = null   # e' figlio di _runners_root: l'hanno gia' liberato i figli sopra
+	if RaceController.event_kind == "Getto del Peso":
+		_shot_view = ShotPutView.new()
+		_shot_view.name = "ShotPutView"
+		_runners_root.add_child(_shot_view)
+	elif RaceController.is_field(RaceController.event_kind):
 		var marker_mesh: CylinderMesh = CylinderMesh.new()
 		marker_mesh.top_radius = 0.06
 		marker_mesh.bottom_radius = 0.06
@@ -127,19 +124,6 @@ func _on_race_loaded(runners: Array[RunnerData], _info: Dictionary) -> void:
 		_field_marker.material_override = _flat(Color(0.18, 0.88, 0.56), 0.5)
 		_field_marker.visible = false
 		_runners_root.add_child(_field_marker)
-		if RaceController.event_kind == "Getto del Peso":
-			var ball: SphereMesh = SphereMesh.new()
-			ball.radius = 0.16
-			ball.height = 0.32
-			var ball_mat: StandardMaterial3D = StandardMaterial3D.new()
-			ball_mat.albedo_color = Color(0.86, 0.89, 0.94)
-			ball_mat.metallic = 0.45
-			ball_mat.roughness = 0.22
-			ball.material = ball_mat
-			_shot_mesh = MeshInstance3D.new()
-			_shot_mesh.mesh = ball
-			_shot_mesh.visible = false
-			_runners_root.add_child(_shot_mesh)
 	var relay: bool = RaceController.is_relay(RaceController.event_kind)
 	var leg_len: float = RaceMotion.race_distance(RaceController.event_kind) * 0.25
 	for r: RunnerData in runners:

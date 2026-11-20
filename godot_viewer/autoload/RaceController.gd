@@ -53,6 +53,13 @@ var jumper_pos: Vector3 = Vector3(-36.0, 0.0, -14.0)
 var jumper_yaw: float = 0.0
 var jumper_anim: StringName = &"Idle"
 var jumper_speed_scale: float = 1.0
+## Getto del peso (vedi models/ShotPutMotion.gd): il tentativo in corso, il suo tempo, la fase (per la regia), la posa
+## dell'atleta (null = tentativo non animato) e il peso in volo. `shot_pos` e `shot_visible` descrivono il peso in volo o a
+## terra; prima del rilascio sta in mano all'atleta (lo disegna RunnerView) e `shot_visible` e' falso.
+var shot_plan: ShotPutMotion.Plan = null
+var shot_t: float = 0.0
+var shot_phase: int = ShotPutMotion.Phase.ENTER
+var shot_pose: ShotPutMotion.Pose = null
 var shot_pos: Vector3 = Vector3(-41.0, 1.5, -36.0)
 var shot_visible: bool = false
 var field_caption: String = ""
@@ -128,10 +135,14 @@ func load_race(race_id: int) -> bool:
 	field_idx = 0
 	field_step_t = 0.0
 	active_jumper = null
-	jumper_pos = Vector3(-42.5, 0.0, -36.0) if kind == "Getto del Peso" else Vector3(-36.0, 0.0, -14.0)
-	jumper_yaw = 0.0
+	jumper_pos = _shot_wait_position() if kind == "Getto del Peso" else Vector3(-36.0, 0.0, -14.0)
+	jumper_yaw = PI if kind == "Getto del Peso" else 0.0
 	jumper_anim = &"Idle"
 	jumper_speed_scale = 1.0
+	shot_plan = null
+	shot_t = 0.0
+	shot_phase = ShotPutMotion.Phase.ENTER
+	shot_pose = null
 	shot_pos = Vector3(-41.0, 1.5, -36.0)
 	shot_visible = false
 	field_caption = ""
@@ -177,6 +188,13 @@ func skip_to_end() -> void:
 				r.finished = true
 			active_jumper = live_order[0] if not live_order.is_empty() else null
 			jumper_anim = &"Idle"
+			if event_kind == "Getto del Peso":
+				shot_plan = null
+				shot_pose = null
+				shot_visible = false
+				shot_phase = ShotPutMotion.Phase.EXIT
+				jumper_pos = _shot_wait_position()
+				jumper_yaw = PI
 			field_caption = "CLASSIFICA FINALE"
 			field_value_text = "%.2f m" % live_order[0].best_mark if not live_order.is_empty() else ""
 			field_landed_foul = false
@@ -362,14 +380,22 @@ func _init_field_queue(race_id: int) -> void:
 			for att: Dictionary in r.attempts:
 				if int(att.get("round", 0)) == rnd:
 					var anim_jump: bool = r.is_player
-					field_queue.append({
+					var step: Dictionary = {
 						"runner": r,
 						"round": rnd,
 						"mark": float(att.get("mark", 0.0)),
 						"foul": bool(att.get("foul", false)),
 						"animate": anim_jump,
 						"dur": 4.2 if anim_jump else 0.35,
-					})
+					}
+					if event_kind == "Getto del Peso":
+						# Piano del tentativo (rilascio, velocita', volo): decide solo la geometria, la misura e' quella del DB.
+						var plan: ShotPutMotion.Plan = ShotPutMotion.make_plan(
+							float(step["mark"]), bool(step["foul"]), RunnerData.visual_height(r.athlete_name, r.gender),
+							r.gender == "F", ShotPutMotion.landing_angle(r.athlete_name, rnd), not anim_jump)
+						step["plan"] = plan
+						step["dur"] = plan.duration
+					field_queue.append(step)
 	if not field_queue.is_empty():
 		active_jumper = field_queue[0]["runner"]
 		field_caption = "PROVA 1/%d · %s" % [field_rounds, active_jumper.surname()]
@@ -419,95 +445,45 @@ func _process_field(dt: float) -> void:
 		shot_visible = false
 	field_step_t += dt
 
-	var is_shot: bool = event_kind == "Getto del Peso"
-	if bool(step["animate"]):
+	if event_kind == "Getto del Peso":
+		_update_shot(step)
+	elif bool(step["animate"]):
 		var t: float = field_step_t
-		if is_shot:
-			var wind_end: float = 1.05
-			var fly_end: float = 2.35
-			var board_x: float = -40.93
-			if t < wind_end:
-				var u: float = clampf(t / wind_end, 0.0, 1.0)
-				var x: float = lerpf(-42.7, -41.05, u)
-				jumper_pos = Vector3(x, 0.0, -36.0)
-				jumper_yaw = lerpf(-0.95, 0.0, clampf(u * 1.25, 0.0, 1.0))
-				jumper_anim = &"Walk" if t < 0.72 else &"Punch_Cross"
-				jumper_speed_scale = 1.2
-				shot_visible = true
-				shot_pos = Vector3(x + 0.18, 1.52, -35.86)
-				field_value_text = "IN PEDANA"
-			elif t < fly_end:
-				var s: float = clampf((t - wind_end) / (fly_end - wind_end), 0.0, 1.0)
-				jumper_pos = Vector3(-40.75 if foul else -41.05, 0.0, -36.0)
-				jumper_yaw = 0.0
-				jumper_anim = &"Idle"
-				jumper_speed_scale = 1.0
-				shot_visible = true
-				var land_z: float = -36.0 + (3.6 if foul else 0.0)
-				var land_x: float = board_x + mark
-				var apex: float = 1.65 + 2.4 + 0.10 * mark
-				shot_pos = Vector3(
-					lerpf(-40.80, land_x, s),
-					lerpf(1.65, 0.12, s) + 4.0 * (apex - 1.0) * s * (1.0 - s),
-					lerpf(-36.0, land_z, s)
-				)
-				field_value_text = "IN VOLO"
-			else:
-				var land_x: float = board_x + mark
-				var land_z: float = -36.0 + (3.6 if foul else 0.0)
-				jumper_pos = Vector3(-40.75 if foul else -41.05, 0.0, -36.0)
-				jumper_yaw = 0.0
-				jumper_anim = &"Idle"
-				jumper_speed_scale = 1.0
-				shot_visible = true
-				shot_pos = Vector3(land_x, 0.12, land_z)
-				_commit_field_step(step)
-				_sort_field_order()
-				field_landed_mark = land_x
-				field_landed_foul = foul
-				field_value_text = "NULLO" if foul else "%.2f m" % mark
+		var run_end: float = 2.15
+		var fly_end: float = 2.95
+		jumper_yaw = 0.0
+		if t < run_end:
+			var u: float = clampf(t / run_end, 0.0, 1.0)
+			var start_x: float = -36.0
+			var board_x: float = -9.72 if foul else -10.0
+			var x: float = lerpf(start_x, board_x, u * u * 0.35 + u * 0.65)
+			jumper_pos = Vector3(x, 0.0, -14.0)
+			jumper_anim = &"Sprint"
+			jumper_speed_scale = lerpf(0.75, 1.35, u)
+			field_value_text = "RINCORSA"
+		elif t < fly_end:
+			var s: float = clampf((t - run_end) / (fly_end - run_end), 0.0, 1.0)
+			var takeoff_x: float = -9.72 if foul else -10.0
+			var x: float = takeoff_x + mark * s
+			var apex: float = 0.95 + 0.08 * mark
+			var y: float = 4.0 * apex * s * (1.0 - s)
+			jumper_pos = Vector3(x, y, -14.0)
+			jumper_anim = &"Jump_Start" if s < 0.25 else (&"Jump" if s < 0.85 else &"Jump_Land")
+			jumper_speed_scale = 1.0
+			field_value_text = "IN VOLO"
 		else:
-			var run_end: float = 2.15
-			var fly_end: float = 2.95
-			jumper_yaw = 0.0
-			if t < run_end:
-				var u: float = clampf(t / run_end, 0.0, 1.0)
-				var start_x: float = -36.0
-				var board_x: float = -9.72 if foul else -10.0
-				var x: float = lerpf(start_x, board_x, u * u * 0.35 + u * 0.65)
-				jumper_pos = Vector3(x, 0.0, -14.0)
-				jumper_anim = &"Sprint"
-				jumper_speed_scale = lerpf(0.75, 1.35, u)
-				field_value_text = "RINCORSA"
-			elif t < fly_end:
-				var s: float = clampf((t - run_end) / (fly_end - run_end), 0.0, 1.0)
-				var takeoff_x: float = -9.72 if foul else -10.0
-				var x: float = takeoff_x + mark * s
-				var apex: float = 0.95 + 0.08 * mark
-				var y: float = 4.0 * apex * s * (1.0 - s)
-				jumper_pos = Vector3(x, y, -14.0)
-				jumper_anim = &"Jump_Start" if s < 0.25 else (&"Jump" if s < 0.85 else &"Jump_Land")
-				jumper_speed_scale = 1.0
-				field_value_text = "IN VOLO"
-			else:
-				jumper_pos = Vector3((-9.72 if foul else -10.0) + mark, 0.0, -14.0)
-				jumper_anim = &"Jump_Land" if t < fly_end + 0.35 else &"Idle"
-				jumper_speed_scale = 1.0
-				_commit_field_step(step)
-				_sort_field_order()
-				field_landed_mark = (-9.72 if foul else -10.0) + mark
-				field_landed_foul = foul
-				field_value_text = "NULLO" if foul else "%.2f m" % mark
+			jumper_pos = Vector3((-9.72 if foul else -10.0) + mark, 0.0, -14.0)
+			jumper_anim = &"Jump_Land" if t < fly_end + 0.35 else &"Idle"
+			jumper_speed_scale = 1.0
+			_commit_field_step(step)
+			_sort_field_order()
+			field_landed_mark = (-9.72 if foul else -10.0) + mark
+			field_landed_foul = foul
+			field_value_text = "NULLO" if foul else "%.2f m" % mark
 	else:
 		jumper_yaw = 0.0
-		if is_shot:
-			jumper_pos = Vector3(-41.2, 0.0, -36.0)
-			shot_visible = true
-			shot_pos = Vector3(-40.93 + mark, 0.12, -36.0)
-			field_landed_mark = -40.93 + mark
-		else:
-			jumper_pos = Vector3(-10.0 + mark, 0.0, -14.0)
-			field_landed_mark = -10.0 + mark
+		jumper_pos = Vector3(-10.0 + mark, 0.0, -14.0)
+		field_landed_mark = -10.0 + mark
 		jumper_anim = &"Idle"
 		jumper_speed_scale = 1.0
 		_commit_field_step(step)
@@ -520,6 +496,44 @@ func _process_field(dt: float) -> void:
 		_sort_field_order()
 		field_step_t = 0.0
 		field_idx += 1
+
+
+## Dove sta l'atleta quando non lancia (tentativi non animati e fine gara): dietro la pedana, di spalle al settore.
+func _shot_wait_position() -> Vector3:
+	return ShotPutMotion.CENTER + Vector3(-2.2, 0.0, 0.5)
+
+
+## Un passo del getto del peso: il tempo del tentativo decide fase, posa dell'atleta e peso (funzioni pure di
+## ShotPutMotion). Il peso atterra alla misura del DB per costruzione; qui si aggiornano solo lo stato e i testi.
+func _update_shot(step: Dictionary) -> void:
+	var plan: ShotPutMotion.Plan = step["plan"]
+	var t: float = field_step_t
+	shot_plan = plan
+	shot_t = t
+	shot_phase = ShotPutMotion.phase_at(plan, t)
+	var ball: Dictionary = ShotPutMotion.ball_at(plan, t)
+	shot_visible = bool(ball["visible"])
+	shot_pos = ball["pos"]
+	if plan.instant:
+		shot_pose = null
+		jumper_pos = _shot_wait_position()
+		jumper_yaw = PI
+		jumper_anim = &"Idle"
+		jumper_speed_scale = 1.0
+	else:
+		shot_pose = ShotPutMotion.pose_at(plan, t)
+		jumper_pos = shot_pose.root
+		jumper_yaw = shot_pose.yaw
+	if bool(ball["landed"]):
+		_commit_field_step(step)
+		_sort_field_order()
+		field_landed_mark = plan.landing.x
+		field_landed_foul = plan.foul
+		field_value_text = "NULLO" if plan.foul else "%.2f m" % plan.mark
+	elif t >= ShotPutMotion.T_REL:
+		field_value_text = "IN VOLO"
+	else:
+		field_value_text = "IN PEDANA"
 
 
 func _sorted_by_place() -> Array[RunnerData]:
