@@ -27,6 +27,7 @@ var skeleton: Skeleton3D
 var rig_mode: int = RigMode.OFF
 var _ik_arms: TwoBoneIK3D
 var _ik_legs: TwoBoneIK3D
+var _foot_level: FootLevel
 var _targets: Dictionary = {}                    # nome -> Node3D (bersagli IK e poli)
 var _free_bones: Array[int] = []
 
@@ -44,6 +45,11 @@ func setup(skel: Skeleton3D) -> void:
 	_ik_legs = _make_ik("ShotLegsIK", [
 		["thigh_l", "calf_l", "foot_l", "foot_l", "pole_leg_l"],
 		["thigh_r", "calf_r", "foot_r", "foot_r", "pole_leg_r"]])
+	# Dopo l'IK: l'IK posiziona solo la caviglia e il piede seguirebbe l'inclinazione dello stinco (punta in giu', suola dentro la
+	# pedana). Questo modificatore, creato DOPO i due IK (i modificatori girano nell'ordine dei figli), lo rimette orizzontale.
+	_foot_level = FootLevel.new()
+	_foot_level.name = "ShotFootLevel"
+	skeleton.add_child(_foot_level)
 	set_rig_mode(RigMode.OFF)
 
 
@@ -72,6 +78,7 @@ func set_rig_mode(new_mode: int) -> void:
 	_ik_arms.influence = 1.0 if new_mode != RigMode.OFF else 0.0
 	_ik_legs.active = new_mode == RigMode.FULL
 	_ik_legs.influence = 1.0 if new_mode == RigMode.FULL else 0.0
+	_foot_level.active = new_mode == RigMode.FULL
 
 
 ## Applica la posa. Ritorna il modo del rig scelto (il chiamante ferma o riavvia l'AnimationPlayer di conseguenza).
@@ -91,6 +98,8 @@ func apply(p: ShotPutMotion.Pose) -> int:
 		_targets["foot_r"].global_position = p.foot_r
 		_targets["pole_leg_l"].global_position = p.knee_l
 		_targets["pole_leg_r"].global_position = p.knee_r
+		_foot_level.turn_l = p.foot_turn_l
+		_foot_level.turn_r = p.foot_turn_r
 		_reset_free_bones()
 		_apply_torso(p)
 	return wanted
@@ -139,3 +148,26 @@ func _set_global_basis(bone_name: String, delta: Basis) -> void:
 	var local_basis: Basis = parent_global.basis.inverse() * (delta * skeleton.get_bone_global_rest(i).basis)
 	skeleton.set_bone_pose_rotation(i, local_basis.orthonormalized().get_rotation_quaternion())
 	skeleton.set_bone_pose_position(i, skeleton.get_bone_rest(i).origin)
+
+
+## Piedi orizzontali: orientamento globale = orientamento a riposo (suola piatta) ruotato di `turn` attorno alla verticale
+## (positivo = verso la sinistra del corpo). Gira DOPO l'IK delle gambe e legge la posa gia' aggiornata del polpaccio.
+class FootLevel:
+	extends SkeletonModifier3D
+
+	var turn_l: float = 0.12
+	var turn_r: float = -0.12
+
+	func _process_modification() -> void:
+		var skel: Skeleton3D = get_skeleton()
+		if skel == null:
+			return
+		_level(skel, "foot_l", turn_l)
+		_level(skel, "foot_r", turn_r)
+
+	static func _level(skel: Skeleton3D, bone_name: String, turn: float) -> void:
+		var i: int = skel.find_bone(bone_name)
+		var parent: int = skel.get_bone_parent(i)
+		var desired: Basis = Basis(Vector3.UP, turn) * skel.get_bone_global_rest(i).basis
+		var local_basis: Basis = skel.get_bone_global_pose(parent).basis.inverse() * desired
+		skel.set_bone_pose_rotation(i, local_basis.orthonormalized().get_rotation_quaternion())

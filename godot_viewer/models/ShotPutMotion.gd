@@ -56,7 +56,15 @@ const ARM_ELEVATION: float = deg_to_rad(52.0)   # inclinazione del braccio teso 
 const KEY_T: Array = [2.65, 3.50, 3.95, 4.25, 4.60, 4.85, 5.02, 5.20, 5.35, 5.50, 5.90]
 
 # Proporzioni del modello (frazioni dell'altezza H, misurate sul rig Quaternius a riposo, vedi tests/verify_shotput.gd).
-const ANKLE_H: float = 0.0475
+## Caviglia (osso foot) sopra la suola, in frazioni di H: (quota dell'osso + sporgenza della suola sotto lo zero) / altezza della mesh. Maschile e femminile differiscono.
+const ANKLE_H: float = 0.0528
+const ANKLE_H_F: float = 0.0446
+## Quanto le animazioni Walk e Idle abbassano la suola sotto il livello del nodo dell'atleta (frazioni di H), MISURATO nella scena vera
+## (tests/screenshots_shot.gd --soles): senza compenso, in ingresso e in uscita le scarpe entrano nella terra di 3-6 cm.
+const WALK_SINK: float = 0.0326
+const WALK_SINK_F: float = 0.0278
+const IDLE_SINK: float = 0.0357
+const IDLE_SINK_F: float = 0.0171
 const HIP_ABOVE_PELVIS: float = 0.0125
 const LEG_LENGTH: float = 0.486
 const SHOULDER_UP: float = 0.278          # osso del bacino -> spalla, lungo la schiena
@@ -111,6 +119,8 @@ class Pose:
 	var elbow_r: Vector3 = Vector3.ZERO
 	var elbow_l: Vector3 = Vector3.ZERO
 	var ball_off: Vector3 = Vector3.ZERO  # centro del peso - polso destro, mentre lo tiene in mano
+	var foot_turn_l: float = 0.12         # rotazione dei piedi (yaw) rispetto al bacino: punte leggermente in fuori
+	var foot_turn_r: float = -0.12
 
 
 # --- geometria ----------------------------------------------------------------------------------------
@@ -306,7 +316,7 @@ static func _hip_height(plan: Plan, b: Dictionary) -> float:
 	for key: String in ["fl", "fr"]:
 		var f: Vector3 = b[key]
 		var dxz: float = Vector2(p.x - f.x, p.z - f.z).length()
-		var ankle_y: float = CIRCLE_TOP + ANKLE_H * h + f.y
+		var ankle_y: float = CIRCLE_TOP + _ankle_h(plan) * h + f.y
 		best = minf(best, ankle_y + sqrt(maxf(leg * leg - dxz * dxz, 0.04)))
 	return clampf(minf(float(b["py"]) * h, best - HIP_ABOVE_PELVIS * h), 0.38 * h, 0.56 * h)
 
@@ -324,7 +334,7 @@ static func pose_at(plan: Plan, t: float) -> Pose:
 		po.lean = b["lean"]
 		po.twist = b["twist"]
 		po.head_pitch = b["hpitch"]
-		var ankle: float = CIRCLE_TOP + ANKLE_H * h
+		var ankle: float = CIRCLE_TOP + _ankle_h(plan) * h
 		po.foot_l = Vector3(b["fl"].x, ankle + b["fl"].y, b["fl"].z)
 		po.foot_r = Vector3(b["fr"].x, ankle + b["fr"].y, b["fr"].z)
 		var fwd_p: Vector3 = dir_at(po.yaw)
@@ -354,6 +364,7 @@ static func pose_at(plan: Plan, t: float) -> Pose:
 		po.root = Vector3(CENTER.x + SET_X, 0.0, CENTER.z)
 		po.yaw = PI
 		po.mode = Mode.IDLE
+	po.root.y = _ground_y(po.root) + (_idle_sink(plan) if po.mode == Mode.IDLE else _walk_sink(plan)) * h   # suola sul terreno (vedi WALK_SINK)
 	_arms(plan, po, 0.0, Vector3(0.28, 0.12, -0.18), true)
 	return po
 
@@ -405,7 +416,7 @@ static func _apply_exit(plan: Plan, po: Pose, t: float) -> void:
 	po.mode = Mode.WALK
 	po.arms_ik = false
 	po.ball_in_hand = false
-	po.root = Vector3(lerpf(last.root.x, CENTER.x + EXIT_X, e), 0.0, lerpf(last.root.z, CENTER.z + 0.3, e))
+	po.root = Vector3(lerpf(last.root.x, CENTER.x + EXIT_X, e), _ground_y(Vector3(lerpf(last.root.x, CENTER.x + EXIT_X, e), 0.0, lerpf(last.root.z, CENTER.z + 0.3, e))) + _walk_sink(plan) * plan.height, lerpf(last.root.z, CENTER.z + 0.3, e))
 	po.yaw = lerpf(last.yaw, 3.0 * PI, smoothstep(0.0, 0.4, u))
 	po.walk_speed = absf(CENTER.x + EXIT_X - last.root.x) * 6.0 * u * (1.0 - u) / EXIT_TIME
 	po.pelvis_y = 0.52 * plan.height
@@ -415,3 +426,21 @@ static func _apply_exit(plan: Plan, po: Pose, t: float) -> void:
 
 static func _shoulder_side(plan: Plan) -> float:
 	return SHOULDER_SIDE_F if plan.female else SHOULDER_SIDE
+
+
+static func _ankle_h(plan: Plan) -> float:
+	return ANKLE_H_F if plan.female else ANKLE_H
+
+
+static func _walk_sink(plan: Plan) -> float:
+	return WALK_SINK_F if plan.female else WALK_SINK
+
+
+static func _idle_sink(plan: Plan) -> float:
+	return IDLE_SINK_F if plan.female else IDLE_SINK
+
+
+## Quota del terreno sotto un punto: la pedana (CIRCLE_TOP) dentro il cerchio, la terra battuta (0) fuori, con un raccordo di pochi cm.
+static func _ground_y(p: Vector3) -> float:
+	var r: float = Vector2(p.x - CENTER.x, p.z - CENTER.z).length()
+	return CIRCLE_TOP * (1.0 - smoothstep(CIRCLE_RADIUS - 0.05, CIRCLE_RADIUS + 0.10, r))

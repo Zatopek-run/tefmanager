@@ -379,7 +379,7 @@ func _init_field_queue(race_id: int) -> void:
 				continue
 			for att: Dictionary in r.attempts:
 				if int(att.get("round", 0)) == rnd:
-					var anim_jump: bool = r.is_player
+					var anim_jump: bool = r.is_player or event_kind == "Getto del Peso"   # peso: si vedono TUTTI i lanci
 					var step: Dictionary = {
 						"runner": r,
 						"round": rnd,

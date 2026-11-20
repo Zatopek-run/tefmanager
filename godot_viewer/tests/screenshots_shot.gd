@@ -7,6 +7,7 @@ extends SceneTree
 
 const SHOTS: Array[float] = [0.8, 2.0, 3.0, 3.8, 4.2, 4.55, 4.8, 5.0, 5.15, 5.3, 5.55, 5.9]
 const SHOTS_DEBUG: Array[float] = [3.0, 3.8, 4.1, 4.4, 4.65, 4.85, 5.0, 5.1, 5.25, 5.5, 6.0, 7.5]
+const SHOTS_WALK: Array[float] = [0.7, 1.3, 1.8, 2.2, 8.8, 9.3, 9.8]   # ingresso a piedi, rotazione sul posto, uscita
 
 var _out_dir: String = "user://shots"
 var _stage: int = 0
@@ -18,6 +19,12 @@ var _after: Array[float] = [0.2, 1.0]
 var _after_stage: int = 0
 var _attempt_plan: ShotPutMotion.Plan = null
 var _gap_printed: bool = false
+var _pano_frames: int = 0
+var _min_sole: float = 1e9
+var _sole_n: int = 0
+var _dbg_once: bool = false
+var _min_by_mode: Dictionary = {}
+var _h_seen: float = 1.8
 
 
 func _process(_delta: float) -> bool:
@@ -74,8 +81,44 @@ func _process(_delta: float) -> bool:
 	if _debug and _debug_cam != null and rc.shot_pose != null:
 		var p: ShotPutMotion.Pose = rc.shot_pose
 		var side: Vector3 = Vector3(2.4, 1.5, 4.2)       # dal lato destro dell'atleta (lato del braccio che lancia)
-		_debug_cam.look_at_from_position(ShotPutMotion.CENTER + side, p.root + Vector3(0.0, 1.0, 0.0), Vector3.UP)
+		if OS.get_cmdline_user_args().has("--feet"):
+			side = Vector3(1.5, 0.45, 2.3)               # primo piano sui piedi (scarpe e appoggio sulla pedana)
+		_debug_cam.look_at_from_position(ShotPutMotion.CENTER + side, p.root + Vector3(0.0, 0.35 if OS.get_cmdline_user_args().has("--feet") else 1.0, 0.0), Vector3.UP)
+	if _pano_frames > 0:
+		_pano_frames += 1
+		if _pano_frames > 6:
+			_save("panorama")
+			quit(0)
+			return true
+		return false
 	var t: float = rc.shot_t
+	if not _dbg_once:
+		_dbg_once = true
+		print("dbg: primo fotogramma t=%.2f runners=%d active=%s" % [t, _scene.get_node("Runners").get_child_count(), str(rc.active_jumper != null)])
+	if OS.get_cmdline_user_args().has("--soles") and (t < ShotPutMotion.T_SET or t > plan.t_exit + 0.3) and t < plan.t_exit + 1.6:
+		for c: Node in _scene.get_node("Runners").get_children():
+			if c.get("data") == rc.active_jumper:
+				var sk: Skeleton3D = c.get("_skeleton")
+				var sc: float = float(c.get("_height_m")) / 1.8196
+				var md: int = rc.shot_pose.mode if rc.shot_pose != null else -1
+				for s: String in ["l", "r"]:
+					var ball: Vector3 = sk.global_transform * sk.get_bone_global_pose(sk.find_bone("ball_" + s)).origin
+					var sole_y: float = ball.y - (0.0247 if rc.active_jumper.gender == "M" else 0.0232) * sc
+					_min_by_mode[md] = minf(float(_min_by_mode.get(md, 1e9)), sole_y)
+					_h_seen = float(c.get("_height_m"))
+				_sole_n += 1
+		if _sole_n > 0 and (_sole_n % 20 == 0 or (t >= 2.62 and t < 2.65)):
+			print("suola piu' bassa per modo (0 cammino, 1 attesa): ", _min_by_mode, "  H=", _h_seen, "  sesso ", rc.active_jumper.gender)
+	if OS.get_cmdline_user_args().has("--panorama") and t >= plan.t_land + 1.0:
+		# panoramica alta sul settore: segni di tutti i lanci gia' fatti e arco del migliore
+		(_scene.get_node("Cameras") as Node).set_process(false)
+		var pcam: Camera3D = Camera3D.new()
+		_scene.add_child(pcam)
+		pcam.fov = 55.0
+		pcam.make_current()
+		pcam.look_at_from_position(ShotPutMotion.CENTER + Vector3(-5.0, 9.0, 15.0), ShotPutMotion.CENTER + Vector3(13.0, 0.0, 0.0), Vector3.UP)
+		_pano_frames = 1
+		return false
 	if not _gap_printed and t >= ShotPutMotion.T_REL - 0.08 and t < ShotPutMotion.T_REL:
 		# scarto fra il peso in mano (polso reale dopo l'IK + scarto voluto) e il punto R da cui parte il volo
 		for c: Node in _scene.get_node("Runners").get_children():
@@ -84,7 +127,7 @@ func _process(_delta: float) -> bool:
 				if ball != null and ball.visible:
 					print("scarto peso in mano - R al rilascio: %.1f cm" % (ball.global_position.distance_to(plan.release) * 100.0))
 					_gap_printed = true
-	var list: Array[float] = SHOTS_DEBUG if _debug else SHOTS
+	var list: Array[float] = SHOTS_WALK if OS.get_cmdline_user_args().has("--walk") else (SHOTS_DEBUG if _debug else SHOTS)
 	if _stage < list.size() and t >= list[_stage]:
 		_save("t%.2f" % list[_stage])
 		_stage += 1

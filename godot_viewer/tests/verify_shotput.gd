@@ -205,7 +205,10 @@ func _check_controller() -> void:
 			var pos: Vector3 = landed[i]["pos"]
 			var radial: float = Vector2(pos.x - ShotPutMotion.CENTER.x, pos.z - ShotPutMotion.CENTER.z).length() - ShotPutMotion.CIRCLE_RADIUS
 			_check(absf(radial - float(steps[i]["mark"])) < 0.0005, "gara %d, prova %d: il peso finisce a %.4f m (DB %.2f m)" % [race_id, i, radial, float(steps[i]["mark"])])
-		_check(animated == 6, "gara %d: 6 prove animate per l'atleta del club (%d)" % [race_id, animated])
+		var expected_steps: int = 0
+		for st2: Dictionary in steps:
+			expected_steps += 1
+		_check(animated == expected_steps and expected_steps >= 24, "gara %d: tutti i %d lanci sono animati (%d)" % [race_id, expected_steps, animated])
 		var best: float = 0.0
 		for r: RunnerData in rc.runners:
 			best = maxf(best, r.best_mark)
