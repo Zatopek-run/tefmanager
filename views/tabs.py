@@ -1360,7 +1360,7 @@ class StaffTab(QWidget):
         ch.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
         ch.sectionClicked.connect(self._on_coach_header_clicked)
         coach_layout.addWidget(self.coach_table)
-        root.addWidget(coach_panel, stretch=3)
+        root.addWidget(coach_panel, stretch=2)
 
         panel = QFrame()
         panel.setObjectName("SectionPanel")
@@ -1382,11 +1382,10 @@ class StaffTab(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
         panel_layout.addWidget(self.table)
-        root.addWidget(panel, stretch=1)
+        root.addWidget(panel, stretch=3)  # 9 candidati dello staff (E.1): serve più altezza di prima
 
     def refresh(self, state: GameState) -> None:
         self.track_label.setText(
