@@ -52,7 +52,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 1 | Meteo (Sereno indoor, altrimenti `r.choice`), stato pista, `is_home` | `:710-719`, `:708` |
 | 2 | Per divisione M poi F, per evento (ordine `active_events`: 100m, 400m, **800m**, 1500m, Lungo, Peso in Carriera; l'800m è stato inserito il 2026-11-19 e sposta la sequenza dell'RNG di ogni partita): se nessun convocato o infortunato → solo punti rivali | `:733-743` |
 | 3 | Atteggiamento, vento (se l'evento è sensibile), rischio ritiro (`r.random() < injury_chance`) | `:745-761` |
-| 4 | Punteggio giocatore (`_compute_athlete_event_score` + atteggiamento + σ + casa +1,0) → misura | `:775-783` |
+| 4 | Punteggio giocatore (`_compute_athlete_event_score` + atteggiamento + piano gara B.1 / bonus tecnica B.2 + σ + casa +1,0) → misura. **Solo in lungo/peso con rischio ≠ «Sicuro» (B.2): una `r.random()` in più subito dopo la misura** (nullo: misura −`FIELD_FOUL_LOSS`); con «Sicuro» l'ordine delle chiamate è invariato | `:775-783` |
 | 5 | Atleti rivali (uno per società), PB rivale se vento legale | `:801-820` |
 | 6 | Ordinamento, piazzamenti, **punti squadra** `TEAM_POINTS` | `:822-832` |
 | 7 | PB, record sociale, momento storico (solo vento legale e non ritirato) | `:834-888` |

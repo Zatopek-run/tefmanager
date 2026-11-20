@@ -43,6 +43,9 @@ from models.entities import (
     LEAGUE_PLACE_SLOTS,
     KICK_EFFECTS,
     PACE_EFFECTS,
+    FIELD_FOUL_LOSS,
+    FIELD_RISK_EFFECTS,
+    FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
     STRATEGY_FACTOR_FLOOR,
     STRATEGY_STAMINA_REF,
@@ -52,6 +55,7 @@ from models.entities import (
     TIER_CONFIG,
     YOUTH_TRAINING_MULT,
     RaceAttitude,
+    FieldRisk,
     RaceKick,
     RacePace,
     Athlete,
@@ -678,6 +682,22 @@ def strategy_label(pace: RacePace, kick: RaceKick) -> str:
     return f"Ritmo {pace.value}, scatto: {kick.value}"
 
 
+def field_risk_effect(event_def: EventDefinition, risk: FieldRisk) -> Tuple[float, float]:
+    """(punti di punteggio, probabilità di tentativo nullo) del rischio scelto in un concorso (B.2).
+
+    I punti di tecnica del piano valgono quanto pesa la tecnica nell'evento (lungo e peso: 0,35). Funzione pura.
+    """
+    technique_points, foul_chance = FIELD_RISK_EFFECTS[risk]
+    return technique_points * event_def.weights.get("technique", 0.0), foul_chance
+
+
+def field_risk_label(risk: FieldRisk, fouled: bool = False) -> str:
+    """Testo per i risultati; vuoto con «Sicuro»."""
+    if risk == FieldRisk.SICURO:
+        return ""
+    return f"Rischio {risk.value}" + (", tentativo nullo" if fouled else "")
+
+
 def _score_place(
     team_points: Dict[str, int], meet_places: Dict[str, List[int]], team: str, place: int
 ) -> None:
@@ -834,6 +854,12 @@ def simulate_competition(
                 pace, kick = state.strategy_for(event_name)
                 strategy_score, strategy_fatigue = race_strategy_effect(player_athlete.stamina, state.tier, pace, kick)
                 strategy_text = strategy_label(pace, kick)
+            risk = FieldRisk.SICURO
+            foul_chance = 0.0
+            if event_name in FIELD_STRATEGY_EVENTS:  # rischio nei concorsi (B.2)
+                risk = state.risk_for(event_name)
+                strategy_score, foul_chance = field_risk_effect(event_def, risk)
+                strategy_text = field_risk_label(risk)
 
             wind_ms: Optional[float] = (
                 _roll_meet_wind(weather, state.season_phase, r) if event_def.wind_affected else None
@@ -872,6 +898,10 @@ def simulate_competition(
                 if is_home:
                     p_score += 1.0  # home crowd
                 p_val, p_disp = _score_to_mark(event_def, p_score, wind_ms, gender=gender)
+                if foul_chance > 0 and r.random() < foul_chance:  # nullo: il tentativo migliore va perso (B.2)
+                    p_val *= 1.0 - FIELD_FOUL_LOSS
+                    p_disp = f"{p_val:.2f}{event_def.unit}"
+                    strategy_text = field_risk_label(risk, fouled=True)
 
             standings.append(
                 EventStanding(

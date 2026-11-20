@@ -206,6 +206,26 @@ STRATEGY_STAMINA_REF: Dict[CompetitionTier, int] = {
 STRATEGY_STAMINA_SPAN = 30
 STRATEGY_FACTOR_FLOOR = -0.5
 
+# Rischio nei concorsi (B.2): lungo e peso. Il modello non simula i singoli tentativi (la vista li ricava dal risultato),
+# quindi il «rischio» è una scelta per evento: un bonus di tecnica (punti di tecnica × peso della tecnica nell'evento)
+# contro una probabilità di tentativo nullo. Un nullo fa perdere il tentativo migliore: la misura scende di una quota
+# fissa (si ripiega sul successivo). Una sola estrazione RNG, e solo se il rischio non è «Sicuro».
+# CIFRE PROVVISORIE: il bonus e le probabilità sono del piano; FIELD_FOUL_LOSS è mia, da misurare e confermare (Q24).
+class FieldRisk(str, Enum):
+    SICURO = "Sicuro"
+    BILANCIATO = "Bilanciato"
+    AGGRESSIVO = "Aggressivo"
+
+
+FIELD_STRATEGY_EVENTS: Tuple[str, ...] = ("Salto in Lungo", "Getto del Peso")
+# punti di tecnica, probabilità di nullo
+FIELD_RISK_EFFECTS: Dict[FieldRisk, Tuple[int, float]] = {
+    FieldRisk.SICURO: (0, 0.0),
+    FieldRisk.BILANCIATO: (1, 0.05),
+    FieldRisk.AGGRESSIVO: (3, 0.15),
+}
+FIELD_FOUL_LOSS = 0.03  # quota della misura persa con un nullo (migliore → secondo tentativo)
+
 # Bonus al bersaglio di forma per la fase «Gara (Picco)», solo nel tick che precede una settimana di gara
 # (la forma usata in gara è quella calcolata nel tick precedente). Minore del +9 dello Scarico: il picco
 # non toglie la fatica, quindi è più debole del tapering vero e proprio.
@@ -1100,6 +1120,13 @@ class GameState:
         except ValueError:
             kick = RaceKick.NESSUNO
         return pace, kick
+
+    def risk_for(self, event_name: str) -> FieldRisk:
+        """Rischio scelto per un concorso (lungo/peso, B.2); assente o sconosciuto → Sicuro."""
+        try:
+            return FieldRisk(self.race_strategy.get(event_name, {}).get("risk", FieldRisk.SICURO.value))
+        except ValueError:
+            return FieldRisk.SICURO
 
     @property
     def next_meet_is_home(self) -> bool:

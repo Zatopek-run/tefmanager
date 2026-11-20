@@ -41,8 +41,10 @@ from models.entities import (
     VERTICAL_SLICE_EVENTS,
     YOUTH_SQUAD_MAX,
     RaceAttitude,
+    FieldRisk,
     RaceKick,
     RacePace,
+    FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
     Specialty,
     Athlete,
@@ -579,6 +581,13 @@ class GameController(QObject):
             return
         self.state.race_strategy[event_name] = {"pace": pace.value, "kick": kick.value}
         self.status_message.emit(f"{event_name}: ritmo {pace.value}, scatto {kick.value}.")
+
+    def set_field_risk(self, event_name: str, risk: FieldRisk) -> None:
+        """Rischio di un concorso (lungo/peso, B.2); si salva come il piano gara (stessa colonna JSON)."""
+        if event_name not in FIELD_STRATEGY_EVENTS:
+            return
+        self.state.race_strategy[event_name] = {"risk": risk.value}
+        self.status_message.emit(f"{event_name}: rischio {risk.value}.")
 
     def set_event_attitude(self, event_name: str, attitude: RaceAttitude) -> None:
         self.state.event_attitude[event_name] = attitude.value

@@ -246,3 +246,20 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 **Scostamenti dal piano (confermati dall'utente il 2026-11-20, insieme alle cifre):** «Veloce + Ultimo giro» = +7 punti e **+25** di fatica (il piano scrive +23, ma le sue cifre sono 10 + 15); «Lento» ha fatica −4 (il piano dice solo «conserva energia»: cifra mia); UI nella scheda Calendario accanto all'atteggiamento e non in `athlete_dialog.py` (il piano è per evento, non per atleta); schema v14 e non v12; il piano è per evento, M e F insieme (come `event_attitude`).
 
 **Cifre confermate** (`entities.py`, blocco «Piano gara»; tabella in `BALANCE.md`, sezione C): `PACE_EFFECTS`, `KICK_EFFECTS`, `STRATEGY_STAMINA_REF` (47/59/72/84 = resistenza media dei mezzofondisti generati per categoria), `STRATEGY_STAMINA_SPAN` 30, `STRATEGY_FACTOR_FLOOR` −0,5.
+
+
+## Q24 — Rischio nei concorsi (PIANOLAVORO B.2) — 🟡 IN CORSO dal 2026-11-20, **`FIELD_FOUL_LOSS` da confermare**
+
+**Decisione dell'utente (2026-11-20):** «solo rischio, nel modello». Il piano parlava di «altezza/peso iniziale» (non esiste nel lungo e nel peso) e di «rischio fallo» (il modello non simula i tentativi: la vista li ricava dal risultato). Quindi: una scelta per evento (Sicuro/Bilanciato/Aggressivo, M e F insieme come l'atteggiamento) con bonus di tecnica e probabilità di nullo del piano; il nullo toglie una quota fissa dalla misura.
+
+**Scostamenti dal piano:** niente altezza/peso iniziale; nessuna migrazione (la scelta sta nella colonna `race_strategy_json` di v14, chiave `risk`); i «punti di tecnica» sono convertiti in punteggio col peso della tecnica nell'evento (0,35 in entrambi); UI nella scheda Calendario e non in `athlete_dialog.py`; le viste dei tentativi non sono toccate.
+
+**Cifra mia, provvisoria:** `FIELD_FOUL_LOSS` = 3% (quota di misura persa con un nullo: ripiego sul secondo tentativo). Misure (40 partite da 36 settimane, Provinciale, stesso rischio per lungo e peso, piazzamento medio, 1° = 1):
+
+| `FIELD_FOUL_LOSS` | Sicuro | Bilanciato | Aggressivo |
+| --- | ---: | ---: | ---: |
+| 3% | 2,79 | 2,65 | 2,60 |
+| 6% | 2,79 | 2,67 | 2,67 |
+| 10% | 2,79 | 2,71 | 2,78 |
+
+Con 3% rischiare conviene sempre e Aggressivo è il migliore; con 6% Bilanciato e Aggressivo si equivalgono; con 10% Aggressivo non conviene più. Il campione è piccolo (differenze di ~0,05 posizioni sono rumore). **Da decidere:** tenere il 3% (rischio quasi sempre conveniente) o salire verso il 6% (scelta davvero tattica)? Chiusa la decisione, la cifra va in `BALANCE.md`.

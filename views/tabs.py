@@ -53,8 +53,10 @@ from models.entities import (
     GameState,
     PeriodizationPhase,
     RaceAttitude,
+    FieldRisk,
     RaceKick,
     RacePace,
+    FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
     SeasonOutcome,
     Specialty,
@@ -893,7 +895,7 @@ class CalendarTab(QWidget):
 
         self.lineup_table = QTableWidget(0, 6)
         self.lineup_table.setHorizontalHeaderLabels(
-            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato", "Atteggiamento", "Piano gara (800m/1500m)"]
+            ["Gara", "Specialità", "Fattori Chiave", "Atleta Convocato", "Atteggiamento", "Piano gara / Rischio"]
         )
         self.lineup_table.setAlternatingRowColors(True)
         self.lineup_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -993,6 +995,25 @@ class CalendarTab(QWidget):
         layout.addWidget(kick_combo)
         return box
 
+    def _build_risk_widget(self, state: GameState, event_name: str) -> QWidget:
+        """Rischio di un concorso (B.2): un solo menu a tendina."""
+        combo = QComboBox()
+        for risk in FieldRisk:
+            combo.addItem(f"Rischio {risk.value}", risk)
+        combo.setCurrentIndex(max(0, combo.findData(state.risk_for(event_name))))
+        combo.setToolTip(
+            "Bilanciato: +1 tecnica, 5% di tentativo nullo. Aggressivo: +3 tecnica, 15% di nullo. "
+            "Un nullo fa perdere il tentativo migliore: la misura scende un poco."
+        )
+        combo.currentIndexChanged.connect(
+            lambda _i, en=event_name: self.controller.set_field_risk(en, combo.currentData())
+        )
+        box = QWidget()
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.addWidget(combo)
+        return box
+
     def _pick_lineup_athlete(self, event_name: str, gender: str, combo: QComboBox) -> None:
         """Convoca l'atleta scelto; se il controller rifiuta (tetto di gare, età) rimette la scelta di prima."""
         ok = self.controller.set_event_athlete(event_name, combo.currentData(), gender=gender)
@@ -1085,6 +1106,8 @@ class CalendarTab(QWidget):
 
                 if event_name in STRATEGY_EVENTS:
                     self.lineup_table.setCellWidget(row, 5, self._build_strategy_widget(state, event_name))
+                elif event_name in FIELD_STRATEGY_EVENTS:
+                    self.lineup_table.setCellWidget(row, 5, self._build_risk_widget(state, event_name))
 
         league_rows = state.league_standings()
         if state.game_mode == "career":

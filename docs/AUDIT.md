@@ -166,6 +166,7 @@ Categorie: **S** perdita save · **C** crash · **R** regole incoerenti · **B**
 | R16 | R | Il prototipo non finisce; l'età cresce solo in Carriera: promozione vivaio a 18 anni e declino non avvengono nel Prototipo | `entities.py:934`, `simulation.py:1383` |
 | R17 | T | (`hash()` salato per la fascia del potenziale: ✅ risolto il 2026-11-20, A.3); `godot_viewer/.godot/imported/*` tracciato; un solo file di test da 2.187 righe | `dialogs.py:55` |
 | R18 | B | Pool mercato e risultati scouting solo in memoria: chiudere e riaprire rigenera il mercato (ritiro dei dadi gratuito) | `game_controller.py:119-121` |
+| R19 | R | I tentativi di lungo e peso mostrati dalle viste (PyQt e Godot) sono inventati a posteriori da `generate_attempts` (15% di nulli a caso) e **non** coincidono col «tentativo nullo» del rischio B.2 deciso dal modello (2026-11-20; visibile solo nel testo del risultato). L'esito resta quello del modello | `views/race_viewer.py:128`, `simulation.py` |
 
 ## 6. Registro NON TROVATO (con il pattern usato)
 
