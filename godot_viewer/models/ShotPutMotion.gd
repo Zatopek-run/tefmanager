@@ -74,6 +74,26 @@ const NECK_UP: float = 0.314
 const ARM_LENGTH: float = 0.272           # spalla -> polso
 const HAND_TO_BALL: float = 0.09          # polso -> centro del peso (m, a braccio teso)
 
+## Piede d'appoggio (sinistro) che pivota sulla PUNTA della scarpa con il tallone sollevato. Misurato sul rig a riposo (tests/verify_shotput.gd):
+## orizzontale caviglia -> punta della scarpa (0,2195 m su 1,8196 e 0,2108 su 1,7751) e quota della caviglia sopra il punto della punta (0,0713 e 0,0559 m).
+## La quota della punta sopra la suola e' ANKLE_H - FOOT_TIP_DOWN (somma = caviglia da terra a piede piatto).
+const FOOT_TIP_FWD: float = 0.1206        # frazioni di H, maschile; femminile FOOT_TIP_FWD_F
+const FOOT_TIP_FWD_F: float = 0.1188
+const FOOT_TIP_DOWN: float = 0.0392
+const FOOT_TIP_DOWN_F: float = 0.0315
+const FOOT_TURN_L: float = 0.12           # yaw del piede sinistro rispetto al bacino (punta leggermente in fuori), come `Pose.foot_turn_l`
+const LEAVE_LIFT: float = 0.04            # m: quando il piede lascia la pedana si solleva di piu' della punta (non striscia sul terreno)
+const LEAVE_LEAD: float = 0.08            # s: il piede si alza di LEAVE_LIFT prima di iniziare a spostarsi verso la posizione di potenza
+
+## Presa della mano destra (0 = aperta, 1 = chiusa attorno al peso, negativo = dita distese). Il peso e' in mano fino a T_REL.
+const GRIP_HOLD: float = 1.0
+const GRIP_FLICK: float = -0.30           # al rilascio le dita si distendono di scatto (il peso parte dalle dita, non dal palmo)
+const GRIP_FLICK_IN: float = 0.10         # s: durata della chiusura -> distensione che precede il rilascio
+const GRIP_RELAX: float = 0.30            # dopo il rilascio la mano si rilassa
+const GRIP_RELAX_TIME: float = 0.35
+const GRIP_LEFT: float = 0.30             # mano sinistra: leggermente chiusa, rilassata
+const PALM_GAP: float = 0.012             # m: spessore del palmo fra lo scheletro della mano e la superficie che tocca il peso
+
 static var _tables: Dictionary = {}
 
 
@@ -121,6 +141,12 @@ class Pose:
 	var ball_off: Vector3 = Vector3.ZERO  # centro del peso - polso destro, mentre lo tiene in mano
 	var foot_turn_l: float = 0.12         # rotazione dei piedi (yaw) rispetto al bacino: punte leggermente in fuori
 	var foot_turn_r: float = -0.12
+	var foot_pitch_l: float = 0.0         # tallone sollevato (rad, > 0: la punta resta a terra, la caviglia sale)
+	var foot_pitch_r: float = 0.0
+	var hand_aim: float = 1.0             # 0..1: quanto la mano destra e' orientata con il palmo verso il peso (svanisce dopo il rilascio)
+	var ball_radius: float = BALL_RADIUS_M
+	var grip_r: float = GRIP_HOLD         # presa della mano destra (vedi GRIP_*)
+	var grip_l: float = GRIP_LEFT
 
 
 # --- geometria ----------------------------------------------------------------------------------------
@@ -228,7 +254,9 @@ static func _table(foul: bool) -> Dictionary:
 		"hpitch": [0.25, 0.25, 0.10, 0.05, 0.00, 0.00, -0.05, -0.30, -0.15, 0.00, 0.00],
 		"flx":    [-0.74, -0.74, -0.72, -0.66, -0.60, -0.10, 0.62, 0.80, 0.80, 0.20, 0.30],
 		"flz":    [0.22, 0.22, 0.24, 0.22, 0.20, -0.18, -0.22, -0.22, -0.22, -0.30, -0.28],
-		"fll":    [0.0, 0.0, 0.0, 0.03, 0.0, 0.18, 0.02, 0.0, 0.0, 0.10, 0.0],
+		"fll":    [0.0, 0.0, 0.0, 0.03, 0.13, 0.18, 0.02, 0.0, 0.0, 0.10, 0.0],
+		# tallone sinistro sollevato (rad): sale mentre il corpo inizia a girare, al massimo quando il piede sta per staccarsi
+		"flp":    [0.0, 0.0, 0.12, 0.40, 0.55, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0],
 		"frx":    [-0.74, -0.74, -0.80, -0.80, -0.35, -0.05, -0.02, 0.28, 0.38, 0.60, 0.60],
 		"frz":    [-0.22, -0.22, -0.25, -0.30, 0.45, 0.10, 0.04, 0.14, 0.25, 0.30, 0.30],
 		"frl":    [0.0, 0.0, 0.0, 0.05, 0.30, 0.0, 0.0, 0.10, 0.22, 0.0, 0.0],
@@ -278,18 +306,62 @@ static func _sample(vals: Array, t: float) -> float:
 static func _keyed(plan: Plan, t: float) -> Dictionary:
 	var tb: Dictionary = _table(plan.foul)
 	var w: float = smoothstep(float(KEY_T[5]), float(KEY_T[7]), t)    # il corpo si gira verso il punto di caduta
+	var psi: float = PI + _sample(tb["a"], t) + plan.land_angle * w
+	# Piede sinistro: finche' e' d'appoggio la punta della scarpa sta ferma a terra e il piede gira attorno ad essa (tallone su);
+	# poi si stacca e va ai tasti (posizione mescolata fra KEY_T[3] + LEAVE_LEAD e KEY_T[4], dopo che il piede si e' alzato di LEAVE_LIFT: non striscia).
+	var phi: float = maxf(_sample(tb["flp"], t), 0.0)
+	var leave: float = smoothstep(float(KEY_T[3]) + LEAVE_LEAD, float(KEY_T[4]), t)
+	var bump: float = LEAVE_LIFT * smoothstep(float(KEY_T[3]), float(KEY_T[3]) + LEAVE_LEAD, t) * (1.0 - leave)   # il piede si alza prima di spostarsi
+	var pivot_xz: Vector3 = _pivot_tip(plan) - dir_at(psi + FOOT_TURN_L) * foot_tip_reach(plan, phi)
+	var keyed_xz: Vector3 = Vector3(CENTER.x + _sample(tb["flx"], t), 0.0, CENTER.z + _sample(tb["flz"], t))
+	var fl_xz: Vector3 = pivot_xz.lerp(keyed_xz, leave)
+	var fl_lift: float = maxf(maxf(_sample(tb["fll"], t), 0.0), heel_lift(plan, phi)) + bump
 	return {
 		"P": Vector3(CENTER.x + _sample(tb["px"], t), 0.0, CENTER.z + _sample(tb["pz"], t)),
-		"psi": PI + _sample(tb["a"], t) + plan.land_angle * w,
+		"psi": psi,
 		"py": _sample(tb["py"], t),
 		"lean": _sample(tb["lean"], t),
 		"twist": _sample(tb["twist"], t),
 		"hpitch": _sample(tb["hpitch"], t),
-		"fl": Vector3(CENTER.x + _sample(tb["flx"], t), maxf(_sample(tb["fll"], t), 0.0), CENTER.z + _sample(tb["flz"], t)),
+		"fl": Vector3(fl_xz.x, fl_lift, fl_xz.z),
+		"flp": phi,
 		"fr": Vector3(CENTER.x + _sample(tb["frx"], t), maxf(_sample(tb["frl"], t), 0.0), CENTER.z + _sample(tb["frz"], t)),
 		"armr": _sample(tb["armr"], t),
 		"lh": Vector3(_sample(tb["lhf"], t), _sample(tb["lhl"], t), _sample(tb["lhu"], t)),
 	}
+
+
+## Distanza orizzontale caviglia -> punta della scarpa con il piede inclinato di `phi` (tallone su, punta a terra).
+static func foot_tip_reach(plan: Plan, phi: float) -> float:
+	var h: float = plan.height
+	var l: float = (FOOT_TIP_FWD_F if plan.female else FOOT_TIP_FWD) * h
+	var d: float = (FOOT_TIP_DOWN_F if plan.female else FOOT_TIP_DOWN) * h
+	return l * cos(phi) - d * sin(phi)
+
+
+## Di quanto la caviglia sta sopra la quota a piede piatto quando il piede gira di `phi` attorno alla punta (la punta resta a terra).
+## E' anche la quota minima della caviglia di un piede inclinato: sotto, la punta entrerebbe nella pedana.
+static func heel_lift(plan: Plan, phi: float) -> float:
+	var h: float = plan.height
+	var l: float = (FOOT_TIP_FWD_F if plan.female else FOOT_TIP_FWD) * h
+	return l * sin(phi) - _ankle_h(plan) * h * (1.0 - cos(phi))
+
+
+## Punto d'appoggio del piede sinistro (la punta della scarpa, a terra): ricavato dalla posizione iniziale della caviglia, a piede piatto.
+static func _pivot_tip(plan: Plan) -> Vector3:
+	var tb: Dictionary = _table(plan.foul)
+	var ankle0: Vector3 = Vector3(CENTER.x + float(tb["flx"][0]), 0.0, CENTER.z + float(tb["flz"][0]))
+	return ankle0 + dir_at(PI + FOOT_TURN_L) * foot_tip_reach(plan, 0.0)
+
+
+## Presa della mano destra nel tempo: chiusa fino a poco prima del rilascio, poi le dita si distendono di scatto e la mano si rilassa.
+static func grip_at(t: float) -> float:
+	var flick_start: float = T_REL - GRIP_FLICK_IN
+	if t <= flick_start:
+		return GRIP_HOLD
+	if t <= T_REL:
+		return lerpf(GRIP_HOLD, GRIP_FLICK, smoothstep(flick_start, T_REL, t))
+	return lerpf(GRIP_FLICK, GRIP_RELAX, smoothstep(T_REL, T_REL + GRIP_RELAX_TIME, t))
 
 
 ## Punto di rilascio: centro del peso con il braccio destro teso, calcolato dalla posa a T_REL (mai dallo scheletro).
@@ -338,6 +410,10 @@ static func pose_at(plan: Plan, t: float) -> Pose:
 		po.foot_l = Vector3(b["fl"].x, ankle + b["fl"].y, b["fl"].z)
 		po.foot_r = Vector3(b["fr"].x, ankle + b["fr"].y, b["fr"].z)
 		var fwd_p: Vector3 = dir_at(po.yaw)
+		po.foot_pitch_l = b["flp"]
+		po.grip_r = grip_at(t)
+		po.hand_aim = 1.0 - smoothstep(T_REL, T_REL + GRIP_RELAX_TIME, t)
+		po.ball_radius = plan.ball_r
 		po.knee_l = po.foot_l + fwd_p * 0.55 + Vector3.UP * 0.40
 		po.knee_r = po.foot_r + fwd_p * 0.55 + Vector3.UP * 0.40
 		_arms(plan, po, float(b["armr"]), b["lh"], t < T_REL)
@@ -366,6 +442,7 @@ static func pose_at(plan: Plan, t: float) -> Pose:
 		po.mode = Mode.IDLE
 	po.root.y = _ground_y(po.root) + (_idle_sink(plan) if po.mode == Mode.IDLE else _walk_sink(plan)) * h   # suola sul terreno (vedi WALK_SINK)
 	_arms(plan, po, 0.0, Vector3(0.28, 0.12, -0.18), true)
+	po.ball_radius = plan.ball_r
 	return po
 
 
@@ -403,6 +480,7 @@ static func _arms(plan: Plan, po: Pose, arm_r: float, lh: Vector3, ball_in_hand:
 		var r: float = clampf(arm_r - 1.0, 0.0, 1.0)
 		po.hand_r = wrist_ext.lerp(wrist_relax, r)
 		po.elbow_r = elbow_ext.lerp(elbow_relax, r)
+		po.ball_off = plan.release - wrist_ext     # il peso non c'e' piu': serve solo a orientare il palmo mentre la mano si rilassa
 	po.ball_in_hand = ball_in_hand and arm_r <= 1.0
 	po.hand_l = sh_l + fwd * (lh.x * s) + left * (lh.y * s) + Vector3.UP * (lh.z * s)
 	po.elbow_l = sh_l + left * 0.40 - Vector3.UP * 0.20 - fwd * 0.10

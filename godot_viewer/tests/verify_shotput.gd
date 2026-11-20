@@ -22,10 +22,15 @@ func _init() -> void:
 	_check_proportions()
 	_check_flight_exactness()
 	_check_release_and_pose()
+	_check_foot_pivot()
+	_check_grip_timeline()
+	_check_finger_grip()
 
 
 ## Gli autoload (RaceController) esistono solo dopo _init: il controllo del controller gira al primo fotogramma.
 func _process(_delta: float) -> bool:
+	_check_hand_aim()   # serve global_transform dello scheletro: il nodo deve essere nell'albero
+	_check_trail()      # ShotPutView usa RaceController: compila solo dopo la creazione degli autoload
 	_check_controller()
 	print("RISULTATO: %s" % ("TUTTO OK" if _failures == 0 else "%d FALLIMENTI" % _failures))
 	quit(0 if _failures == 0 else 1)
@@ -162,6 +167,216 @@ func _check_release_and_pose() -> void:
 					worst_reach = maxf(worst_reach, hip.distance_to(f2) / (ShotPutMotion.LEG_LENGTH * p.height))
 				t += 0.02
 			_check(worst_reach < 1.06, "%s: gambe raggiungono i piedi (massimo %.2f della lunghezza)" % [tag, worst_reach])
+
+
+## Piede sinistro d'appoggio: finche' sta a terra la PUNTA della scarpa non si muove e il piede gira attorno ad essa con il tallone su;
+## il piede (inclinato) non entra mai nella pedana, nemmeno quando si stacca; il tallone sale davvero e a fine rotazione e' di nuovo piatto.
+func _check_foot_pivot() -> void:
+	for foul: bool in [false, true]:
+		for female: bool in [false, true]:
+			var h: float = 1.65 if female else 1.80
+			var p: ShotPutMotion.Plan = ShotPutMotion.make_plan(18.0, foul, h, female, 0.05)
+			var tag: String = "%s%s" % ["F" if female else "M", " nullo" if foul else ""]
+			var ankle_flat: float = (ShotPutMotion.ANKLE_H_F if female else ShotPutMotion.ANKLE_H) * h
+			var tip0: Vector3 = Vector3.INF
+			var drift: float = 0.0
+			var tip_h_pivot: float = 0.0
+			var min_clear: float = 1e9
+			var max_pitch: float = 0.0
+			var arc: float = 0.0
+			var t: float = ShotPutMotion.T_SET
+			while t <= float(ShotPutMotion.KEY_T[10]):
+				var q: ShotPutMotion.Pose = ShotPutMotion.pose_at(p, t)
+				var phi: float = q.foot_pitch_l
+				var lift: float = q.foot_l.y - ShotPutMotion.CIRCLE_TOP - ankle_flat
+				var clear: float = lift - ShotPutMotion.heel_lift(p, phi)      # quota della punta sopra il piano della pedana
+				min_clear = minf(min_clear, clear)
+				max_pitch = maxf(max_pitch, phi)
+				if t <= float(ShotPutMotion.KEY_T[3]):
+					var f: Vector3 = ShotPutMotion.dir_at(q.yaw + q.foot_turn_l)
+					var tip: Vector3 = Vector3(q.foot_l.x, 0.0, q.foot_l.z) + f * ShotPutMotion.foot_tip_reach(p, phi)
+					if tip0 == Vector3.INF:
+						tip0 = tip
+					drift = maxf(drift, tip.distance_to(tip0))
+					tip_h_pivot = maxf(tip_h_pivot, absf(clear))
+					arc = maxf(arc, Vector2(q.foot_l.x - tip0.x, q.foot_l.z - tip0.z).length())
+				t += 1.0 / FPS
+			_check(drift < 0.002, "%s: la punta del piede sinistro resta ferma durante la rotazione (scarto max %.4f m)" % [tag, drift])
+			_check(tip_h_pivot < 0.001, "%s: la punta resta a terra mentre il piede gira (scarto max %.4f m)" % [tag, tip_h_pivot])
+			_check(min_clear > -0.001, "%s: la punta non entra mai nella pedana (minimo %.4f m)" % [tag, min_clear])
+			_check(max_pitch > 0.5 and max_pitch < 0.8, "%s: il tallone si solleva (massimo %.2f rad)" % [tag, max_pitch])
+			_check(arc > 0.10, "%s: la caviglia gira attorno alla punta (raggio %.2f m)" % [tag, arc])
+			var landed: ShotPutMotion.Pose = ShotPutMotion.pose_at(p, float(ShotPutMotion.KEY_T[6]))
+			_check(landed.foot_pitch_l < 0.02, "%s: in posizione di potenza il piede sinistro e' piatto (%.3f rad)" % [tag, landed.foot_pitch_l])
+			_check(ShotPutMotion.pose_at(p, ShotPutMotion.T_SET).foot_pitch_l == 0.0, "%s: all'inizio il piede e' piatto" % tag)
+			# il piede che si stacca non striscia: durante il passaggio dai tasti la punta si muove solo se e' sollevata di almeno 1 cm
+			var worst_skate: float = 1e9
+			var prev_tip: Vector3 = Vector3.INF
+			t = float(ShotPutMotion.KEY_T[3])
+			while t <= float(ShotPutMotion.KEY_T[5]):
+				var q2: ShotPutMotion.Pose = ShotPutMotion.pose_at(p, t)
+				var lift2: float = q2.foot_l.y - ShotPutMotion.CIRCLE_TOP - ankle_flat
+				var clear2: float = lift2 - ShotPutMotion.heel_lift(p, q2.foot_pitch_l)
+				var tip2: Vector3 = Vector3(q2.foot_l.x, 0.0, q2.foot_l.z) + ShotPutMotion.dir_at(q2.yaw + q2.foot_turn_l) * ShotPutMotion.foot_tip_reach(p, q2.foot_pitch_l)
+				if prev_tip != Vector3.INF and tip2.distance_to(prev_tip) > 0.004:      # la punta si sta muovendo (> 0,24 m/s)
+					worst_skate = minf(worst_skate, clear2)
+				prev_tip = tip2
+				t += 1.0 / FPS
+			_check(worst_skate > 0.01, "%s: la punta non striscia sulla pedana quando il piede si stacca (quota minima in movimento %.3f m)" % [tag, worst_skate])
+
+
+## Presa della mano destra nel tempo: chiusa fino a poco prima del rilascio, distesa di scatto al rilascio, poi rilassata.
+func _check_grip_timeline() -> void:
+	var p: ShotPutMotion.Plan = ShotPutMotion.make_plan(18.0, false, 1.80, false, 0.0)
+	_check(ShotPutMotion.pose_at(p, 1.0).grip_r == ShotPutMotion.GRIP_HOLD, "presa chiusa all'ingresso")
+	_check(ShotPutMotion.pose_at(p, ShotPutMotion.T_SET + 0.5).grip_r == ShotPutMotion.GRIP_HOLD, "presa chiusa fino al lancio")
+	_check(ShotPutMotion.pose_at(p, ShotPutMotion.T_REL - 0.01).grip_r < 0.5, "le dita si aprono un istante prima del rilascio")
+	_check(is_equal_approx(ShotPutMotion.pose_at(p, ShotPutMotion.T_REL).grip_r, ShotPutMotion.GRIP_FLICK), "al rilascio le dita sono distese")
+	_check(is_equal_approx(ShotPutMotion.pose_at(p, ShotPutMotion.T_REL + 1.0).grip_r, ShotPutMotion.GRIP_RELAX), "dopo il rilascio la mano si rilassa")
+	var prev: float = ShotPutMotion.grip_at(0.0)
+	var worst: float = 0.0
+	var t: float = 1.0 / FPS
+	while t < 7.0:
+		var g: float = ShotPutMotion.grip_at(t)
+		worst = maxf(worst, absf(g - prev))
+		prev = g
+		t += 1.0 / FPS
+	_check(worst < 0.35, "presa continua (salto massimo %.3f a fotogramma: l'apertura dura 0,1 s)" % worst)
+
+
+## Dita sul modello vero: con presa = 1 le falangi si chiudono verso il palmo (la punta si abbassa e si avvicina al polso), a 0 sono a riposo,
+## con presa negativa si distendono oltre il riposo. Vale per entrambe le mani e entrambi i modelli.
+func _check_finger_grip() -> void:
+	for path: String in ["res://assets/athlete/Superhero_Male_FullBody.gltf", "res://assets/athlete/Superhero_Female_FullBody.gltf"]:
+		var m: Node3D = (load(path) as PackedScene).instantiate()
+		root.add_child(m)
+		var sk: Skeleton3D = m.find_child("Skeleton3D", true, false)
+		var fg: ShotPutRig.FingerGrip = ShotPutRig.FingerGrip.new()
+		sk.add_child(fg)
+		fg.use_left = true
+		var tag: String = path.get_file()
+		for side: String in ["r", "l"]:
+			sk.reset_bone_poses()
+			var rest_tip: Vector3 = _bone_chain_origin(sk, "middle_04_leaf_" + side)
+			var rest_thumb: Vector3 = _bone_chain_origin(sk, "thumb_04_leaf_" + side)
+			var wrist: Vector3 = _bone_chain_origin(sk, "hand_" + side)
+			var results: Dictionary = {}
+			for g: float in [0.0, 1.0, ShotPutMotion.GRIP_FLICK]:
+				sk.reset_bone_poses()
+				fg.grip_r = g
+				fg.grip_l = g
+				fg.apply_to(sk)
+				results[g] = [_bone_chain_origin(sk, "middle_04_leaf_" + side), _bone_chain_origin(sk, "thumb_04_leaf_" + side)]
+			_check((results[0.0][0] as Vector3).distance_to(rest_tip) < 0.0005, "%s %s: presa 0 = dita a riposo" % [tag, side])
+			var closed: Vector3 = results[1.0][0]
+			_check(closed.y < rest_tip.y - 0.05, "%s %s: con presa 1 la punta del medio scende di %.1f cm" % [tag, side, (rest_tip.y - closed.y) * 100.0])
+			_check(closed.distance_to(wrist) < rest_tip.distance_to(wrist) - 0.02, "%s %s: la punta del medio si avvicina al polso (%.1f -> %.1f cm)" % [tag, side, rest_tip.distance_to(wrist) * 100.0, closed.distance_to(wrist) * 100.0])
+			var open: Vector3 = results[ShotPutMotion.GRIP_FLICK][0]
+			_check(open.y > rest_tip.y + 0.005, "%s %s: con le dita distese la punta sale oltre il riposo" % [tag, side])
+			_check((results[1.0][1] as Vector3).distance_to(rest_thumb) > 0.03, "%s %s: il pollice si muove con la presa" % [tag, side])
+		m.free()
+
+
+## Orientamento della mano: il palmo guarda il peso (normale = -x locale della mano), le dita formano con la direzione del peso l'angolo che
+## fa poggiare il peso sul palmo (seno = (raggio + PALM_GAP) / distanza), il polso non si sposta e a peso 0 non cambia nulla.
+func _check_hand_aim() -> void:
+	for path: String in ["res://assets/athlete/Superhero_Male_FullBody.gltf", "res://assets/athlete/Superhero_Female_FullBody.gltf"]:
+		var m: Node3D = (load(path) as PackedScene).instantiate()
+		root.add_child(m)
+		var sk: Skeleton3D = m.find_child("Skeleton3D", true, false)
+		var aim: ShotPutRig.HandAim = ShotPutRig.HandAim.new()
+		sk.add_child(aim)
+		var tag: String = path.get_file()
+		var ball_r: float = ShotPutMotion.BALL_RADIUS_F if path.contains("Female") else ShotPutMotion.BALL_RADIUS_M
+		for off: Vector3 in [Vector3(0.0, 0.108, 0.0), Vector3(0.05, 0.07, 0.04), Vector3(0.0, 0.0, 0.09), Vector3(-0.06, 0.03, 0.07)]:
+			sk.reset_bone_poses()
+			var wrist_before: Vector3 = _bone_chain_origin(sk, "hand_r")
+			var rest_basis: Basis = _bone_chain_basis(sk, "hand_r")
+			aim.ball_off = off
+			aim.ball_r = ball_r
+			aim.weight = 0.0
+			aim.apply_to(sk)
+			_check(_bone_chain_basis(sk, "hand_r").x.distance_to(rest_basis.x) < 0.0001, "%s %s: con peso 0 la mano non cambia" % [tag, str(off)])
+			aim.weight = 1.0
+			aim.apply_to(sk)
+			var hb: Basis = _bone_chain_basis(sk, "hand_r")
+			var u: Vector3 = off.normalized()
+			var k: float = off.length()
+			var normal: Vector3 = (-hb.x).normalized()
+			var fingers: Vector3 = hb.y.normalized()
+			var want_sin: float = clampf((ball_r + ShotPutMotion.PALM_GAP) / k, 0.35, 0.92)
+			_check(absf(normal.dot(u) - want_sin) < 0.01, "%s %s: il palmo guarda il peso (%.3f, atteso %.3f)" % [tag, str(off), normal.dot(u), want_sin])
+			_check(absf(fingers.dot(u) - sqrt(1.0 - want_sin * want_sin)) < 0.01, "%s %s: angolo fra dita e peso" % [tag, str(off)])
+			_check(absf(normal.dot(fingers)) < 0.001, "%s %s: palmo e dita ortogonali" % [tag, str(off)])
+			_check(_bone_chain_origin(sk, "hand_r").distance_to(wrist_before) < 0.0001, "%s %s: il polso non si sposta" % [tag, str(off)])
+		m.free()
+
+
+## Origine globale di un osso dalla catena di pose locali (get_bone_global_pose non e' aggiornato fuori dal fotogramma).
+func _bone_chain_origin(sk: Skeleton3D, bone_name: String) -> Vector3:
+	var i: int = sk.find_bone(bone_name)
+	var t: Transform3D = sk.get_bone_pose(i)
+	i = sk.get_bone_parent(i)
+	while i >= 0:
+		t = sk.get_bone_pose(i) * t
+		i = sk.get_bone_parent(i)
+	return t.origin
+
+
+## Orientamento globale di un osso dalla catena di pose locali.
+func _bone_chain_basis(sk: Skeleton3D, bone_name: String) -> Basis:
+	var i: int = sk.find_bone(bone_name)
+	var b: Basis = Basis(sk.get_bone_pose_rotation(i))
+	i = sk.get_bone_parent(i)
+	while i >= 0:
+		b = Basis(sk.get_bone_pose_rotation(i)) * b
+		i = sk.get_bone_parent(i)
+	return b
+
+
+## Scia: un tubo di triangoli (non piu' una linea da 1 px), con una sezione ogni TRAIL_STEP secondi e la coda piu' sottile della testa.
+## Lo script si carica a runtime: ShotPutView usa l'autoload RaceController, che in `-s` esiste solo dopo `_init`.
+func _check_trail() -> void:
+	var script: GDScript = load("res://scripts/ShotPutView.gd")
+	var consts: Dictionary = script.get_script_constant_map()
+	var sides: int = int(consts["TRAIL_SIDES"])
+	var step: float = float(consts["TRAIL_STEP"])
+	var after_land: float = float(consts["TRAIL_AFTER_LAND"])
+	var p: ShotPutMotion.Plan = ShotPutMotion.make_plan(18.0, false, 1.80, false, 0.0)
+	var view: Node3D = script.new()
+	root.add_child(view)
+	view.call("_update_trail", p, ShotPutMotion.T_REL + p.flight * 0.5)
+	var mesh: ImmediateMesh = view.get("_trail_mesh")
+	_check(mesh.get_surface_count() == 1, "scia: una superficie")
+	if mesh.get_surface_count() == 1:
+		var sections: int = maxi(3, int(p.flight * 0.5 / step))
+		var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+		_check(verts.size() == sections * sides * 6, "scia: tubo di triangoli, %d vertici (attesi %d: una linea ne avrebbe %d)" % [verts.size(), sections * sides * 6, sections + 1])
+		# spessore: ogni sezione e' un anello di `sides` punti attorno alla traiettoria; la testa e' piu' larga della coda
+		var w_tail: float = _ring_width(verts, 0, false, sides)
+		var w_head: float = _ring_width(verts, sections - 1, true, sides)
+		_check(w_head > w_tail * 3.0, "scia: la testa (%.1f mm) e' piu' spessa della coda (%.1f mm)" % [w_head * 1000.0, w_tail * 1000.0])
+		_check(w_head > p.ball_r * 0.8, "scia: la testa e' larga quanto il peso (%.1f mm)" % [w_head * 1000.0])
+		_check(verts[0].distance_to(p.release) < 0.03, "scia: parte dal punto di rilascio")
+		_check(not is_nan(verts[verts.size() - 1].x), "scia: nessun vertice non valido")
+	view.call("_update_trail", p, ShotPutMotion.T_REL - 0.1)
+	_check(mesh.get_surface_count() == 0, "scia: assente prima del rilascio")
+	view.call("_update_trail", p, p.t_land + after_land + 0.1)
+	_check(mesh.get_surface_count() == 0, "scia: sparisce dopo l'atterraggio")
+	view.free()
+
+
+## Diametro di un anello del tubo. Ogni lato e' (a0, b0, a1, a1, b0, b1): l'anello `a` del segmento `seg` e' fatto dai vertici a0 di tutti i lati,
+## l'anello `b` dai b0.
+func _ring_width(verts: PackedVector3Array, seg: int, ring_b: bool, sides: int) -> float:
+	var pts: Array[Vector3] = []
+	for k in range(sides):
+		pts.append(verts[seg * sides * 6 + k * 6 + (1 if ring_b else 0)])
+	var w: float = 0.0
+	for i in range(pts.size()):
+		for j in range(i + 1, pts.size()):
+			w = maxf(w, pts[i].distance_to(pts[j]))
+	return w
 
 
 ## Controller: avanza i tentativi con passi fissi di tempo e controlla che ogni peso animato finisca esattamente dove dice il DB.

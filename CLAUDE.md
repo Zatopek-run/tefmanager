@@ -309,6 +309,10 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   (nel peso `step["animate"]` e' sempre vero; un arco dorato sul terreno segna il miglior lancio); il piano del tentativo sta in `step["plan"]` (`ShotPutMotion.Plan`). Altezza dell'atleta = `RunnerData.visual_height` (la usa
   anche `RunnerView`: devono coincidere). Rilascio a ~1,06·H, non 2,2 m. **Scelte dell'utente:** niente gabbia, settore disegnato a 30 m (non 100).
   `ShotPutMotion.Mode`/`Phase` guidano rig e regia; la posa e' tarata a descrizioni biomeccaniche, **non** su un video (da giudicare a occhio).
+  Piede sinistro che pivota sulla punta (`foot_tip_reach`/`heel_lift`, `FootLevel.pitch_l`), mano orientata verso il peso (`ShotPutRig.HandAim`), dita chiuse (`FingerGrip`,
+  presa di `grip_at`) e scia a tubo (`ShotPutView._update_trail`): 2026-11-20, vedi README. **Nei test `-s` `get_skeleton()` dei modificatori e' nullo e `get_bone_global_pose` non si
+  aggiorna fuori dal fotogramma**: i modificatori hanno `apply_to(skel)` e i test leggono le ossa dalla catena di pose locali; i test che toccano `global_transform` o `ShotPutView`
+  (che usa l'autoload `RaceController`) girano in `_process`, non in `_init`.
 - **Ambiente** (solo vista, nessun effetto su tempi o ordine). `scripts/AdBoards.gd`: cartelloni LED con sponsor di
   FANTASIA (se uno coincide con un'azienda vera, cambialo); a doppia faccia nel campo perché le camere interne
   (`_o_start`, `_o_open`) li vedono da dietro (il retro nero faceva una striscia scura), a faccia singola davanti

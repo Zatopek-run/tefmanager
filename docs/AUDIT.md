@@ -232,9 +232,11 @@ Lavoro solo in `godot_viewer/` (niente `models/` né `views/`). Vedi `godot_view
 **Limiti / da tenere d'occhio (non corretti):**
 - **La posa non e' stata confrontata con un video di riferimento** (non raggiungibile da qui): e' tarata su descrizioni biomeccaniche e sui numeri
   del modello. Provati solo fotogrammi (`tests/screenshots_shot.gd`), **non** la fluidita' del movimento a schermo né con il mouse.
-- Il piede e' tenuto orizzontale da `ShotPutRig.FootLevel` ma non pivota attorno alla punta (gira con il bacino, rotazione costante rispetto a esso);
-  le dita restano a riposo (la mano non stringe il peso); al rilascio il peso passa da «in mano» (polso reale + scarto) a «in volo» da `R`:
-  l'IK non arriva esattamente al bersaglio: misurato con `screenshots_shot.gd` (finestra vera, gare 11 e 12) il peso in mano dista 3,3-3,5 cm da R pochi centesimi prima del rilascio (peso da 12 cm), cioe' un piccolo salto visibile solo da vicino.
+- ✅ (2026-11-20) Il piede sinistro ora pivota sulla punta (punta ferma a terra, tallone su) e la mano destra stringe il peso (palmo orientato verso di lui,
+  dita chiuse, distese di scatto al rilascio); la scia e' un tubo e non piu' una linea da 1 px. Dettagli in `godot_viewer/README.md`. Resta il piede destro (non pivota).
+- Al rilascio il peso passa da «in mano» (polso reale + scarto) a «in volo» da `R`: l'IK non arriva esattamente al bersaglio. Misurato con `screenshots_shot.gd`
+  (finestra vera, gare 11 e 12): una volta 3,3-3,5 cm pochi centesimi prima del rilascio; **il 2026-11-20, su Windows con Godot 4.7.2, 17-21 cm, uguale con e senza le
+  modifiche a piede e dita (confronto con `git stash`)**: non e' stato indagato (e' un salto del peso visibile al rilascio, da verificare a occhio).
 - Il tempo del tentativo animato e' fisso (≈ 10 s a 1x): 6 prove ≈ 1 minuto di sola atleta del club. A 8x resta accettabile.
 - Nei concorsi non ci sono giudici né fotografi (`TrackSideCrew` e' disattivato: la camera del lungo sta dove stanno loro).
 - `is_foul` non porta una motivazione e il valore esportato di un nullo e' 0,96 × risultato (segnaposto del motore Python): la resa del nullo

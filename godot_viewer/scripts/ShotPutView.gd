@@ -15,11 +15,17 @@ const LEADER_COLOR: Color = Color(1.0, 0.80, 0.15)
 const LEADER_WIDTH: float = 0.14
 const TAPE_DELAY: float = 0.45            # i giudici stendono il nastro e piantano la bandierina dopo l'atterraggio
 const TRAIL_AFTER_LAND: float = 0.6       # la scia resta poco dopo l'atterraggio, poi sparisce
+const TRAIL_SIDES: int = 6                # lati del tubo della scia
+const TRAIL_STEP: float = 0.05            # s fra due sezioni del tubo
+const TRAIL_HEAD_RADIUS: float = 0.55     # raggio della scia in testa, in frazioni del raggio del peso
+const TRAIL_TAIL_RADIUS: float = 0.12     # raggio della coda rispetto alla testa
+const TRAIL_FADE: float = 1.4             # esponente della dissolvenza verso la coda (1 = lineare)
 
 var _ball: MeshInstance3D
 var _ball_mesh: SphereMesh
 var _trail: MeshInstance3D
 var _trail_mesh: ImmediateMesh
+var _trail_mat: StandardMaterial3D
 var _tape: MeshInstance3D
 var _flag: Node3D
 var _flag_cloth: MeshInstance3D
@@ -211,20 +217,61 @@ func _start_attempt(plan: ShotPutMotion.Plan) -> void:
 	_flag_mat.emission = col
 
 
+## Scia: un tubo (TRAIL_SIDES lati) lungo la traiettoria, spesso come il peso in testa e sempre piu' sottile e trasparente verso il
+## rilascio. Una linea da 1 px (PRIMITIVE_LINE_STRIP) restava invisibile da lontano; il tubo non dipende dalla camera.
 func _update_trail(plan: ShotPutMotion.Plan, t: float) -> void:
 	_trail_mesh.clear_surfaces()
 	if plan.instant or t <= ShotPutMotion.T_REL or t > plan.t_land + TRAIL_AFTER_LAND:
 		return
 	var tau_end: float = minf(t - ShotPutMotion.T_REL, plan.flight)
-	var n: int = maxi(2, int(tau_end / 0.04))
-	var mat: StandardMaterial3D = StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = TRAIL_COLOR
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_trail_mesh.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, mat)
+	var n: int = maxi(3, int(tau_end / TRAIL_STEP))
+	var pts: Array[Vector3] = []
 	for i in range(n + 1):
-		_trail_mesh.surface_add_vertex(ShotPutMotion.flight_position(plan, tau_end * float(i) / float(n)))
+		pts.append(ShotPutMotion.flight_position(plan, tau_end * float(i) / float(n)))
+	var head_r: float = plan.ball_r * TRAIL_HEAD_RADIUS
+	var rings: Array = []
+	for i in range(n + 1):
+		var tangent: Vector3 = (pts[mini(i + 1, n)] - pts[maxi(i - 1, 0)]).normalized()
+		var side: Vector3 = tangent.cross(Vector3.UP)
+		side = side.normalized() if side.length() > 0.001 else Vector3.RIGHT
+		var up: Vector3 = side.cross(tangent).normalized()
+		var f: float = float(i) / float(n)                     # 0 = rilascio (coda), 1 = peso (testa)
+		var r: float = head_r * lerpf(TRAIL_TAIL_RADIUS, 1.0, f)
+		var col: Color = TRAIL_COLOR
+		col.a = TRAIL_COLOR.a * pow(f, TRAIL_FADE)
+		var ring: Array = []
+		for k in range(TRAIL_SIDES):
+			var a: float = TAU * float(k) / float(TRAIL_SIDES)
+			ring.append(pts[i] + (side * cos(a) + up * sin(a)) * r)
+		rings.append({"p": ring, "c": col})
+	if _trail_mat == null:
+		_trail_mat = StandardMaterial3D.new()
+		_trail_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_trail_mat.vertex_color_use_as_albedo = true
+		_trail_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_trail_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_trail_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, _trail_mat)
+	for i in range(n):
+		var a: Dictionary = rings[i]
+		var b: Dictionary = rings[i + 1]
+		for k in range(TRAIL_SIDES):
+			var k2: int = (k + 1) % TRAIL_SIDES
+			var a0: Vector3 = (a["p"] as Array)[k]
+			var a1: Vector3 = (a["p"] as Array)[k2]
+			var b0: Vector3 = (b["p"] as Array)[k]
+			var b1: Vector3 = (b["p"] as Array)[k2]
+			_trail_vertex(a0, a["c"])
+			_trail_vertex(b0, b["c"])
+			_trail_vertex(a1, a["c"])
+			_trail_vertex(a1, a["c"])
+			_trail_vertex(b0, b["c"])
+			_trail_vertex(b1, b["c"])
 	_trail_mesh.surface_end()
+
+
+func _trail_vertex(p: Vector3, c: Color) -> void:
+	_trail_mesh.surface_set_color(c)
+	_trail_mesh.surface_add_vertex(p)
 
 
 func _hide_all() -> void:

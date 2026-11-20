@@ -105,6 +105,19 @@ la velocità iniziale è in forma chiusa: `v0 = (D/cosθ) · sqrt(g / (2 (D tan�
 - **Piedi** (`ShotPutRig.FootLevel`): l'IK posiziona solo la caviglia e il piede seguirebbe l'inclinazione dello stinco (punta in giu', suola
   dentro la pedana). Un modificatore dopo l'IK rimette ogni piede orizzontale (punte leggermente in fuori) e la quota della caviglia sopra la
   suola e' per sesso (`ANKLE_H`, `ANKLE_H_F`: l'osso del piede sta a 8,65 cm da terra nel modello maschile e a 7,07 nel femminile).
+- **Piede sinistro che pivota sulla punta** (2026-11-20). Finche' e' d'appoggio la **punta della scarpa resta ferma a terra** e il piede gira attorno ad
+  essa con il tallone sollevato (`flp` in `ShotPutMotion._table`, fino a 0,55 rad): `_keyed` ricava la caviglia da punta fissa + direzione del piede +
+  inclinazione (`foot_tip_reach`, `heel_lift`; costanti `FOOT_TIP_FWD`, `FOOT_TIP_DOWN` misurate sul rig e sulla scarpa, per sesso) e `ShotPutRig.FootLevel`
+  inclina l'osso (`pitch_l`). Poi il piede si stacca: la posizione passa ai tasti fra `KEY_T[3] + LEAVE_LEAD` e `KEY_T[4]`, dopo essersi alzato di
+  `LEAVE_LIFT` (non striscia), e la quota della caviglia non scende mai sotto `heel_lift` (la punta non entra nella pedana). Il piede destro non e' cambiato.
+- **Mano e dita** (2026-11-20). Prima il peso stava a ~11 cm dal polso ma la mano non guardava verso di lui (punte a 14-17 cm dalla superficie).
+  `ShotPutRig.HandAim` (dopo l'IK, il polso non si sposta) orienta la mano destra con il palmo verso il peso: il peso poggia sul palmo (a
+  `ball_r + PALM_GAP` dal piano delle dita) e fra le due soluzioni sceglie quella piu' vicina all'avambraccio. `ShotPutRig.FingerGrip` chiude le falangi
+  (asse X locale; il pollice X + Z) con la presa di `ShotPutMotion.grip_at`: chiusa fino a 0,1 s prima del rilascio, poi le dita si distendono di scatto
+  (`GRIP_FLICK`) e la mano si rilassa. Il peso maschile e' piu' grande: la chiusura cresce con il raggio (`CURL_PER_RADIUS`). La mano sinistra e'
+  leggermente chiusa (`GRIP_LEFT`). Misurato sulla scena vera (gare 11 e 12): punte a -5...+3 mm dalla superficie del peso. Il rilascio resta in `R`.
+- **Scia** (`ShotPutView._update_trail`): un tubo a 6 lati (non piu' una linea da 1 px) lungo la traiettoria, largo come meta' peso in testa
+  (`TRAIL_HEAD_RADIUS`) e sempre piu' sottile e trasparente verso il rilascio; non dipende dalla camera.
 - **Tecnica a rotazione**, destrorso (sequenza gambe → bacino → tronco → braccio; spalle «chiuse» fino alla posizione di potenza).
   Ingresso e uscita a piedi (camminata Quaternius, peso al collo con IK delle braccia); dalla posizione iniziale lo scheletro è
   comandato da `scripts/ShotPutRig.gd` (bacino e schiena a mano, braccia e gambe con `TwoBoneIK3D`, piedi piantati: la libreria CC0
@@ -121,11 +134,12 @@ la velocità iniziale è in forma chiusa: `v0 = (D/cosθ) · sqrt(g / (2 (D tan�
   bandierina (verde valido, rossa nullo) → larga all'uscita. Panoramica sul settore per le prove non animate.
 - Verifica: `godot --headless --path godot_viewer -s res://tests/verify_shotput.gd` (~15 s: atterraggio entro 0,5 mm per 480 combinazioni
   di misura/altezza/sesso/nullo, angolo 35-40°, peso sempre sopra il suolo, posa continua, piedi dentro la pedana fino al rilascio,
-  uscita dal lato posteriore, controller sulle gare demo 11 e 12). `tests/screenshots_shot.gd` (con finestra) salva i fotogrammi del
+  uscita dal lato posteriore, controller sulle gare demo 11 e 12; punta del piede sinistro ferma e a terra durante il pivot, mai sotto la pedana e senza
+  strisciare quando si stacca; presa nel tempo; chiusura delle dita e orientamento del palmo sui modelli veri; scia a tubo). `tests/screenshots_shot.gd` (con finestra) salva i fotogrammi del
   tentativo: `-- cartella [--race=12] [--round=2] [--debug] [--instant]`.
-- Limiti: posa tarata su descrizioni biomeccaniche e non su un video di riferimento (non guardabile da qui); il piede e' orizzontale ma
-  non pivota attorno alla punta (gira con il bacino, con una rotazione costante rispetto a esso); le dita restano a riposo (la mano non stringe il peso); nessun
-  giudice nei concorsi; il disegno dell'arco della scia è una linea da 1 px.
+- Limiti: posa tarata su descrizioni biomeccaniche e non su un video di riferimento (non guardabile da qui); il piede destro non pivota (nell'inversione
+  dopo il rilascio gira con il bacino); le dita sono pose a riposo + chiusura, senza collisione con il peso (tarate in numeri, 0-5 mm dalla superficie, non su
+  un'immagine ravvicinata della mano: gli screenshot di debug sono scuri); nessun giudice nei concorsi.
 
 ## Riprese e grafica "da diretta TV"
 
