@@ -36,6 +36,16 @@ from models.entities import (
     SeasonObjective,
     Specialty,
     STAFF_ATTRIBUTES,
+    STAFF_COST_BASE,
+    STAFF_COST_MIN,
+    STAFF_COST_SLOPE_ABOVE,
+    STAFF_COST_SLOPE_BELOW,
+    STAFF_COST_STEP,
+    STAFF_ATTR_REF,
+    STAFF_CATALOGUE_LAST_ID,
+    STAFF_ORIGINAL_IDS,
+    STAFF_POOL_PER_ROLE,
+    STAFF_TIERS,
     StaffMember,
     StaffRole,
     TrainingFocus,
@@ -533,12 +543,76 @@ def create_initial_staff() -> List[StaffMember]:
 def ensure_staff_market(staff: List[StaffMember]) -> int:
     """Aggiunge a `staff` i candidati del catalogo che mancano (per id): i salvataggi vecchi avevano solo i 3 originali.
 
+    Vale **solo** per i salvataggi precedenti al mercato (tutti gli ids presenti tra gli originali): dopo il primo rinnovo
+    (`renew_staff_market`) gli ids del catalogo spariscono di proposito e non devono tornare al caricamento.
     Deterministico e senza RNG; non tocca chi c'è già (assunzioni comprese). Ritorna quanti ne ha aggiunti."""
+    if any(m.id not in STAFF_ORIGINAL_IDS for m in staff):
+        return 0
     present = {m.id for m in staff}
     added = [_staff_from_catalogue(row) for row in STAFF_CATALOGUE if row[0] not in present]
     staff.extend(added)
     staff.sort(key=lambda m: (m.id is None, m.id))
     return len(added)
+
+
+def staff_weekly_cost(role: StaffRole, attributes: Dict[str, int]) -> int:
+    """Compenso settimanale di uno specialista: cresce con la media dei suoi attributi (cifre in `entities.py`)."""
+    values = list(attributes.values()) or [STAFF_ATTR_REF]
+    gap = sum(values) / len(values) - STAFF_ATTR_REF
+    slope = STAFF_COST_SLOPE_ABOVE if gap > 0 else STAFF_COST_SLOPE_BELOW
+    raw = STAFF_COST_BASE[role] * (1.0 + slope * gap)
+    return max(STAFF_COST_MIN, int(round(raw / STAFF_COST_STEP)) * STAFF_COST_STEP)
+
+
+def _generate_staff_candidate(
+    sid: int, role: StaffRole, tier: tuple, used_names: set, rng: random.Random
+) -> StaffMember:
+    tier_name, (low, high), stars = tier
+    first = rng.choice(FIRST_NAMES)
+    last = rng.choice(LAST_NAMES)
+    name = f"{'Dott.ssa' if first in FEMALE_FIRST_NAMES else 'Dott.'} {first} {last}"
+    for _ in range(15):
+        if name not in used_names:
+            break
+        first, last = rng.choice(FIRST_NAMES), rng.choice(LAST_NAMES)
+        name = f"{'Dott.ssa' if first in FEMALE_FIRST_NAMES else 'Dott.'} {first} {last}"
+    used_names.add(name)
+    attrs = {key: rng.randint(low, high) for key, _label in STAFF_ATTRIBUTES[role]}
+    best_key, best_label = max(STAFF_ATTRIBUTES[role], key=lambda kl: attrs[kl[0]])
+    return StaffMember(
+        id=sid,
+        name=name,
+        role=role,
+        skill=stars,
+        weekly_cost=staff_weekly_cost(role, attrs),
+        hired=False,
+        description=f"Profilo {tier_name}. Punto di forza: {best_label} {attrs[best_key]}.",
+        attributes=attrs,
+    )
+
+
+def renew_staff_market(state: GameState, rng: random.Random) -> List[str]:
+    """Rinnovo del mercato dello staff a fine stagione (E.1, Q33): lo specialista assunto resta, i non assunti sono sostituiti
+    da candidati nuovi, `STAFF_POOL_PER_ROLE` per ruolo (assunto compreso), con profili diversi tra loro.
+
+    **Usa `rng` UNA sola volta** (`getrandbits(32)`) per seminare un generatore locale: il flusso della partita si sposta di
+    un'estrazione per stagione comunque si cambi la generazione. Ritorna le notizie da aggiungere al registro."""
+    seed = rng.getrandbits(32)
+    if not state.staff:  # stato senza mercato (fixture di test): niente da rinnovare
+        return []
+    local = random.Random(seed)
+    next_id = max([STAFF_CATALOGUE_LAST_ID] + [m.id for m in state.staff if m.id is not None]) + 1
+    used_names = {m.name for m in state.staff if m.hired}
+    kept = [m for m in state.staff if m.hired]
+    fresh: List[StaffMember] = []
+    for role in STAFF_ATTRIBUTES:
+        missing = STAFF_POOL_PER_ROLE - sum(1 for m in kept if m.role == role)
+        for tier in local.sample(STAFF_TIERS, k=max(0, min(missing, len(STAFF_TIERS)))):
+            fresh.append(_generate_staff_candidate(next_id, role, tier, used_names, local))
+            next_id += 1
+    others = [m for m in state.staff if m.role not in STAFF_ATTRIBUTES]  # per sicurezza: ruoli senza attributi non si toccano
+    state.staff = sorted(kept + fresh + others, key=lambda m: (m.id is None, m.id))
+    return [f"Stagione {state.season_number}: il mercato dello staff si rinnova ({len(fresh)} nuovi candidati)."]
 
 
 def create_season_objectives(

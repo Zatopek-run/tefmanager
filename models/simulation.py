@@ -123,6 +123,7 @@ from models.generator import (
     SPECIALTY_COACH_FOCUS,
     create_rival_clubs,
     generate_coach,
+    renew_staff_market,
     generate_rival_athlete,
     maybe_generate_dilemma,
     senior_wage,
@@ -1918,6 +1919,7 @@ def advance_week(
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)
+            state.news_log[0:0] = renew_staff_market(state, r)  # mercato dello staff (E.1): 1 sola estrazione di `r`
             state.news_log[0:0] = start_new_season(state)  # nuovi obiettivi del Board (C.2), senza RNG
         if state.season_phase == SeasonPhase.PREPARAZIONE:
             news = (

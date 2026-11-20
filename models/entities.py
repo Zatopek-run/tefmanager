@@ -544,6 +544,26 @@ MENTAL_FORM_BONUS = 4
 # Liquidazione (scelta dell'utente 2026-11-20: sostituire uno specialista costa la liquidazione del precedente). CIFRA
 # PROVVISORIA (QUESTIONS Q33): settimane di compenso pagate a ogni licenziamento di uno specialista assunto.
 STAFF_SEVERANCE_WEEKS = 6
+# Rinnovo del mercato dello staff a ogni fine stagione (scelta dell'utente 2026-11-20: «il mercato deve rinnovarsi nel tempo»).
+# CIFRE PROVVISORIE (QUESTIONS Q33). Lo specialista assunto resta; i non assunti sono sostituiti da candidati nuovi, così che
+# per ruolo ci siano sempre STAFF_POOL_PER_ROLE persone (assunto compreso). Il catalogo iniziale ha ids 4-12 (STAFF_ORIGINAL_IDS
+# sono i tre candidati di prima del mercato); i nuovi partono da max(STAFF_CATALOGUE_LAST_ID, ids presenti) + 1.
+STAFF_POOL_PER_ROLE = 3
+STAFF_ORIGINAL_IDS = (4, 5, 6)
+STAFF_CATALOGUE_LAST_ID = 12
+# Profili dei candidati sorteggiati: (nome, fascia di ciascun attributo, stelle). Ogni attributo è estratto a parte nella fascia.
+STAFF_TIERS = (
+    ("junior", (8, 11), 2),
+    ("esperto", (12, 15), 4),
+    ("senior", (13, 19), 5),
+)
+# Costo settimanale = base del ruolo × (1 + pendenza × (media attributi − STAFF_ATTR_REF)), arrotondato a STAFF_COST_STEP.
+# Sotto il riferimento la pendenza è dolce (media 10 → ×0,6), sopra è ripida (media 16 → ×1,5).
+STAFF_COST_BASE: Dict[StaffRole, int] = {StaffRole.PHYSIO: 300, StaffRole.DOCTOR: 340, StaffRole.MENTAL_COACH: 220}
+STAFF_COST_SLOPE_BELOW = 0.10
+STAFF_COST_SLOPE_ABOVE = 0.27
+STAFF_COST_STEP = 10
+STAFF_COST_MIN = 100
 IMPULSIVE_SIGMA = 5.6
 CALM_SIGMA = 3.8
 MENTAL_SIGMA_FLOOR = 3.0
