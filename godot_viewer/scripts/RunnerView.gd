@@ -39,6 +39,9 @@ var _current_anim: StringName = &""
 var _rig: SetPoseRig = null           # posizione ai blocchi (pronti/set), attiva prima della partenza
 var _posture_mod: SprintPostureModifier = null
 var _baton: MeshInstance3D = null
+var _shot_rig: ShotPutRig = null        # getto del peso: posa a mano dello scheletro (vedi ShotPutRig)
+var _shot_ball: MeshInstance3D = null    # il peso in mano all'atleta, finche' non lo rilascia
+var _shot_pose: ShotPutMotion.Pose = null
 var _player_marker: MeshInstance3D = null
 var _head_bone_idx: int = -1
 var _relay_leg: int = -1               # -1 = gara individuale; 0..3 = frazione della staffetta
@@ -70,8 +73,7 @@ func setup(runner: RunnerData, relay_leg: int = -1, leg_len: float = 100.0, visu
 		_attach_player_marker()
 	if _relay_leg >= 0:
 		_attach_baton()
-	var base_h: float = 1.63 if is_female else 1.72
-	var target_height: float = base_h + float(absi(hash(_visual_key + "height")) % 15) / 100.0
+	var target_height: float = RunnerData.visual_height(_visual_key, runner.gender)
 	_model.scale = Vector3.ONE * (target_height / height)
 	_height_m = target_height
 
@@ -89,7 +91,11 @@ func _process(_delta: float) -> void:
 		return
 	if RaceController.is_field(RaceController.event_kind):
 		visible = (data == RaceController.active_jumper)
+		if visible and RaceController.event_kind == "Getto del Peso" and RaceController.shot_pose != null:
+			_update_shot_pose(RaceController.shot_pose)
+			return
 		if visible:
+			_stop_shot_rig()
 			_rig.set_enabled(false)
 			position = RaceController.jumper_pos
 			rotation.y = RaceController.jumper_yaw
@@ -106,6 +112,85 @@ func _process(_delta: float) -> void:
 	_apply_transform(st.x)
 	_update_animation(st.x, st.y)
 	_update_player_marker()
+
+
+# --- getto del peso -----------------------------------------------------------------------------
+
+## Tentativo animato: la posa arriva da ShotPutMotion (modello puro) ed e' applicata da ShotPutRig. Ingresso e uscita a
+## piedi usano la camminata della libreria con il peso al collo (IK delle sole braccia); dalla posizione iniziale in poi lo
+## scheletro e' tutto del rig e l'AnimationPlayer e' fermo.
+func _update_shot_pose(p: ShotPutMotion.Pose) -> void:
+	if _shot_rig == null:
+		_shot_rig = ShotPutRig.new()
+		add_child(_shot_rig)
+		_shot_rig.setup(_skeleton)
+		_make_shot_ball()
+		_skeleton.skeleton_updated.connect(_place_shot_ball)
+	_rig.set_enabled(false)
+	_shot_pose = p
+	position = p.root
+	rotation.y = p.yaw
+	_model.rotation.x = 0.0
+	_model.position = Vector3.ZERO
+	if _posture_mod != null:
+		_posture_mod.active_weight = 0.0
+	var rig_mode: int = _shot_rig.apply(p)
+	if rig_mode == ShotPutRig.RigMode.FULL:
+		if _player.is_playing():
+			_player.stop()
+		_current_anim = &""
+	elif p.mode == ShotPutMotion.Mode.IDLE:
+		_play(&"Idle", 0.2)
+		_player.speed_scale = RaceController.play_speed()
+	else:
+		_play(&"Walk", 0.2)
+		var length: float = _player.get_animation(&"Walk").length
+		_player.speed_scale = clampf(p.walk_speed / STRIDE_WALK * length * RaceController.play_speed(), 0.25, 8.0)
+	_update_player_marker()
+
+
+## Il peso e' un nodo "top level" (coordinate di mondo): lo posiziona _place_shot_ball sul polso destro dopo l'IK.
+func _make_shot_ball() -> void:
+	var plan: ShotPutMotion.Plan = RaceController.shot_plan
+	var radius: float = plan.ball_r if plan != null else ShotPutMotion.BALL_RADIUS_M
+	var ball: SphereMesh = SphereMesh.new()
+	ball.radius = radius
+	ball.height = radius * 2.0
+	ball.radial_segments = 24
+	ball.rings = 12
+	var mat: StandardMaterial3D = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.86, 0.89, 0.94)
+	mat.metallic = 0.45
+	mat.roughness = 0.22
+	ball.material = mat
+	_shot_ball = MeshInstance3D.new()
+	_shot_ball.mesh = ball
+	_shot_ball.top_level = true
+	_shot_ball.visible = false
+	add_child(_shot_ball)
+
+
+## Dopo lo scheletro aggiornato (`skeleton_updated`: la posa finale, IK compreso) il peso segue il polso destro: centro del
+## peso = polso reale + scarto voluto dal modello (collo -> rilascio). Al rilascio il polso e' sul bersaglio, quindi il peso
+## parte da R (a meno dell'errore dell'IK).
+func _place_shot_ball() -> void:
+	if _shot_ball == null:
+		return
+	var show: bool = visible and _shot_pose != null and _shot_pose.ball_in_hand and RaceController.event_kind == "Getto del Peso"
+	_shot_ball.visible = show
+	if show:
+		var wrist: Vector3 = _skeleton.global_transform * _skeleton.get_bone_global_pose(_skeleton.find_bone("hand_r")).origin
+		_shot_ball.global_position = wrist + _shot_pose.ball_off
+
+
+## Torna all'animazione normale (nei tentativi non animati e quando cambia l'atleta in pedana).
+func _stop_shot_rig() -> void:
+	_shot_pose = null
+	if _shot_rig != null and _shot_rig.rig_mode != ShotPutRig.RigMode.OFF:
+		_shot_rig.set_rig_mode(ShotPutRig.RigMode.OFF)
+		_current_anim = &""
+	if _shot_ball != null:
+		_shot_ball.visible = false
 
 
 func _leg_state() -> Vector2:

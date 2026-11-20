@@ -45,6 +45,13 @@ func is_valid() -> bool:
 	return lane >= 1 and reaction_time > 0.0 and final_time > reaction_time
 
 
+## Altezza visiva (m) del modello 3D di un atleta: deterministica dal nome (hash di stringa di Godot, stabile fra le
+## esecuzioni). Unica fonte per `RunnerView` (scala del modello) e per `ShotPutMotion` (punto di rilascio del peso).
+static func visual_height(visual_key: String, gender: String) -> float:
+	var base_h: float = 1.63 if gender == "F" else 1.72
+	return base_h + float(absi(hash(visual_key + "height")) % 15) / 100.0
+
+
 func surname() -> String:
 	var parts: PackedStringArray = athlete_name.split(" ", false)
 	return parts[parts.size() - 1].to_upper() if parts.size() > 0 else "?"
