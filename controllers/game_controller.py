@@ -997,7 +997,7 @@ class GameController(QObject):
                     f"Sett. {self.state.week}: Accettata la scorciatoia dello sponsor. Prestazioni su, ma rischio squalifica alto!",
                 )
             else:
-                self.state.budget = max(0, self.state.budget - 600)
+                self._dilemma_cost(600, "Rifiuto della scorciatoia farmacologica")
                 self.state.reputation = clamp_stat(self.state.reputation + 10, 0, 100)
                 self.state.prestige += 8
                 self.state.news_log.insert(
@@ -1024,7 +1024,7 @@ class GameController(QObject):
                     f"Sett. {self.state.week}: Sforzo extra per lo sponsor (+€1.000, fatica aumentata).",
                 )
             else:
-                self.state.budget = max(0, self.state.budget - 300)
+                self._dilemma_cost(300, "Protezione della crescita dell'atleta")
                 if athlete is not None:
                     athlete.resilience = clamp_stat(athlete.resilience + 6, 1, 100)
                     athlete.form = clamp_stat(athlete.form + 8, 5, 100)
@@ -1036,6 +1036,18 @@ class GameController(QObject):
         self.state.pending_dilemma = None
         self._persist()
         self.state_changed.emit(self.state)
+
+    def _dilemma_cost(self, amount: int, description: str) -> None:
+        """Costo di un dilemma rifiutato: si paga al più quello che c'è (il saldo non scende sotto zero per questa via, come
+        prima) e **passa dal libro mastro**, altrimenti il bilancio mensile (D.3) non tornerebbe con il budget."""
+        paid = min(amount, max(0, self.state.budget))
+        if paid <= 0:
+            return
+        self.state.budget -= paid
+        self.state.transactions.insert(
+            0,
+            Transaction(id=None, week=self.state.week, description=description, category="Dilemmi", amount=-paid),
+        )
 
     def dismiss_dilemma(self) -> bool:
         """Chiude il dilemma pendente senza sceglierlo (finestra chiusa, Esc, «Ignora»): A.4.

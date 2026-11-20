@@ -131,5 +131,69 @@ class TestMonthlyBars(unittest.TestCase):
         self.assertIn("#f87171", colours)  # barre delle uscite
 
 
+class TestEveryMovementGoesThroughTheLedger(unittest.TestCase):
+    """Il saldo di un mese è la variazione del budget solo se ogni azione che muove denaro scrive una voce nel libro mastro."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.ctrl = _controller(tmp.name)
+        self.state = self.ctrl.state
+        self.state.budget = 60000
+
+    def _dilemma(self, kind: str):
+        from models.entities import EthicalDilemma
+
+        self.state.pending_dilemma = EthicalDilemma(kind, "t", "d", "si", "no", athlete_id=self.state.main_squad[0].id)
+
+    def test_every_spending_action_matches_a_ledger_entry(self) -> None:
+        a = self.state.main_squad[0]
+        actions = [
+            lambda: self.ctrl.apply_recovery_session(a.id),
+            lambda: self.ctrl.maintain_track(),
+            lambda: self.ctrl.upgrade_gym(),
+            lambda: self.ctrl.expand_stands(),
+            lambda: self.ctrl.release_athlete(self.state.main_squad[1].id),
+            lambda: (self._dilemma("doping_w3"), self.ctrl.resolve_dilemma(True)),
+            lambda: (self._dilemma("doping_w5"), self.ctrl.resolve_dilemma(False)),
+            lambda: (self._dilemma("youth_w4"), self.ctrl.resolve_dilemma(True)),
+            lambda: (self._dilemma("youth_w6"), self.ctrl.resolve_dilemma(False)),
+            lambda: self.ctrl.run_youth_scouting(),
+        ]
+        for i, action in enumerate(actions):
+            before_budget, before_ledger = self.state.budget, sum(t.amount for t in self.state.transactions)
+            action()
+            self.assertEqual(
+                self.state.budget - before_budget,
+                sum(t.amount for t in self.state.transactions) - before_ledger,
+                f"azione {i}: il budget è cambiato senza una voce corrispondente nel libro mastro",
+            )
+
+    def test_a_rejected_dilemma_costs_at_most_what_the_club_has(self) -> None:
+        self.state.budget = 200
+        self._dilemma("doping_w3")
+        self.ctrl.resolve_dilemma(False)
+        self.assertEqual(self.state.budget, 0)
+        self.assertEqual(self.state.transactions[0].amount, -200)
+        self.assertEqual(self.state.transactions[0].category, "Dilemmi")
+
+    def test_a_club_in_debt_is_not_wiped_clean_by_rejecting_a_dilemma(self) -> None:
+        self.state.budget = -5000
+        self._dilemma("youth_w4")
+        self.ctrl.resolve_dilemma(False)
+        self.assertEqual(self.state.budget, -5000)
+
+    def test_the_monthly_net_matches_the_budget_with_player_actions_in_between(self) -> None:
+        a = self.state.main_squad[0]
+        self.state.transactions = []
+        start = self.state.budget
+        self.ctrl.apply_recovery_session(a.id)
+        self._dilemma("doping_w3")
+        self.ctrl.resolve_dilemma(False)
+        _play(self.ctrl, MONTH_WEEKS)
+        report = self.state.monthly_reports[0]
+        self.assertEqual(report.net, report.budget_end - start)
+
+
 if __name__ == "__main__":
     unittest.main()

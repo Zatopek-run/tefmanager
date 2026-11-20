@@ -407,10 +407,10 @@ che rifiutano di firmare con chi ha una relazione pessima).
 «10.000 € se fa record sociale» sono scalati (scelta dell'utente); (3) il piano non dice che cosa succede ai bonus quando il contratto scade: **scadono al rinnovo** (decisione mia, non dell'utente); (4) il testo della domanda sul bonus diceva che l'agente «lo conta come valore e abbassa la richiesta»
 e che «conviene se pensi che il record arrivi»: con lo sconto **uguale** al bonus è il contrario (conviene se pensi che **non** arrivi, AUDIT R27).
 
-**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen sui metodi collegati ai pulsanti e screenshot); (2) non si tratta il **rinnovo** (resta automatico, Q22) né la clausola (uguale per tutti, non negoziabile); (3) rifiutare non ha costo: AUDIT R27; (4) la clausola rende lo svincolo
+**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen sui metodi collegati ai pulsanti e screenshot); (2) non si tratta il **rinnovo** (resta automatico, Q22) né la clausola (uguale per tutti, non negoziabile); (3) rifiutare non ha costo e la trattativa ha una mossa vincente senza rischio: AUDIT R27; (4) la clausola rende lo svincolo
 molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus vale solo per i record **individuali**.
 
-**Da decidere:** (a) confermare le cifre; (b) se rifiutare debba costare qualcosa (relazione) per evitare di «provare» offerte; (c) se la clausola debba valere anche per gli atleti già in rosa al caricamento di un vecchio salvataggio o solo per i nuovi firmati; (d) se il rinnovo del contratto debba passare da una trattativa.
+**Da decidere:** (a) confermare le cifre; (b) **la trattativa ha una mossa vincente senza rischio** (offrire €100 e accettare la controfferta paga sempre la soglia, AUDIT R27): opzioni: l'agente rompe sotto una percentuale della richiesta con un costo in relazione; la controfferta cade tra soglia e richiesta; un'offerta troppo bassa costa relazione; (c) se il bonus debba avere uno sconto **maggiore** del bonus o pagarsi solo battendo un record già esistente (oggi i primi record sono quasi regalati, R22); (d) se il rinnovo del contratto debba passare da una trattativa.
 
 
 ## Q31 — Finanze dettagliate (PIANOLAVORO D.3) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
