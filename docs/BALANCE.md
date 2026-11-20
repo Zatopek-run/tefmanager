@@ -275,3 +275,17 @@ raramente (Q29). La penalità `AGENT_RELATION_IDLE` non cambia la misura in auto
 
 Controfferta: un solo giro, a metà strada tra offerta e richiesta, mai sotto la soglia. Nessuna estrazione casuale.
 Esempio (atleta con ingaggio standard €1.770, agente Ragionevole a relazione 50): richiesta €1.770, soglia €1.504, un'offerta di €100 riceve la controfferta €1.504.
+
+## P. Finanze dettagliate (PIANOLAVORO D.3, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q31)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `MONTH_WEEKS` | 4 settimane per mese (9 mesi a stagione) | `entities.py` |
+| `MAX_MONTHLY_REPORTS` | 36 bilanci mensili ricordati (quattro stagioni) | `entities.py` |
+| `MERCH_FANS_DIVISOR` / `MERCH_PRESTIGE_DIVISOR` | merchandising settimanale = fan Prima Squadra ÷ 40 + prestigio ÷ 20 | `entities.py` |
+| `TV_RIGHTS_PER_HOME_MEET` | €3.000 a meeting in casa, solo livello Internazionale | `entities.py` |
+| `SPONSOR_TOP_N` | 5: chiudere la stagione nei primi 5 della lega tiene lo sponsor società intero | `entities.py` |
+| `SPONSOR_MISS_PENALTY` | 0,20: fuori dai primi 5 lo sponsor società della stagione dopo vale −20% | `entities.py` |
+
+Misura in autopilota (8 partite, Carriera, nessuna azione): dopo 12 settimane +€6.400/+13.700 (prima di D.3: +€4.700/+15.300, A.1), dopo 36 settimane +€7.000/+19.200, dopo 72 settimane +€12.100/+46.400; il taglio dello sponsor è attivo dopo la prima stagione in 7 partite su 8 (nessuno
+arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrate settimanali (Q31, AUDIT R28).

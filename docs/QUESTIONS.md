@@ -411,3 +411,23 @@ e che «conviene se pensi che il record arrivi»: con lo sconto **uguale** al bo
 molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus vale solo per i record **individuali**.
 
 **Da decidere:** (a) confermare le cifre; (b) se rifiutare debba costare qualcosa (relazione) per evitare di «provare» offerte; (c) se la clausola debba valere anche per gli atleti già in rosa al caricamento di un vecchio salvataggio o solo per i nuovi firmati; (d) se il rinnovo del contratto debba passare da una trattativa.
+
+
+## Q31 — Finanze dettagliate (PIANOLAVORO D.3) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+
+**Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) lo **sponsor con obiettivo** si valuta **a fine stagione** e vale per la successiva (fuori dai primi 5 della lega → −20% dello sponsor società); (2) merchandising e diritti TV con **cifre piccole**
+(extra del 5-15%: fan ÷ 40 + prestigio ÷ 20; TV €3.000 a meeting in casa Internazionale); (3) grafici **disegnati con QPainter**, nessuna dipendenza nuova.
+
+**Cosa c'è** (`models/finances.py`, schema v20): bilancio mensile (4 settimane, dal libro mastro, per categoria, ultimi 36 mesi salvati), merchandising settimanale, taglio dello sponsor società, diritti TV, scheda **Finanze** con grafico a barre, elenco dei mesi e dettaglio per categoria. Dettagli in `GAME.md` §5.19, cifre in
+`BALANCE.md` §P, ordine del tick in `TICK.md` (6, 14c, 21b). Nessuna estrazione dall'RNG della partita.
+
+**Cifre PROVVISORIE:** tutte quelle di §P.
+
+**Scostamenti dal piano:** (1) il piano mette `monthly_financial_report` in `GameState` e il calcolo in `simulation.py`: il calcolo è in `models/finances.py` (senza Qt, come `career.py`) e il campo si chiama `monthly_reports` (lista di `MonthlyReport`); (2) il tab «Finanze» **esisteva già**: l'ho esteso (due sezioni) invece di crearne uno;
+(3) lo sponsor con obiettivo non ha un campo salvato: si legge da `season_history[0]`; (4) il piano parla di «sponsor con obiettivi» al plurale e di grafici «mensili»: un solo obiettivo (top 5) e un solo grafico (entrate/uscite per mese).
+
+**Misura (autopilota, 8 partite):** economia positiva come dopo A.1 (BALANCE §P); taglio sponsor attivo dopo la 1ª stagione in 7 partite su 8 (AUDIT R28).
+
+**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen, screenshot e lettura di tabelle); (2) un solo obiettivo di sponsor, sempre «top 5» anche nei livelli alti; (3) niente confronto tra stagioni nel grafico (12 mesi); (4) i bilanci mensili sono solo per la società del giocatore.
+
+**Da decidere:** (a) confermare le cifre; (b) se «top 5» debba cambiare con il livello (in Finale Oro la lega è la stessa di 8 club); (c) se il taglio debba scattare anche a metà stagione; (d) se i diritti TV debbano esistere anche in Nazionale.

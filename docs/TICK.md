@@ -23,7 +23,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 3 | Carichi allenatore `coach_load` calcolati **una volta** | `:1284` | no |
 | 4 | Per ogni atleta (`state.athletes`, ordine lista): `apply_weekly_training` (doping/infortunio/recupero/crescita/fatica/forma/declino/rischio infortunio). Riceve `pre_meet = (state.weeks_until_competition == 1)`: nel tick che precede la gara la fase «Gara (Picco)» aggiunge `PEAK_FORM_BONUS` al bersaglio di forma (Q21; nessuna chiamata a `r` in più) | `:1285-1295`; `:295-464` | sì |
 | 5 | Note infortunio/recupero al `news_log`; scandalo doping: reputazione −25, prestigio −45 | `:1296-1308` | no |
-| 6 | `weekly_finances(state)` (calcolata **dopo** il passo 5: lo scandalo riduce già lo sponsor di questa settimana) e `budget += net` | `:1311-1312`; `:1224-1248` | no |
+| 6 | `weekly_finances(state)` (calcolata **dopo** il passo 5: lo scandalo riduce già lo sponsor di questa settimana) e `budget += net`. **D.3:** include il **merchandising** (fan ÷ 40 + prestigio ÷ 20) e, se l'ultima stagione è finita fuori dai primi 5, lo sponsor società è tagliato del 20% (si legge da `season_history[0]`, **prima** che il passo 16 lo aggiorni: vale dalla stagione dopo). Nessun RNG | `:1311-1312`; `:1224-1248` | no |
 | 7 | Scritture del libro mastro (sponsor, individuali, quote, stipendi, staff, allenatori, palestra) | `:1314-1335` | no |
 | 8 | Debito: se `budget < 0`: interesse `ceil(−budget × 0,05)` sottratto; se `budget < −20.000` e non già fallita → `bankrupt = True` | `:1337-1352` | no |
 | 9 | Decadimento abilità allenatori: per ciascuno 10% → −1 a una abilità sopra 25 | `:1354-1360` | sì |
@@ -45,6 +45,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 19 | Notizia «Settimana di Gara (casa/trasferta)» se la nuova settimana è di gara | `:1400-1405` | no |
 | 20 | `_evaluate_objectives` (seconda volta: la prima è in `simulate_competition`) | `:1407` | no |
 | 21 | `maybe_generate_dilemma` (con `state.week` **già incrementata**); se `pending_dilemma` è già valorizzato non fa nulla e non consuma RNG | `:1408-1410`; `generator.py:662-699` | sì (se non pendente e settimana ∉ {3,7}) |
+| 21b | **Bilancio mensile** (D.3): se la nuova settimana apre un mese (`(week − 1) % 4 == 0`, `week > 4`), `close_month_if_due` somma per categoria le voci del libro mastro delle 4 settimane appena chiuse (capitale iniziale escluso) e mette il resoconto in testa a `monthly_reports` (al più 36). Va **dopo** ogni movimento del tick e **prima** del troncamento del passo 22 (che tiene 400 voci). **Non usa `r`** | `finances.py` | no |
 | 22 | Troncamento liste: notizie 70, traguardi 40, transazioni 400 | `:1412-1414` | no |
 | 23 | Restituisce `WeekAdvanceReport` | `:1416-1430` | no |
 
@@ -70,6 +71,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 13b | **Atleti sintetici del ranking** (C.1): ogni sintetico muove il livello (`gauss`) e simula un piazzamento contro un campo virtuale (`gauss` per la prestazione, una `random()` per ciascuno dei 7 avversari virtuali, nell'ordine della lista `ranking_pool`: `update_synthetic_field`). **Usa `r`**: aggiungerli sposta tutte le estrazioni successive a parità di seme (2026-11-20, decisione dell'utente). Senza campo (stato costruito a mano) non fa nulla e non consuma `r`. Il campo si crea fuori dal tick: alla partita nuova (`_create_fresh_state`) e al caricamento di un salvataggio vecchio (`upgrade_legacy_state`), con `rng` | `ranking.py: update_synthetic_field` |
 | 14 | Casa: biglietti e usura pista −3; trasferta: costo; `budget += premi + biglietti − trasferta`; `prestige += …` | `:1043-1052` |
 | 14b | Insieme al passo 14: per ogni record sociale **individuale** segnato in questo meeting da un atleta con `record_bonus > 0` (D.2), `budget −= bonus` e una voce «Bonus Atleti» nel libro mastro (più una notizia). Il bonus si azzera al rinnovo del contratto (passo 16b). **Non usa `r`** | `simulation.py: simulate_competition` | no |
+| 14c | Insieme al passo 14, solo meeting **in casa** del livello **Internazionale**: `budget += TV_RIGHTS_PER_HOME_MEET` e voce «Diritti TV» nel libro mastro (D.3). **Non usa `r`** | `simulation.py: simulate_competition` | no |
 | 15 | Transazioni (premi, biglietti o trasferta), `CompetitionSummary` in testa alla storia, notizia | `:1054-1117` |
 | 16 | `_evaluate_objectives` (prima chiamata) | `:1118` |
 

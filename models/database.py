@@ -23,6 +23,7 @@ from models.entities import (
     CompetitionSummary,
     CompetitionTier,
     EthicalDilemma,
+    MonthlyReport,
     EventResult,
     EventStanding,
     GameState,
@@ -45,7 +46,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -155,6 +156,10 @@ V18_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V19_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("record_bonus", "INTEGER NOT NULL DEFAULT 0")],
 }
+# Columns added in v20 (D.3: bilanci mensili della società; `[]` = nessuno).
+V20_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("monthly_report_json", "TEXT NOT NULL DEFAULT '[]'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -173,6 +178,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     16: V17_COLUMNS,
     17: V18_COLUMNS,
     18: V19_COLUMNS,
+    19: V20_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -462,6 +468,38 @@ def _agents_from_json(raw: str) -> List[Agent]:
             relation=int(a.get("relation", AGENT_RELATION_START)),
         )
         for a in json.loads(raw)
+    ]
+
+
+def _reports_to_json(reports: List[MonthlyReport]) -> str:
+    return json.dumps(
+        [
+            {
+                "season": r.season,
+                "month": r.month,
+                "first_week": r.first_week,
+                "last_week": r.last_week,
+                "income": r.income,
+                "expenses": r.expenses,
+                "budget_end": r.budget_end,
+            }
+            for r in reports
+        ]
+    )
+
+
+def _reports_from_json(raw: str) -> List[MonthlyReport]:
+    return [
+        MonthlyReport(
+            season=int(r["season"]),
+            month=int(r["month"]),
+            first_week=int(r["first_week"]),
+            last_week=int(r["last_week"]),
+            income={str(k): int(v) for k, v in r.get("income", {}).items()},
+            expenses={str(k): int(v) for k, v in r.get("expenses", {}).items()},
+            budget_end=int(r.get("budget_end", 0)),
+        )
+        for r in json.loads(raw)
     ]
 
 
@@ -772,7 +810,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     ranking_pool_json TEXT NOT NULL DEFAULT '[]',
     board_json TEXT NOT NULL DEFAULT '{}',
     retired_json TEXT NOT NULL DEFAULT '[]',
-    agents_json TEXT NOT NULL DEFAULT '[]'
+    agents_json TEXT NOT NULL DEFAULT '[]',
+    monthly_report_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -1012,8 +1051,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -1056,6 +1095,7 @@ class DatabaseManager:
                     json.dumps({"failed_streak": state.board_failed_streak, "fired": state.fired}),
                     _retired_to_json(state.retired),
                     _agents_to_json(state.agents),
+                    _reports_to_json(state.monthly_reports),
                 ),
             )
 
@@ -1445,6 +1485,7 @@ class DatabaseManager:
                 coaches=coaches,
                 retired=_retired_from_json(row["retired_json"]),
                 agents=_agents_from_json(row["agents_json"]),
+                monthly_reports=_reports_from_json(row["monthly_report_json"]),
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),

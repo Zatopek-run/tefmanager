@@ -359,6 +359,18 @@ RECORD_BONUS_OPTIONS = (300, 600, 1000)
 # Clausola rescissoria: per svincolare un atleta di Prima Squadra prima della scadenza si paga questo numero di settimane
 # del suo rimborso spese (circa €1.000-10.400). «Non rinnovare» e la scadenza del contratto restano gratuiti; il vivaio non ne ha.
 RELEASE_CLAUSE_WEEKS = 20
+# Finanze (D.3). CIFRE PROVVISORIE (QUESTIONS Q31). Un mese = 4 settimane (la stagione di 36 ne ha 9).
+MONTH_WEEKS = 4
+MAX_MONTHLY_REPORTS = 36  # bilanci mensili ricordati (quattro stagioni)
+# Merchandising settimanale: fan della Prima Squadra ÷ MERCH_FANS_DIVISOR + prestigio ÷ MERCH_PRESTIGE_DIVISOR (extra del 5-15%).
+MERCH_FANS_DIVISOR = 40
+MERCH_PRESTIGE_DIVISOR = 20
+# Diritti TV: solo per i meeting IN CASA del livello Internazionale.
+TV_RIGHTS_PER_HOME_MEET = 3000
+# Sponsor con obiettivo: chiudere la stagione fuori dai primi SPONSOR_TOP_N della lega taglia lo sponsor società della stagione
+# successiva del SPONSOR_MISS_PENALTY (si ripristina chiudendo nei primi N).
+SPONSOR_TOP_N = 5
+SPONSOR_MISS_PENALTY = 0.20
 
 
 def age_category(age: int) -> str:
@@ -1071,6 +1083,35 @@ class Transaction:
 
 
 @dataclass
+class MonthlyReport:
+    """Bilancio di un mese (D.3): entrate e uscite per categoria, ricavate dal libro mastro delle sue 4 settimane."""
+
+    season: int
+    month: int  # 1-9 nella stagione
+    first_week: int
+    last_week: int
+    income: Dict[str, int] = field(default_factory=dict)  # categoria -> importo positivo
+    expenses: Dict[str, int] = field(default_factory=dict)  # categoria -> importo positivo (uscite)
+    budget_end: int = 0
+
+    @property
+    def total_income(self) -> int:
+        return sum(self.income.values())
+
+    @property
+    def total_expenses(self) -> int:
+        return sum(self.expenses.values())
+
+    @property
+    def net(self) -> int:
+        return self.total_income - self.total_expenses
+
+    @property
+    def label(self) -> str:
+        return f"Stagione {self.season} · mese {self.month} (sett. {self.first_week}-{self.last_week})"
+
+
+@dataclass
 class EventStanding:
     """A single competitor's performance in an event."""
 
@@ -1195,6 +1236,7 @@ class GameState:
     coaches: List[Coach] = field(default_factory=list)
     retired: List[RetiredAthlete] = field(default_factory=list)  # ex atleti (C.3), i più recenti in testa
     agents: List[Agent] = field(default_factory=list)  # agenti degli atleti (D.1), anche senza clienti se la relazione non è neutra
+    monthly_reports: List[MonthlyReport] = field(default_factory=list)  # bilanci mensili (D.3), il più recente in testa
     relays: Dict[str, Relay] = field(default_factory=dict)
     coach_hired_week: int = 0  # one new coach per week
     rival_clubs: List[RivalClub] = field(default_factory=list)

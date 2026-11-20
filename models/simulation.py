@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
+    SPONSOR_MISS_PENALTY,
+    SPONSOR_TOP_N,
     AGENT_RELATION_NOT_RENEWED,
     AGENT_RELATION_PODIUM,
     AGENT_RELATION_RENEWED,
@@ -84,6 +86,12 @@ from models.entities import (
     WeatherCondition,
 )
 from models.agents import adjust_relation, drift_relations, ensure_agents, penalize_idle_athletes
+from models.finances import (
+    close_month_if_due,
+    merchandising_income,
+    sponsor_after_cut,
+    tv_rights_income,
+)
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.career import make_retired, retirement_chance
 from models.ranking import (
@@ -1239,7 +1247,8 @@ def simulate_competition(
     else:
         travel_cost = tier_cfg["travel_cost"]
     bonus_total = sum(amount for _a, _e, amount in record_bonuses)
-    state.budget += total_prize + ticket_income - travel_cost - bonus_total
+    tv_income = tv_rights_income(state, is_home)  # D.3: solo in casa e solo Internazionale
+    state.budget += total_prize + ticket_income + tv_income - travel_cost - bonus_total
     state.prestige += total_prestige
 
     meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
@@ -1267,6 +1276,17 @@ def simulate_competition(
         )
         state.news_log.insert(
             0, f"Sett. {state.week}: bonus record di €{amount:,} a {bonus_athlete.name} ({bonus_event})."
+        )
+    if tv_income > 0:
+        state.transactions.insert(
+            0,
+            Transaction(
+                id=None,
+                week=state.week,
+                description=f"Diritti TV {meet_name} (meeting in casa)",
+                category="Diritti TV",
+                amount=tv_income,
+            ),
         )
     if is_home:
         state.transactions.insert(
@@ -1541,16 +1561,19 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     tier_cfg = TIER_CONFIG[state.tier]
     rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
     fidelity_mult = 0.8 + 0.2 * (state.fidelity / 100.0)
-    sponsor = round(tier_cfg["weekly_sponsor"] * rep_mult * fidelity_mult)
+    sponsor, sponsor_cut = sponsor_after_cut(state, round(tier_cfg["weekly_sponsor"] * rep_mult * fidelity_mult))
+    merchandising = merchandising_income(state)
     individual = sum(a.fans // 4 for a in state.main_squad if a.age >= 18)
     athlete_wages = sum(a.weekly_wage for a in state.main_squad)
     staff_cost = sum(s.weekly_cost for s in state.staff if s.hired)
     coach_cost = sum(c.weekly_wage for c in state.coaches)
     gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
-    income = sponsor + individual + state.member_fees_weekly
+    income = sponsor + individual + merchandising + state.member_fees_weekly
     expenses = athlete_wages + staff_cost + coach_cost + gym_upkeep
     return {
         "sponsor": sponsor,
+        "sponsor_cut": sponsor_cut,
+        "merchandising": merchandising,
         "individual_sponsors": individual,
         "member_fees": state.member_fees_weekly,
         "income": income,
@@ -1758,10 +1781,13 @@ def advance_week(
         )
 
     ledger(
-        f"Sponsor Società ({state.tier.display_name}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)",
+        f"Sponsor Società ({state.tier.display_name}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)"
+        + (f" · −{SPONSOR_MISS_PENALTY:.0%}: stagione scorsa fuori dai primi {SPONSOR_TOP_N}" if fin["sponsor_cut"] else ""),
         "Sponsor",
         fin["sponsor"],
     )
+    if fin["merchandising"] > 0:
+        ledger("Merchandising (fan e prestigio)", "Merchandising", fin["merchandising"])
     if fin["individual_sponsors"] > 0:
         ledger("Sponsor Individuali Atleti (in base ai fan)", "Sponsor", fin["individual_sponsors"])
     ledger("Quote Tesserati & Contributi", "Quote Sociali", fin["member_fees"])
@@ -1857,6 +1883,8 @@ def advance_week(
     dilemma = maybe_generate_dilemma(state, rng=r)
     if dilemma is not None:
         state.pending_dilemma = dilemma
+
+    close_month_if_due(state)  # D.3: bilancio del mese appena finito (dopo ogni movimento del tick, bonus promozione compreso)
 
     state.news_log = state.news_log[:70]
     state.milestones = state.milestones[:40]

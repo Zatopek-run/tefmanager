@@ -877,5 +877,47 @@ class TestMigrationV19RecordBonus(_TmpCase):
         self.assertEqual(user_version(path), 18)
 
 
+class TestMigrationV20MonthlyReports(_TmpCase):
+    """v19 → v20 (D.3): `game_state.monthly_report_json` (default `'[]'`, nessun bilancio mensile)."""
+
+    def test_v19_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 20)
+        self.assertIn(19, MIGRATIONS)
+        path = make_save(self.slot("v19"), 19)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("monthly_report_json", column_names(conn, "game_state"))  # la fixture è davvero v19
+            self.assertIn("agents_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT monthly_report_json FROM game_state WHERE id = 1").fetchone(), ("[]",))
+            self.assertIn(("monthly_report_json", "TEXT", 1, "'[]'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 19)
+        backup = self.backups("v19")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 19)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("monthly_report_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 19)
+
+    def test_a_migrated_save_loads_with_no_monthly_reports(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v20")
+        DatabaseManager(db_path=path).save_game(make_state(3))
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(loaded.monthly_reports, [])
+
+    def test_failed_v19_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v19"), 19)
+        before = sha(path)
+        broken = {"game_state": [("monthly_report_json", "TEXT NOT NULL DEFAULT '[]'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {19: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 19)
+
+
 if __name__ == "__main__":
     unittest.main()

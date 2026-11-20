@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -27,6 +28,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from views.athlete_dialog import AthleteDetailDialog
+from views.finance_chart import MonthlyBarsWidget
 from models.board import progress_text
 from models.ranking import (
     club_points,
@@ -73,6 +75,7 @@ from models.entities import (
     RelayChange,
     FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
+    SPONSOR_TOP_N,
     SeasonOutcome,
     Specialty,
     TrainingFocus,
@@ -80,6 +83,7 @@ from models.entities import (
     stand_expansion_cost,
 )
 from controllers.game_controller import scouting_search_cost
+from models.finances import recent_reports
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
 from views.dialogs import (
     CompetitionResultsDialog,
@@ -1531,7 +1535,96 @@ class FinancesTab(QWidget):
         self.table.verticalHeader().setVisible(False)
         ledger_layout.addWidget(self.table)
 
-        root.addWidget(ledger_panel, stretch=1)
+        self.sections = QTabWidget()
+        self.sections.addTab(self._build_monthly_page(), "Bilancio mensile")
+        self.sections.addTab(ledger_panel, "Libro mastro")
+        root.addWidget(self.sections, stretch=1)
+
+    def _build_monthly_page(self) -> QWidget:
+        """Bilancio mensile (D.3): grafico degli ultimi mesi, elenco dei mesi e dettaglio per categoria del mese scelto."""
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 10, 0, 0)
+        self.chart = MonthlyBarsWidget()
+        lay.addWidget(self.chart)
+        body = QHBoxLayout()
+        self._monthly_list: list = []
+        self.months_table = QTableWidget(0, 5)
+        self.months_table.setHorizontalHeaderLabels(["Mese", "Entrate", "Uscite", "Saldo mese", "Budget a fine mese"])
+        self.breakdown_table = QTableWidget(0, 3)
+        self.breakdown_table.setHorizontalHeaderLabels(["Categoria", "Entrate", "Uscite"])
+        for table in (self.months_table, self.breakdown_table):
+            table.setAlternatingRowColors(True)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            table.verticalHeader().setVisible(False)
+        self.months_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # etichetta lunga
+        self.months_table.itemSelectionChanged.connect(self._show_breakdown)
+        body.addWidget(self.months_table, stretch=3)
+        body.addWidget(self.breakdown_table, stretch=2)
+        lay.addLayout(body, stretch=1)
+        return page
+
+    @staticmethod
+    def _money(amount: int, signed: bool = False) -> str:
+        if amount == 0:
+            return "—"
+        sign = ("+" if amount > 0 else "-") if signed else ("-" if amount < 0 else "")
+        return f"{sign}€{abs(amount):,}"
+
+    def _refresh_monthly(self, state: GameState) -> None:
+        previous = self.months_table.currentRow()
+        self._monthly_list = list(state.monthly_reports)
+        self.chart.set_reports(recent_reports(state, 12))
+        self.months_table.blockSignals(True)
+        self.months_table.setRowCount(len(self._monthly_list))
+        for row, rep in enumerate(self._monthly_list):
+            vals = [
+                f"S{rep.season} · mese {rep.month} (sett. {rep.first_week}-{rep.last_week})",
+                self._money(rep.total_income),
+                self._money(-rep.total_expenses),
+                self._money(rep.net, signed=True),
+                f"€{rep.budget_end:,}",
+            ]
+            for col, text in enumerate(vals):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 3:
+                    item.setForeground(QColor("#34d399" if rep.net >= 0 else "#f87171"))
+                self.months_table.setItem(row, col, item)
+        self.months_table.blockSignals(False)
+        if self._monthly_list:
+            self.months_table.selectRow(min(max(previous, 0), len(self._monthly_list) - 1))
+        self._show_breakdown()
+
+    def _show_breakdown(self) -> None:
+        row = self.months_table.currentRow()
+        if not (0 <= row < len(self._monthly_list)):
+            self.breakdown_table.setRowCount(0)
+            return
+        rep = self._monthly_list[row]
+        categories = sorted(
+            set(rep.income) | set(rep.expenses),
+            key=lambda c: -(rep.income.get(c, 0) + rep.expenses.get(c, 0)),
+        )
+        self.breakdown_table.setRowCount(len(categories) + 1)
+        rows = [(c, rep.income.get(c, 0), rep.expenses.get(c, 0)) for c in categories]
+        rows.append(("TOTALE", rep.total_income, rep.total_expenses))
+        for r, (cat, inc, exp) in enumerate(rows):
+            for col, text in enumerate([cat, self._money(inc), self._money(-exp)]):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if col == 1 and inc:
+                    item.setForeground(QColor("#34d399"))
+                elif col == 2 and exp:
+                    item.setForeground(QColor("#f87171"))
+                if cat == "TOTALE":
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.breakdown_table.setItem(r, col, item)
 
     def refresh(self, state: GameState) -> None:
         fin = weekly_finances(state)
@@ -1548,7 +1641,8 @@ class FinancesTab(QWidget):
         self.sponsor_val.setText(f"+€{fin['income']:,}")
         self.sponsor_sub.setText(
             f"Società €{fin['sponsor']:,} + Individuali €{fin['individual_sponsors']:,} "
-            f"+ Quote €{fin['member_fees']:,}"
+            f"+ Merch €{fin['merchandising']:,} + Quote €{fin['member_fees']:,}"
+            + (f" · sponsor −€{fin['sponsor_cut']:,} (stagione scorsa fuori dai primi {SPONSOR_TOP_N})" if fin["sponsor_cut"] else "")
         )
 
         self.payroll_val.setText(f"-€{fin['expenses']:,}")
@@ -1588,6 +1682,7 @@ class FinancesTab(QWidget):
                 if col == 3:
                     item.setForeground(QColor("#34d399" if tx.amount >= 0 else "#f87171"))
                 self.table.setItem(row, col, item)
+        self._refresh_monthly(state)
 
     def _on_ledger_header_clicked(self, col: int) -> None:
         self._ledger_sort_active, self._ledger_sort_col, self._ledger_sort_desc = _toggle_sort(
