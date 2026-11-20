@@ -56,6 +56,7 @@ from models.entities import (
     FieldRisk,
     RaceKick,
     RacePace,
+    RelayChange,
     FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
     SeasonOutcome,
@@ -1886,6 +1887,7 @@ class RelayTab(QWidget):
         self._bars: Dict[str, QProgressBar] = {}
         self._notes: Dict[str, QLabel] = {}
         self._auto_btns: Dict[str, QPushButton] = {}
+        self._change_combos: Dict[str, QComboBox] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1930,6 +1932,24 @@ class RelayTab(QWidget):
             note.setObjectName("SubTitle")
             note.setWordWrap(True)
             lay.addWidget(note)
+            change_line = QHBoxLayout()
+            change_lbl = QLabel("Cambio (M e F)")
+            change_lbl.setMinimumWidth(150)
+            change_line.addWidget(change_lbl)
+            change_combo = QComboBox()
+            for change in RelayChange:
+                change_combo.addItem(change.value, change)
+            change_combo.setCurrentIndex(max(0, change_combo.findData(RelayChange.NORMALE)))
+            change_combo.setToolTip(
+                "Conservativo: −1 punto di squadra e −10 punti percentuali di rischio di squalifica "
+                "(serve soprattutto con poco affiatamento). Aggressivo: +2 punti e +10 punti percentuali "
+                "(conviene a una squadra che insegue, non a chi è già favorito). Vale per maschile e femminile."
+            )
+            change_combo.currentIndexChanged.connect(
+                lambda _i, n=name, c=change_combo: self.controller.set_relay_change(n, c.currentData())
+            )
+            change_line.addWidget(change_combo, stretch=1)
+            lay.addLayout(change_line)
             combos: list[QComboBox] = []
             for slot, label in enumerate(self.SLOT_LABELS):
                 line = QHBoxLayout()
@@ -1958,6 +1978,7 @@ class RelayTab(QWidget):
             self._bars[name] = bar
             self._notes[name] = note
             self._auto_btns[name] = auto_btn
+            self._change_combos[name] = change_combo
         root.addLayout(row, stretch=1)
 
     def refresh(self, state: GameState) -> None:
@@ -2007,6 +2028,11 @@ class RelayTab(QWidget):
                 combo.setEnabled(name in active)
                 combo.blockSignals(False)
             self._auto_btns[name].setEnabled(name in active)
+            change_combo = self._change_combos[name]
+            change_combo.blockSignals(True)
+            change_combo.setCurrentIndex(max(0, change_combo.findData(state.change_for(name))))
+            change_combo.setEnabled(name in active)
+            change_combo.blockSignals(False)
 
     def _on_slot_changed(self, name: str, slot: int, combo: QComboBox) -> None:
         gender = self.division_combo.currentData() or "M"

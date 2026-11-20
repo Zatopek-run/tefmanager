@@ -39,6 +39,7 @@ from models.entities import (
     MIDDLE_800M_CURVE,
     MAX_INDIVIDUAL_EVENTS,
     PEAK_FORM_BONUS,
+    RELAY_CHANGE_EFFECTS,
     RELAY_DQ_MULT,
     LEAGUE_PLACE_SLOTS,
     KICK_EFFECTS,
@@ -58,6 +59,7 @@ from models.entities import (
     FieldRisk,
     RaceKick,
     RacePace,
+    RelayChange,
     Athlete,
     CompetitionSummary,
     CompetitionTier,
@@ -244,9 +246,19 @@ def auto_build_all_relays(state: GameState, gender: Optional[str] = None) -> Non
                 relay.reserve_id = max(spare, key=lambda a: relay_leg_score(a, rdef)).id
 
 
-def _relay_dq_chance(harmony: int, substituted: bool, relay_name: str = "4x100m") -> float:
+def _relay_dq_chance(
+    harmony: int, substituted: bool, relay_name: str = "4x100m", change: RelayChange = RelayChange.NORMALE
+) -> float:
+    """Probabilità di squalifica: base per affiatamento × moltiplicatore della staffetta (Q20), poi il cambio scelto (B.3)
+    somma punti percentuali al valore finale; resta tra 0 e 1."""
     base = max(0.0, (60 - harmony) * 0.006) + (0.03 if substituted else 0.0)
-    return base * RELAY_DQ_MULT.get(relay_name, 1.0)
+    chance = base * RELAY_DQ_MULT.get(relay_name, 1.0) + RELAY_CHANGE_EFFECTS[change][1]
+    return max(0.0, min(1.0, chance))
+
+
+def relay_change_label(change: RelayChange) -> str:
+    """Testo per i risultati; vuoto con «Normale»."""
+    return "" if change == RelayChange.NORMALE else f"Cambio {change.value}"
 
 
 def _relay_mark(rdef: RelayDefinition, score: float, gender: str = "M") -> Tuple[float, str]:
@@ -1068,12 +1080,15 @@ def simulate_competition(
                 continue
 
             harmony = relay.harmony - (15 if substituted else 0)
-            disqualified = r.random() < _relay_dq_chance(harmony, substituted, rdef.name)
+            change = state.change_for(relay_name)  # cambio scelto (B.3): solo punteggio e soglia, nessuna estrazione in più
+            change_text = relay_change_label(change)
+            disqualified = r.random() < _relay_dq_chance(harmony, substituted, rdef.name, change)
             if disqualified:
                 p_val, p_disp = 9999.0, RELAY_DQ_MARK
             else:
                 leg_scores = [relay_leg_score(a, rdef) for a in legs]
                 p_score = sum(sc * w for sc, w in zip(leg_scores, RELAY_LEG_WEIGHTS))
+                p_score += RELAY_CHANGE_EFFECTS[change][0]
                 p_score += (harmony - 50) * 0.08 + r.gauss(0.0, 2.5)
                 if is_home:
                     p_score += 1.0
@@ -1147,7 +1162,8 @@ def simulate_competition(
                     prestige_gained=prestige_gain,
                     is_club_record=is_club_rec,
                     standings=standings,
-                    attitude=f"Affiatamento {harmony_grade(max(0, harmony))}",
+                    attitude=f"Affiatamento {harmony_grade(max(0, harmony))}"
+                    + (f" · {change_text}" if change_text else ""),
                     withdrew_injured=False,
                     disqualified=disqualified,
                     gender=gender,

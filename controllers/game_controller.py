@@ -44,7 +44,9 @@ from models.entities import (
     FieldRisk,
     RaceKick,
     RacePace,
+    RelayChange,
     FIELD_STRATEGY_EVENTS,
+    RELAY_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
     Specialty,
     Athlete,
@@ -588,6 +590,13 @@ class GameController(QObject):
             return
         self.state.race_strategy[event_name] = {"risk": risk.value}
         self.status_message.emit(f"{event_name}: rischio {risk.value}.")
+
+    def set_relay_change(self, relay_name: str, change: RelayChange) -> None:
+        """Cambio di una staffetta (B.3); vale per M e F e si salva come il piano gara (stessa colonna JSON)."""
+        if relay_name not in RELAY_STRATEGY_EVENTS:
+            return
+        self.state.race_strategy[relay_name] = {"change": change.value}
+        self.status_message.emit(f"Staffetta {relay_name}: cambio {change.value}.")
 
     def set_event_attitude(self, event_name: str, attitude: RaceAttitude) -> None:
         self.state.event_attitude[event_name] = attitude.value

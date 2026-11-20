@@ -58,7 +58,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 7 | PB, record sociale, momento storico (solo vento legale e non ritirato) | `:834-888` |
 | 8 | Premi, prestigio, fan | `:890-901` |
 | 9 | Fatica (+atteggiamento) e forma ricalcolata dell'atleta | `:797-799` |
-| 10 | Staffette M e F: sostituzioni dalla riserva, DQ, tempo, punti, record, premi | `:926-1030` |
+| 10 | Staffette M e F: sostituzioni dalla riserva, DQ, tempo, punti, record, premi. **Cambio scelto (B.3): nessuna chiamata RNG in più** — cambiano solo la soglia della `r.random()` della DQ e i punti sommati a `p_score`; l'ordine e il numero delle chiamate sono quelli di prima. Nota (R20): una squadra squalificata salta la `r.gauss(0; 2,5)` del proprio tempo, quindi la sequenza dopo la DQ dipende dall'esito | `:926-1030` |
 | 11 | `_adapt_rival_ambition` | `:1032` |
 | 12 | Classifica del meeting (ordine di inserimento nei pari merito), bonus prestigio 1°/2°/3° | `:1033-1039` |
 | 13 | **Somma dei punti nella `league_table`** | `:1040-1041` |

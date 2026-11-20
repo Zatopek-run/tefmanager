@@ -263,3 +263,41 @@ Oggi sì: `build_default_lineup` lo preferisce evitare ma non lo vieta (`generat
 | 10% | 2,79 | 2,71 | 2,78 |
 
 Con 3% rischiare conviene sempre e Aggressivo è il migliore; con 6% Bilanciato e Aggressivo si equivalgono; con 10% Aggressivo non conviene più. Il campione è piccolo (differenze di ~0,05 posizioni sono rumore). **Da decidere:** tenere il 3% (rischio quasi sempre conveniente) o salire verso il 6% (scelta davvero tattica)? Chiusa la decisione, la cifra va in `BALANCE.md`.
+
+
+## Q25 — Cambio nelle staffette (PIANOLAVORO B.3) — ✅ FATTA 2026-11-20 (cifre misurate e confermate dall'utente)
+
+**Decisione dell'utente (2026-11-20):** misurare le cifre invece di prendere quelle del piano alla lettera, e adottare quelle proposte dopo la misura. **Cifre adottate** (`entities.py`, blocco «Cambio nelle staffette»; `BALANCE.md` sezione D): `RELAY_CHANGE_EFFECTS` = Conservativo −1 punto di squadra e −10 punti percentuali di rischio di squalifica; Normale 0 / 0; Aggressivo +2 punti e +10 punti percentuali. I punti percentuali si sommano alla probabilità **finale** (dopo il ×0,5 della 4x400m, Q20) e il risultato è limitato a 0-1.
+
+**Scostamenti dal piano:** (1) «−10% / +15% di rischio DQ» è letto in **punti percentuali**, non come moltiplicatore, e **+15 diventa +10**; (2) il piano non indica la fatica per le staffette e non c'è: le staffette non consumano forma; (3) la scelta è per staffetta e vale per M e F insieme (come l'atteggiamento, il piano gara e il rischio nei concorsi), nella colonna `race_strategy_json` (chiave `change`): **nessuna migrazione**, schema ancora v14; (4) UI nella scheda Staffette e non in `athlete_dialog.py`.
+
+**Perché non le due letture del piano.** Misurate su 10 partite × 40 semi (rose diverse), con numeri casuali comuni, per 6 affiatamenti (20-90), due staffette e due livelli di forza della squadra («forte» = la squadra attuale; «media» = −8 punti a ogni frazione):
+- *Come moltiplicatore* (×0,9 / ×1,15): «Aggressivo» guadagna in **tutte** le 24 celle misurate (da +0,1 a +0,7 punti squadra) e «Conservativo» perde quasi sempre. Non è una scelta. Con affiatamento ≥ 60 il rischio base è 0 e un moltiplicatore non costa nulla.
+- *Come punti percentuali con +15:* nella 4x100m «Aggressivo» perde sempre (da −0,3 a −0,9) e conviene solo a una squadra media nella 4x400m; con +8 resta sempre vantaggioso in tutta la 4x400m, perché lì la DQ è già dimezzata (Q20) e +2 punti valgono di più (il campo è più sparso).
+
+**Differenza in punti squadra rispetto a «Normale» con le cifre adottate** (differenza appaiata; errore standard tra ±0,02 e ±0,09: sotto ~0,1 non si distingue da zero):
+
+| Caso (affiatamento) | Normale (punti) | Conservativo | Aggressivo |
+| --- | ---: | ---: | ---: |
+| 4x100m forte (20) | 5,53 | +0,52 | −0,52 |
+| 4x100m forte (50) | 7,01 | +0,33 | −0,35 |
+| 4x100m forte (90) | 7,79 | −0,07 | −0,57 |
+| 4x100m media (20) | 3,82 | +0,16 | −0,10 |
+| 4x100m media (50) | 5,34 | −0,01 | +0,09 |
+| 4x100m media (90) | 6,56 | −0,26 | −0,16 |
+| 4x400m forte (20) | 3,62 | +0,07 | +0,20 |
+| 4x400m forte (50) | 4,77 | −0,27 | +0,06 |
+| 4x400m forte (90) | 5,82 | −0,29 | −0,04 |
+| 4x400m media (20) | 1,69 | −0,02 | +0,12 |
+| 4x400m media (50) | 2,32 | −0,22 | +0,27 |
+| 4x400m media (90) | 3,25 | −0,30 | +0,35 |
+
+Lettura: «Conservativo» serve nella 4x100m con poco affiatamento (≤ 50) ed è un costo oltre; nella 4x400m quasi non serve, perché la squalifica è già rara. «Aggressivo» è una mossa da squadra che insegue: dannoso per chi è già favorito nella 4x100m, utile a una squadra media nella 4x400m, vicino a zero per una squadra forte nella 4x400m.
+
+**Limiti delle misure (dichiarati):**
+- **Affiatamento reale.** Giocando 36 settimane senza gestire le staffette (8 partite) la mediana è circa 40 e solo il 3% (4x100m) o il 16% (4x400m) delle squadre completa supera 60: le righe 20-50 sono le più realistiche. Un giocatore che tiene stabile la formazione arriva più in alto: **non misurato**.
+- **Solo categoria Provinciale;** «forte» e «media» sono simulate con uno spostamento delle frazioni, non con rose diverse.
+- **Errori standard un po' ottimistici** perché le partite con e senza DQ non restano appaiate (la squadra squalificata salta una estrazione: AUDIT R20). Le medie non ne sono toccate.
+- Nelle colonne a +15 punti percentuali il rischio osservato era 12-13% invece del 15% nominale: probabilmente rumore delle estrazioni condivise, **non verificato**.
+- Si misurano solo i punti squadra, non premi o prestigio legati al piazzamento.
+- **Test manuale della UI non eseguito:** il menu è provato solo da codice offscreen, non con il mouse reale.

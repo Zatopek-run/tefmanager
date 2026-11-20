@@ -387,6 +387,25 @@ RELAY_DQ_MULT: Dict[str, float] = {"4x100m": 1.0, "4x400m": 0.5}
 RELAY_DQ_MARK = "Squalificata"
 
 
+# Cambio nelle staffette (B.3): scelta per staffetta prima della gara (M e F insieme, come l'atteggiamento), applicata dal
+# modello. Cifre misurate e confermate dall'utente il 2026-11-20 (Q25, docs/BALANCE.md sezione D): punti di punteggio di
+# squadra e variazione del rischio di squalifica in PUNTI PERCENTUALI, sommata al rischio finale (dopo il ×0,5 della 4x400m)
+# e limitata tra 0 e 1. Nessuna estrazione RNG in più: cambia solo la soglia dell'estrazione che c'è già.
+class RelayChange(str, Enum):
+    CONSERVATIVO = "Conservativo"
+    NORMALE = "Normale"
+    AGGRESSIVO = "Aggressivo"
+
+
+RELAY_STRATEGY_EVENTS: Tuple[str, ...] = ("4x100m", "4x400m")
+# punti di punteggio di squadra, punti percentuali di rischio di squalifica
+RELAY_CHANGE_EFFECTS: Dict[RelayChange, Tuple[float, float]] = {
+    RelayChange.CONSERVATIVO: (-1.0, -0.10),
+    RelayChange.NORMALE: (0.0, 0.0),
+    RelayChange.AGGRESSIVO: (2.0, 0.10),
+}
+
+
 def harmony_grade(harmony: int) -> str:
     """Letter grade for relay harmony (E .. A++)."""
     grades = ["E", "D", "C-", "C", "C+", "B-", "B", "B+", "A", "A+", "A++"]
@@ -1127,6 +1146,13 @@ class GameState:
             return FieldRisk(self.race_strategy.get(event_name, {}).get("risk", FieldRisk.SICURO.value))
         except ValueError:
             return FieldRisk.SICURO
+
+    def change_for(self, relay_name: str) -> RelayChange:
+        """Cambio scelto per una staffetta (B.3); assente o sconosciuto → Normale."""
+        try:
+            return RelayChange(self.race_strategy.get(relay_name, {}).get("change", RelayChange.NORMALE.value))
+        except ValueError:
+            return RelayChange.NORMALE
 
     @property
     def next_meet_is_home(self) -> bool:
