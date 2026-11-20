@@ -77,6 +77,13 @@ from models.entities import (
     Transaction,
     WeatherCondition,
 )
+from models.ranking import (
+    award_event_points,
+    award_place,
+    decay_ranking,
+    ensure_ranking_pool,
+    update_synthetic_field,
+)
 from models.generator import (
     build_default_lineup,
     clamp_stat,
@@ -727,8 +734,11 @@ def _rival_only_points(
     meet_places: Dict[str, List[int]],
     rng: random.Random,
     gender: str = "M",
+    ranking_tier: Optional[CompetitionTier] = None,
 ) -> None:
-    """When the club enters nobody in an event, the rivals still score among themselves."""
+    """When the club enters nobody in an event, the rivals still score among themselves.
+
+    Con `ranking_tier` (gare individuali) i piazzamenti danno anche punti ranking ai rivali (C.1)."""
     def day_score(club: RivalClub) -> float:
         athlete = club.athlete_for(event, gender)
         return rng.gauss(athlete.skill if athlete else 0.0, RIVAL_RACE_SIGMA)
@@ -736,6 +746,9 @@ def _rival_only_points(
     order = sorted(clubs, key=day_score, reverse=True)
     for place, club in enumerate(order, start=1):
         _score_place(team_points, meet_places, club.name, place)
+        holder = club.athlete_for(event, gender) if ranking_tier is not None else None
+        if holder is not None and ranking_tier is not None:
+            award_place(holder, event, ranking_tier, place)
 
 
 # ---------------------------------------------------------------- rival development
@@ -839,6 +852,8 @@ def simulate_competition(
     }
     fan_mult = {0: 3, 1: 6, 2: 12, 3: 25}[state.tier.order]
 
+    decay_ranking(state)  # C.1: i punti ranking decadono una volta per meeting, prima dei nuovi (per tutti)
+
     event_results: List[EventResult] = []
     team_points: Dict[str, int] = {state.team_name: 0}
     for team in rivals:
@@ -856,7 +871,9 @@ def simulate_competition(
             player_athlete = athlete_by_id.get(selected_id) if selected_id is not None else None
 
             if player_athlete is None or player_athlete.is_injured:
-                _rival_only_points(clubs, event_name, team_points, meet_places, r, gender=gender)
+                _rival_only_points(
+                    clubs, event_name, team_points, meet_places, r, gender=gender, ranking_tier=state.tier
+                )
                 continue
 
             attitude = state.attitude_for(event_name)
@@ -879,6 +896,7 @@ def simulate_competition(
             wind_illegal = bool(wind_ms is not None and wind_ms > 2.0)
 
             standings: List[EventStanding] = []
+            ranking_holders: Dict[Tuple[str, str], object] = {}
 
             # In-race injury check: attitude & accumulated fatigue drive the risk
             injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
@@ -935,11 +953,15 @@ def simulate_competition(
             )
             player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
 
+            if not withdrew:  # il ritirato non è classificato: nessun punto ranking
+                ranking_holders[(state.team_name, player_athlete.name)] = player_athlete
+
             # One athlete per rival club in the same gender division
             for club in clubs:
                 opp = club.athlete_for(event_name, gender)
                 if opp is None:
                     continue
+                ranking_holders[(club.name, opp.name)] = opp
                 opp_score = r.gauss(opp.skill, RIVAL_RACE_SIGMA)
                 o_val, o_disp = _score_to_mark(event_def, opp_score, wind_ms, gender=gender)
                 if not wind_illegal and (opp.pb is None or _is_better(event_def, o_val, opp.pb)):
@@ -967,6 +989,7 @@ def simulate_competition(
                     player_place = idx
                 if not (standing.is_player and withdrew):
                     _score_place(team_points, meet_places, standing.team_name, idx)
+            award_event_points(state.tier, event_name, standings, ranking_holders)
 
             # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
             is_pb = False
@@ -1186,6 +1209,7 @@ def simulate_competition(
         total = state.league_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
         for i, n in enumerate(counts):
             total[i] += n
+    update_synthetic_field(state)  # C.1: i sintetici gareggiano, con un flusso proprio (TICK.md, passo C-13b)
 
     # Home meets: no bus trip, but the gate brings ticket income and wears the track
     spectators, ticket_income = (0, 0)
@@ -1332,6 +1356,7 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
                 lineup[e] = filled.get(e)
     state.news_log[0:0] = normalize_assignments(state)
     ensure_contracts(state)
+    ensure_ranking_pool(state)  # C.1: campo sintetico dei vecchi salvataggi, con seed di hashlib (non tocca l'RNG)
 
 
 def normalize_assignments(state: GameState) -> List[str]:

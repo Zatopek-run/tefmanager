@@ -49,12 +49,13 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga |
 | ---: | --- | --- |
+| 0 | **Decadimento del ranking** (C.1, 2026-11-20): i punti ranking di club, rivali di ogni livello e atleti sintetici si moltiplicano per `RANKING_DECAY`, per tutti insieme e prima dei nuovi punti; se manca il campo sintetico (partita nuova, vecchio salvataggio) lo crea qui con un seed di `hashlib` (`world_seed`). **Non usa `r`** | `ranking.py: decay_ranking` |
 | 1 | Meteo (Sereno indoor, altrimenti `r.choice`), stato pista, `is_home` | `:710-719`, `:708` |
 | 2 | Per divisione M poi F, per evento (ordine `active_events`: 100m, 400m, **800m**, 1500m, Lungo, Peso in Carriera; l'800m è stato inserito il 2026-11-19 e sposta la sequenza dell'RNG di ogni partita): se nessun convocato o infortunato → solo punti rivali | `:733-743` |
 | 3 | Atteggiamento, vento (se l'evento è sensibile), rischio ritiro (`r.random() < injury_chance`) | `:745-761` |
 | 4 | Punteggio giocatore (`_compute_athlete_event_score` + atteggiamento + piano gara B.1 / bonus tecnica B.2 + σ + casa +1,0) → misura. **Solo in lungo/peso con rischio ≠ «Sicuro» (B.2): una `r.random()` in più subito dopo la misura** (nullo: misura −`FIELD_FOUL_LOSS`); con «Sicuro» l'ordine delle chiamate è invariato | `:775-783` |
 | 5 | Atleti rivali (uno per società), PB rivale se vento legale | `:801-820` |
-| 6 | Ordinamento, piazzamenti, **punti squadra** `TEAM_POINTS` | `:822-832` |
+| 6 | Ordinamento, piazzamenti, **punti squadra** `TEAM_POINTS`. Subito dopo, **punti ranking** (C.1) a chi è classificato: club e rivali, `RANKING_PLACE_POINTS[posto-1]` × moltiplicatore del livello (`award_event_points`; il ritirato del club non è classificato e non ne ha; stessa regola per i rivali quando il club non iscrive nessuno, `_rival_only_points`). Le staffette non danno punti ranking. **Non usa `r`** | `:822-832` |
 | 7 | PB, record sociale, momento storico (solo vento legale e non ritirato) | `:834-888` |
 | 8 | Premi, prestigio, fan | `:890-901` |
 | 9 | Fatica (+atteggiamento) e forma ricalcolata dell'atleta | `:797-799` |
@@ -62,6 +63,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 11 | `_adapt_rival_ambition` | `:1032` |
 | 12 | Classifica del meeting (ordine di inserimento nei pari merito), bonus prestigio 1°/2°/3° | `:1033-1039` |
 | 13 | **Somma dei punti nella `league_table`** | `:1040-1041` |
+| 13b | **Atleti sintetici del ranking** (C.1): ogni sintetico muove il livello e simula un piazzamento contro un campo virtuale (`update_synthetic_field`). **Eccezione dichiarata alla convenzione 3 (QUESTIONS Q26): non usa `r`**, ma un flusso derivato con `hashlib` da squadra, stagione e settimana (`synthetic_meeting_rng`): l'RNG della partita resta intatto, quindi aggiungere il ranking **non sposta** la sequenza di nessun altro esito (c'è un test), e ricaricare dà gli stessi risultati | `ranking.py: update_synthetic_field` |
 | 14 | Casa: biglietti e usura pista −3; trasferta: costo; `budget += premi + biglietti − trasferta`; `prestige += …` | `:1043-1052` |
 | 15 | Transazioni (premi, biglietti o trasferta), `CompetitionSummary` in testa alla storia, notizia | `:1054-1117` |
 | 16 | `_evaluate_objectives` (prima chiamata) | `:1118` |

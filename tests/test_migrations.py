@@ -637,5 +637,49 @@ class TestMigrationV14RaceStrategy(_TmpCase):
         self.assertEqual(user_version(path), 13)
 
 
+class TestMigrationV15Ranking(_TmpCase):
+    """v14 → v15 (C.1): `athletes.ranking_json` (punti per evento) e `game_state.ranking_pool_json` (campo sintetico)."""
+
+    def test_v14_save_gets_both_columns_with_defaults_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 15)
+        self.assertIn(14, MIGRATIONS)
+        path = make_save(self.slot("v14"), 14)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("ranking_json", column_names(conn, "athletes"))  # la fixture è davvero v14
+            self.assertNotIn("ranking_pool_json", column_names(conn, "game_state"))
+            self.assertIn("race_strategy_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT ranking_pool_json FROM game_state WHERE id = 1").fetchone(), ("[]",))
+            self.assertIn(("ranking_pool_json", "TEXT", 1, "'[]'", 0), columns(conn, "game_state"))
+            self.assertIn(("ranking_json", "TEXT", 1, "'{}'", 0), columns(conn, "athletes"))
+            values = {r[0] for r in conn.execute("SELECT ranking_json FROM athletes")}
+            self.assertLessEqual(values, {"{}"})
+        sentinel_ok(self, path, 14)
+        backup = self.backups("v14")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 14)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("ranking_pool_json", column_names(conn, "game_state"))
+            self.assertNotIn("ranking_json", column_names(conn, "athletes"))
+        sentinel_ok(self, backup, 14)
+
+    def test_failed_v14_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v14"), 14)
+        before = sha(path)
+        broken = {
+            "athletes": [("ranking_json", "TEXT NOT NULL DEFAULT '{}'")],
+            "game_state": [("ranking_pool_json", "TEXT NOT NULL DEFAULT '[]'"), ("rotta", "SYNTAX ((")],
+        }
+        with mock.patch.dict(MIGRATIONS, {14: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 14)
+        with closing(sqlite3.connect(path)) as conn:  # la prima colonna è stata annullata insieme alla seconda
+            self.assertNotIn("ranking_json", column_names(conn, "athletes"))
+
+
 if __name__ == "__main__":
     unittest.main()

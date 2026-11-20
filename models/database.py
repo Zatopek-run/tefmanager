@@ -28,6 +28,7 @@ from models.entities import (
     Relay,
     RivalAthlete,
     RivalClub,
+    SyntheticAthlete,
     SeasonEndResult,
     SeasonObjective,
     SeasonOutcome,
@@ -40,7 +41,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -125,6 +126,12 @@ V13_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V14_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("race_strategy_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
+# Columns added in v15 (C.1: punti ranking per evento di ogni atleta e campo mondiale di atleti sintetici;
+# `{}` / `[]` = salvataggio vecchio, il campo sintetico si genera al caricamento con un seed di `hashlib`).
+V15_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("ranking_json", "TEXT NOT NULL DEFAULT '{}'")],
+    "game_state": [("ranking_pool_json", "TEXT NOT NULL DEFAULT '[]'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -138,6 +145,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     11: V12_COLUMNS,
     12: V13_COLUMNS,
     13: V14_COLUMNS,
+    14: V15_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -364,6 +372,19 @@ def _season_history_from_json(raw: str) -> List[SeasonEndResult]:
     ]
 
 
+def _synthetic_to_json(pool: List[SyntheticAthlete]) -> str:
+    return json.dumps([[s.name, s.nationality, s.event, s.gender, s.skill, s.points] for s in pool])
+
+
+def _synthetic_from_json(raw: str) -> List[SyntheticAthlete]:
+    return [
+        SyntheticAthlete(
+            name=str(n), nationality=str(nat), event=str(ev), gender=str(g), skill=float(sk), points=float(pt)
+        )
+        for n, nat, ev, g, sk, pt in json.loads(raw)
+    ]
+
+
 def _rivals_to_json(clubs: List[RivalClub]) -> str:
     def ser(pool: Dict[str, RivalAthlete]) -> List[dict]:
         return [
@@ -375,6 +396,7 @@ def _rivals_to_json(clubs: List[RivalClub]) -> str:
                 "pb": a.pb,
                 "pb_display": a.pb_display,
                 "gender": a.gender,
+                "rank": a.ranking_points,
             }
             for a in pool.values()
         ]
@@ -414,6 +436,7 @@ def _rivals_from_json(raw: str) -> List[RivalClub]:
                 pb=aj.get("pb"),
                 pb_display=aj.get("pb_display"),
                 gender=str(aj.get("gender", "M")),
+                ranking_points={str(k): float(v) for k, v in aj.get("rank", {}).items()},
             )
         for aj in cj.get("female_athletes", []):
             club.female_athletes[aj["event"]] = RivalAthlete(
@@ -424,6 +447,7 @@ def _rivals_from_json(raw: str) -> List[RivalClub]:
                 pb=aj.get("pb"),
                 pb_display=aj.get("pb_display"),
                 gender=str(aj.get("gender", "F")),
+                ranking_points={str(k): float(v) for k, v in aj.get("rank", {}).items()},
             )
         clubs.append(club)
     return clubs
@@ -651,7 +675,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     relays_f_json TEXT NOT NULL DEFAULT '{}',
     league_places_json TEXT NOT NULL DEFAULT '{}',
     rng_state_json TEXT NOT NULL DEFAULT '[]',
-    race_strategy_json TEXT NOT NULL DEFAULT '{}'
+    race_strategy_json TEXT NOT NULL DEFAULT '{}',
+    ranking_pool_json TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -686,7 +711,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     weight_kg INTEGER NOT NULL DEFAULT 0,
     gender TEXT NOT NULL DEFAULT '',
     contract_end_season INTEGER NOT NULL DEFAULT 0,
-    contract_no_renew INTEGER NOT NULL DEFAULT 0
+    contract_no_renew INTEGER NOT NULL DEFAULT 0,
+    ranking_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -887,8 +913,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -927,6 +953,7 @@ class DatabaseManager:
                     json.dumps(state.league_places),
                     json.dumps(state.rng_state),
                     json.dumps(state.race_strategy),
+                    _synthetic_to_json(state.ranking_pool),
                 ),
             )
 
@@ -938,8 +965,8 @@ class DatabaseManager:
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
                     in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
-                    contract_end_season, contract_no_renew
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contract_end_season, contract_no_renew, ranking_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -975,6 +1002,7 @@ class DatabaseManager:
                         a.gender,
                         a.contract_end_season,
                         1 if a.contract_no_renew else 0,
+                        json.dumps(a.ranking_points),
                     )
                     for a in state.athletes
                 ],
@@ -1129,6 +1157,7 @@ class DatabaseManager:
                     gender=r["gender"],
                     contract_end_season=r["contract_end_season"],
                     contract_no_renew=bool(r["contract_no_renew"]),
+                    ranking_points={str(k): float(v) for k, v in json.loads(r["ranking_json"]).items()},
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]
@@ -1305,6 +1334,7 @@ class DatabaseManager:
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),
+                ranking_pool=_synthetic_from_json(row["ranking_pool_json"]),
                 season_history=_season_history_from_json(row["season_history_json"]),
                 event_lineup_f=json.loads(row["event_lineup_f_json"]),
                 club_records_f=club_records_f,

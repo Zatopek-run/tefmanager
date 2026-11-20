@@ -269,6 +269,30 @@ LEAGUE_PLACE_SLOTS = len(TEAM_POINTS)
 TIEBREAK_DRAW_TAG = "spareggio"
 # Etichetta del seed di ripiego per un salvataggio senza stato dell'RNG (vedi `models/rng_state.py`).
 RNG_SEED_TAG = "rng"
+
+# Ranking individuale e di società (PIANOLAVORO C.1). CIFRE PROVVISORIE: vedi docs/BALANCE.md e QUESTIONS Q26.
+# Punti per piazzamento (1°..8°; oltre l'8° nessuno), moltiplicati per il livello della gara: lo stesso 1° vale
+# molto di più in Finale Oro che in Fase regionale. A ogni meeting i punti già posseduti si moltiplicano per
+# `RANKING_DECAY` (a ~9 meeting l'anno, il peso di un risultato si dimezza dopo ~6 meeting, circa sei mesi).
+RANKING_PLACE_POINTS: Tuple[int, ...] = (100, 80, 65, 52, 42, 34, 28, 22)
+RANKING_TIER_MULT: Dict[CompetitionTier, float] = {
+    CompetitionTier.PROVINCIALE: 0.10,
+    CompetitionTier.REGIONALE: 0.25,
+    CompetitionTier.NAZIONALE: 0.50,
+    CompetitionTier.INTERNAZIONALE: 1.00,
+}
+RANKING_DECAY = 0.9
+RANKING_WORLD_SIZE = 100  # «Top 100 mondiale»: anche il campo sintetico ha questa dimensione per evento e sesso
+RANKING_NATIONAL_SIZE = 50  # «Top 50 nazionale»: solo atleti di nazionalità `RANKING_HOME_NATION`
+RANKING_HOME_NATION = "Italia"
+# Campo sintetico (atleti di fantasia che riempiono la classifica mondiale e non gareggiano col club).
+RANKING_SYNTH_ITALIAN_SHARE = 0.25  # quota di italiani tra i sintetici (gli altri vengono dalle altre nazioni)
+RANKING_SYNTH_SKILL_TOP = 94.0  # livello (scala del punteggio di gara) del 1° sintetico di ogni evento
+RANKING_SYNTH_SKILL_BOTTOM = 58.0  # e del 100°
+RANKING_SYNTH_SKILL_JITTER = 2.0  # scarto iniziale casuale attorno alla retta fra i due estremi
+RANKING_SYNTH_DRIFT = 0.3  # passeggiata casuale del livello a ogni meeting (σ)
+RANKING_SYNTH_FIELD = 8  # partecipanti del campo virtuale con cui si simula il piazzamento di un sintetico
+RANKING_SYNTH_TAG = "ranking"  # etichetta del seed di ripiego per il campo sintetico dei salvataggi vecchi
 DNF_MARK = "Ritirato"
 
 
@@ -579,6 +603,7 @@ class Athlete:
     weight_kg: int = 0
     gender: str = "M"
     contract_no_renew: bool = False  # il giocatore non vuole rinnovarlo: alla scadenza lascia la società
+    ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1)
 
     @property
     def gender_label(self) -> str:
@@ -737,6 +762,19 @@ class RivalAthlete:
     pb: Optional[float] = None
     pb_display: Optional[str] = None
     gender: str = "M"
+    ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1); un solo evento
+
+
+@dataclass
+class SyntheticAthlete:
+    """Atleta di fantasia del campo mondiale (C.1): ha un livello e punti ranking, non gareggia con il club."""
+
+    name: str
+    nationality: str
+    event: str
+    gender: str
+    skill: float
+    points: float = 0.0
 
 
 @dataclass
@@ -973,6 +1011,8 @@ class GameState:
     event_attitude: Dict[str, str] = field(default_factory=dict)
     # Piano gara per evento (B.1): {"800m": {"pace": "Veloce", "kick": "Ultimo giro"}}; mancante = Medio + Nessuno.
     race_strategy: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # Campo mondiale di atleti sintetici per il ranking (C.1); vuoto = salvataggio vecchio, si genera al caricamento.
+    ranking_pool: List[SyntheticAthlete] = field(default_factory=list)
     gym_level: int = 0
     stand_seats: int = 500
     fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
