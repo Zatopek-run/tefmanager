@@ -191,5 +191,23 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Stato iniziale `GameState` | reputazione 70, pista 82, quote 450, budget 12000 | `entities.py:776-785` |
 | Stato iniziale nuova partita | reputazione 75, pista 82, quote 450 | `game_controller.py:182-185` |
 | Limiti log | notizie 70, traguardi 40, transazioni 400 | `simulation.py:1412-1414` |
-| `SCHEMA_VERSION` | 10 | `database.py` |
+| `SCHEMA_VERSION` | 15 | `database.py` |
 | `RELAY_DQ_MARK`, `DNF_MARK` | stringhe | `entities.py:258,172` |
+
+## K. Ranking (PIANOLAVORO C.1, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q26)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `RANKING_PLACE_POINTS` | 1°…8° = 100, 80, 65, 52, 42, 34, 28, 22; oltre l'8° 0 | `entities.py` |
+| `RANKING_TIER_MULT` | Fase regionale CdS 0,10 · Finale Bronzo 0,25 · Finale Argento 0,50 · Finale Oro 1,00 | `entities.py` |
+| `RANKING_DECAY` | 0,9 per meeting (a regime: punti = 10 × guadagno medio del meeting) | `entities.py` |
+| `RANKING_WORLD_SIZE`, `RANKING_NATIONAL_SIZE` | 100, 50 (100 è anche la dimensione del campo sintetico per disciplina e sesso) | `entities.py` |
+| `RANKING_HOME_NATION` | Italia | `entities.py` |
+| `RANKING_SYNTH_ITALIAN_SHARE` | 0,25 | `entities.py` |
+| `RANKING_SYNTH_SKILL_TOP`, `…_BOTTOM`, `…_JITTER` | 94, 58, σ 2,0 (livello del 1° e del 100° sintetico, sulla scala del punteggio di gara) | `entities.py` |
+| `RANKING_SYNTH_DRIFT` | σ 0,3 a meeting sul livello di ogni sintetico (limiti 30-100) | `entities.py` |
+| `RANKING_SYNTH_FIELD` | 8 (7 avversari virtuali) | `entities.py` |
+| `SYNTH_WARMUP_MEETINGS` | 3 (oltre alla stima analitica dei punti a regime) | `ranking.py` |
+| Livello di un sintetico | il livello di gara con `opponent_skill` più vicino al suo livello | `ranking.py` |
+
+Calibrazione: vedi Q26 (chi vince sempre in Fase regionale resta fuori dalla Top 100; in Finale Oro è 1°).

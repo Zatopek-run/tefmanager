@@ -90,7 +90,7 @@ i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagion
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
-`coach_hired_week`, `bankrupt`.
+`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1: vuoto finché non si gioca il primo meeting o si apre la scheda «Ranking»).
 
 ### 3.2 `Athlete`
 
@@ -100,7 +100,7 @@ Caratteristiche (0-100): `speed`, `stamina`, `strength`, `technique`, `resilienc
 Resiliente**); `training_focus` (**Resistenza, Potenza Esplosiva, Tecnica, Riposo & Recupero**); `periodization`
 (**Prep. Generale, Prep. Specifica, Gara (Picco), Scarico (Tapering)**); `weekly_wage`, `injured_weeks`, `is_youth_prospect`,
 `in_youth_squad`, `fans`, `coach_id`, `personal_best` (per evento), `doping_boost_weeks`, `contract_end_season` (ultima stagione di contratto, inclusa; 0 = nessuno, cioè vivaio)
-e `contract_no_renew` (il giocatore non vuole rinnovarlo: §5.9). La **fascia d'età** (`age_category`: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+) è solo un'etichetta
+e `contract_no_renew` (il giocatore non vuole rinnovarlo: §5.9) e `ranking_points` (punti ranking per evento, §5.15). La **fascia d'età** (`age_category`: Cadetti 14-15, Allievi 16-17, Juniores 18-19, Promesse 20-22, Seniores 23+) è solo un'etichetta
 calcolata da `age`, non salvata, mostrata nella scheda atleta.
 `overall` è una media pesata delle caratteristiche con pesi diversi per specialità. L'altezza e il peso concorrono al punteggio in gara
 (§5.3). Il picco di età dipende dalla specialità (`peak_age_range`: Velocità 20-27, Salti 20-28, Mezzofondo 21-30, Lanci 23-32).
@@ -111,7 +111,8 @@ calcolata da `age`, non salvata, mostrata nella scheda atleta.
   `800m`, `1500m`, `Salto in Lungo`, `Getto del Peso`; `RelayDefinition`: `4x100m`, `4x400m`.
 - `Coach`: 4 abilità 1-100 (Velocità, Resistenza, Forza, Tecnica), tier, tipo (specializzato su una disciplina o del vivaio).
 - `Relay`: 4 frazionisti in ordine + riserva, `harmony` (affiatamento 0-100), `last_change_week`.
-- `RivalClub`/`RivalAthlete`: società avversarie persistenti (livello, ambizione, storia del livello, un atleta per gara).
+- `RivalClub`/`RivalAthlete`: società avversarie persistenti (livello, ambizione, storia del livello, un atleta per gara, `ranking_points`).
+- `SyntheticAthlete`: atleta di fantasia del ranking mondiale (nome, nazionalità, evento, sesso, livello, punti); non gareggia con il club (§5.15).
 - `StaffMember`: Fisioterapista, Medico Sportivo, Preparatore Mentale (attivabili/disattivabili).
 - `CompetitionSummary` / `EventResult` / `EventStanding`: risultato di un meeting (per evento: classifica, misure, punti, vento, meteo).
 - `EthicalDilemma`, `SeasonObjective`, `SeasonEndResult`, `Transaction`.
@@ -258,6 +259,14 @@ Gli atleti guadagnano **fan** con piazzamenti, PB e record (i fan non calano mai
 
 Per atleta e per evento si tiene il **PB** (solo con vento legale); la società ha **record sociali** per evento e divisione, più un albo e una scheda «Albo & Record». Si segnano «momenti storici» (misure oltre una soglia storica per evento).
 
+### 5.15 Ranking (C.1, 2026-11-20; cifre provvisorie, `QUESTIONS.md` Q26)
+
+Ogni piazzamento in una gara **individuale** dà punti ranking: `RANKING_PLACE_POINTS[posto-1]` (100, 80, 65, 52, 42, 34, 28, 22; oltre l'8° nulla) × il moltiplicatore del livello (0,10 / 0,25 / 0,50 / 1,00). Li prendono gli atleti del club e quelli dei rivali (anche quando il club non iscrive nessuno); il ritirato non è classificato; le staffette non danno punti. A ogni meeting i punti già posseduti decadono ×0,9 (metà del peso in ~6 meeting), per tutti nello stesso tick e **prima** dei nuovi.
+
+Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. **Non usano l'RNG della partita**: estraggono da un flusso derivato con `hashlib` da squadra, stagione e settimana (eccezione alla convenzione 3, da confermare: Q26), così il ranking non sposta le estrazioni di nessun altro esito e ricaricare dà gli stessi risultati. Il campo si crea al primo meeting o alla prima apertura della scheda (anche per i salvataggi v14), non alla creazione della partita.
+
+Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + club), **nazionale** (solo `Italia`, Top 50), **società** (le società del livello attuale, per somma dei punti dei loro atleti). Un atleta del club fuori dalla Top N compare comunque in fondo alla tabella con il suo posto vero. Oggi è **solo informativo** (nessun effetto su sponsor, premi, inviti): gli inviti Diamond League sono il sottopunto C.1b, da decidere. Calibrazione misurata: chi vince sempre in Fase regionale resta fuori dalla Top 100, in Finale Oro è 1°.
+
 ---
 
 ## 6. Categorie: parametri principali
@@ -275,7 +284,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 - Un file `.db` per slot in `~/.track_field_manager/saves/` (più un `savegame.db` legacy in `~/.track_field_manager/`). Tabelle: `game_state` (riga unica, molti campi JSON), `athletes`, `coaches`, `staff`, `transactions`, `competition_history`.
   `save_game` fa DELETE+INSERT in una transazione.
-- **Schema `SCHEMA_VERSION = 14`** (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
+- **Schema `SCHEMA_VERSION = 15`** (v12 = `game_state.league_places_json`, A.2; v13 = `game_state.rng_state_json`, A.3; v14 = `game_state.race_strategy_json`, B.1; v15 = `athletes.ranking_json` e `game_state.ranking_pool_json`, C.1; i punti dei rivali stanno nel loro JSON), `PRAGMA user_version`. Ogni nuova colonna: voce in `MIGRATIONS` (con `DEFAULT`) *e* nella `CREATE TABLE`.
 - **Apertura sicura** (lotti 1.1/1.2): file assente o di 0 byte → DB nuovo, creato in una transazione. Versione corrente → apertura in sola lettura, nessuna scrittura. Versione migrabile (v2…v8) →
   **backup verificato** con `Connection.backup()` in `saves/backups/<slot>.v{N}.{timestamp}.db.bak` (sempre nuovo, 3 più recenti per slot, potati solo dopo una migrazione riuscita), poi **una sola transazione**
   (`BEGIN IMMEDIATE` … `COMMIT`, ALTER + creazione tabelle + `user_version` insieme, rollback su errore). Versione non supportata (più recente, v0/v1 con dati, file non vuoto senza tabelle) →
@@ -291,10 +300,10 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 ## 8. Interfaccia (PyQt6, tema scuro)
 
 - **Schermata iniziale** (`StartScreen`): hero, scheda «Continua ultima partita», nuova società (nome, modalità, provincia di partenza), tabella dei salvataggi (carica, elimina, doppio clic).
-- **Finestra principale** (`MainWindow`): barra laterale con tre sezioni e nove pagine:
-  GESTIONE → *Dashboard*, *Rosa & Allenamenti*, *Vivaio & Osservatori*; COMPETIZIONI → *Calendario & Gare*, *Staffette*, *Rivali*; SOCIETÀ → *Staff & Impianto*, *Finanze*, *Albo & Record*.
+- **Finestra principale** (`MainWindow`): barra laterale con tre sezioni e dieci pagine:
+  GESTIONE → *Dashboard*, *Rosa & Allenamenti*, *Vivaio & Osservatori*; COMPETIZIONI → *Calendario & Gare*, *Staffette*, *Rivali*, *Ranking* (classifica mondiale, nazionale e delle società, per disciplina e sesso: C.1); SOCIETÀ → *Staff & Impianto*, *Finanze*, *Albo & Record*.
   In alto un HUD con settimana/budget/prestigio e il pulsante **Avanza settimana**; menu per salvare/caricare.
-- **Dialoghi**: Scheda Atleta (PANORAMICA, ALLENAMENTO, COMPETIZIONI), Mercato/Recluta atleta, Assumi Allenatore, Nuova Partita, Dilemma Etico, Fine Stagione, Risultati gara (tabellone con pettorali).
+- **Dialoghi**: Scheda Atleta (PANORAMICA, ALLENAMENTO, COMPETIZIONI, con in testa la riga di ranking: posto mondiale e nazionale e punti per gara), Mercato/Recluta atleta, Assumi Allenatore, Nuova Partita, Dilemma Etico, Fine Stagione, Risultati gara (tabellone con pettorali).
 - La UI è piena di piccole regole duplicate (soglie fatica, zona promozione/retrocessione) che andrebbero lette dal modello: vedi `AUDIT.md` Q13.
 
 ---
@@ -320,7 +329,7 @@ Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewe
 ## 10. Determinismo e RNG
 
 La simulazione riceve un `rng` iniettabile (`random.Random`), quindi a parità di stato e di RNG gli esiti sono identici. **Dal 2026-11-20 (A.3)** il controller ha un solo `rng` per partita (seme casuale a ogni avvio dell'app), il cui **stato completo** (`getstate()` come JSON, `GameState.rng_state`, schema v13) è scritto a ogni salvataggio e ripristinato al caricamento: lo stesso salvataggio caricato due volte dà gli stessi esiti, e ricaricare dopo una ricerca vivaio non permette di rifarla. Un salvataggio vecchio senza stato si semina in modo deterministico con `hashlib` da società, stagione e settimana (`legacy_seed`).
-Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti.
+Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti. **Eccezione (C.1, Q26):** gli atleti sintetici del ranking (§5.15) usano un flusso derivato con `hashlib` da squadra, stagione e settimana, non `rng`, per non spostare la sequenza di nessun altro esito.
 
 ---
 
@@ -329,7 +338,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 173 test, ~5 s
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 308 test, ~45 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
@@ -346,6 +355,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - ✅ **1.1** migrazione transazionale con backup, ✅ **1.2** rifiuto delle versioni sconosciute (fatti).
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
+- ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). Prossimo: C.2 (obiettivi del Board).
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
