@@ -107,7 +107,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | Fatica per allenamento | Resistenza +randint(11,16); Esplosiva +13-19; Tecnica +9-14; Riposo −(24-32) | pt/sett. | `simulation.py:402,406,409,412` | |
 | Modulazione periodizzazione | Prep. specifica +4; Gara +2; Scarico `min(f−14; −10)` | pt | `simulation.py:415-420` | |
 | Perfezionista | +2 fatica; ×1,15 crescita | | `simulation.py:424,368` | |
-| Fisioterapista | −7 fatica; guarigione ×2 con prob. 0,55 | | `simulation.py:426,340` | |
+| Fisioterapista | −7 fatica; guarigione ×2 con prob. 0,55 (cifre al **riferimento** degli attributi, vedi §R: E.1 le scala con `recupero` e `competenza`) | | `simulation.py`, `models/staff.py` | |
 | Stile di vita | recupero `(sonno+nutrizione)/2−70)×0,12`; forma `×0,18` | | `simulation.py:427,269` | |
 | Crescita periodizzazione | 1,05 / 1,25 / 0,90 / 0,45 | × | `simulation.py:373-377` | |
 | 800m (Q16) | retta `T = a − norm×b` da `MIDDLE_800M_CURVE` (M 144,5 / 46,4, F 160,0 / 45,2), tetto WR 100,91 s / 113,28 s; ancore **STIMATE** a score 42/56/66/70/84; pesi `stamina 0,40, speed 0,38, technique 0,15, strength 0,07`; fisico ideale M 178 cm BMI 21,0, F 168 cm BMI 19,8 (stime); traguardo storico M 1:53,00 / F 2:08,00 | s | `simulation.py` `_score_to_mark`, `BODY_IDEALS*`; `entities.py` | |
@@ -307,3 +307,19 @@ arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrat
 Gare: con la Preparazione la prima gara è alla settimana 12 (poi ogni 4: 9 gare per stagione, come prima). Stagione di fondazione: nessuna conseguenza del verdetto, nessun taglio sponsor (`SPONSOR_MISS_PENALTY` non si applica dopo la stagione 1), nessuna penalità «resta fermo». Società senza atleti a un meeting: nessuna trasferta, nessun biglietto.
 
 Misura in autopilota (Carriera nuova, nessuna azione, seme 1): budget 18.000 → circa 53.000 dopo 40 settimane e circa 100.000 dopo 100; reputazione e prestigio fermi. È una **conseguenza non voluta** dell'avvio vuoto (entrate senza costi atleti), non una cifra scelta: vedi QUESTIONS Q32 e AUDIT R29.
+
+## R. Staff con attributi (PIANOLAVORO E.1, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q33)
+
+Fisioterapista, Medico e Preparatore mentale hanno **due attributi 1-20 ciascuno**. Principio: **al riferimento (`STAFF_ATTR_REF` = 14) ogni effetto è identico a prima di E.1**; i tre candidati fissi e i vecchi salvataggi stanno al riferimento, quindi il bilanciamento non si sposta (c'è un test sull'identità, e i 572 test precedenti passano invariati). Sopra il riferimento l'effetto cresce in proporzione, sotto cala. Nessuna estrazione di RNG in più (il tick non cambia).
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `STAFF_ATTR_MIN` / `STAFF_ATTR_MAX` / `STAFF_ATTR_REF` | 1 / 20 / 14 | `entities.py` |
+| Fisioterapista · `recupero` | sollievo di fatica a settimana `round(7 × recupero/14)` (`PHYSIO_FATIGUE_RELIEF`); recupero extra da infortunato `round(8 × recupero/14)` (`PHYSIO_INJURY_RECOVERY_BONUS`) | `entities.py`, `staff.py` |
+| Fisioterapista · `competenza` | probabilità del doppio passo di guarigione `min(0,95; 0,55 × competenza/14)` (`PHYSIO_HEAL_STEP_CHANCE`, tetto `PHYSIO_HEAL_STEP_CHANCE_CAP`); da `PHYSIO_WEEK_CUT_MIN` = 8 in su toglie 1 settimana a un nuovo infortunio di più di una (sotto non la toglie) | idem |
+| Medico · `prevenzione` | moltiplicatore del rischio d'infortunio da sovraccarico in allenamento `max(0,20; 1 − 0,45 × prevenzione/14)` (`DOCTOR_RISK_CUT` 0,45, `DOCTOR_RISK_FLOOR` 0,20): 0,55 al riferimento, ≈0,36 a 20, ≈0,94 a 2 | idem |
+| Medico · `diagnosi` | stessa formula, applicata al rischio di **ritiro in gara** | idem |
+| Preparatore mentale · `motivazione` | bonus al bersaglio di forma `round(4 × motivazione/14)` (`MENTAL_FORM_BONUS`) | idem |
+| Preparatore mentale · `pressione` | deviazione in gara dell'Impulsivo: 5,6 senza preparatore (`IMPULSIVE_SIGMA`); con preparatore `max(3,0; 5,6 − 1,8 × pressione/14)`: 3,8 al riferimento (`CALM_SIGMA`), ≈3,0 a 20 (`MENTAL_SIGMA_FLOOR`) | idem |
+
+Candidati iniziali: tutti gli attributi a 14 (le «stelle» restano solo un'etichetta). Salvataggi vecchi: `staff.attributes_json = '{}'` → tutti a 14. Più specialisti dello stesso ruolo assunti: vale il migliore (somma degli attributi).

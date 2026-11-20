@@ -514,6 +514,38 @@ class StaffRole(str, Enum):
     MENTAL_COACH = "Preparatore Mentale"
 
 
+# Staff con attributi (PIANOLAVORO E.1). Ogni specialista clinico ha due attributi 1-20 legati al suo ruolo. Al valore di
+# riferimento `STAFF_ATTR_REF` gli effetti sono ESATTAMENTE quelli di prima di E.1 (staff «a stelle»): i tre candidati fissi
+# e i vecchi salvataggi stanno lì, quindi il bilanciamento non si sposta. Sopra il riferimento l'effetto cresce, sotto cala.
+# Cifre PROVVISORIE (QUESTIONS Q33).
+STAFF_ATTR_MIN = 1
+STAFF_ATTR_MAX = 20
+STAFF_ATTR_REF = 14
+# Attributi per ruolo: (chiave nel dizionario, etichetta in italiano). I coach non ne hanno (usano `Coach.skills`).
+STAFF_ATTRIBUTES: Dict[StaffRole, Tuple[Tuple[str, str], ...]] = {
+    StaffRole.PHYSIO: (("competenza", "Competenza infortuni"), ("recupero", "Velocità recupero")),
+    StaffRole.DOCTOR: (("diagnosi", "Diagnosi"), ("prevenzione", "Prevenzione")),
+    StaffRole.MENTAL_COACH: (("motivazione", "Motivazione"), ("pressione", "Gestione pressione")),
+}
+# Fisioterapista: `recupero` scala il sollievo di fatica a settimana e il recupero extra da infortunati; `competenza` scala
+# la probabilità del doppio passo di guarigione e, da PHYSIO_WEEK_CUT_MIN in su, toglie una settimana a ogni infortunio.
+PHYSIO_FATIGUE_RELIEF = 7
+PHYSIO_INJURY_RECOVERY_BONUS = 8
+PHYSIO_HEAL_STEP_CHANCE = 0.55
+PHYSIO_HEAL_STEP_CHANCE_CAP = 0.95
+PHYSIO_WEEK_CUT_MIN = 8
+# Medico: `prevenzione` riduce il rischio d'infortunio da sovraccarico in allenamento, `diagnosi` quello di ritiro in gara.
+# Moltiplicatore = 1 − DOCTOR_RISK_CUT × (attributo / riferimento), mai sotto DOCTOR_RISK_FLOOR.
+DOCTOR_RISK_CUT = 0.45
+DOCTOR_RISK_FLOOR = 0.20
+# Preparatore mentale: `motivazione` scala il bonus al bersaglio di forma, `pressione` la deviazione dell'Impulsivo in gara
+# (senza preparatore IMPULSIVE_SIGMA, col preparatore al riferimento CALM_SIGMA, più in basso fino a MENTAL_SIGMA_FLOOR).
+MENTAL_FORM_BONUS = 4
+IMPULSIVE_SIGMA = 5.6
+CALM_SIGMA = 3.8
+MENTAL_SIGMA_FLOOR = 3.0
+
+
 @dataclass(frozen=True)
 class EventDefinition:
     """Definition of an individual track & field event."""
@@ -1071,6 +1103,8 @@ class StaffMember:
     weekly_cost: int
     hired: bool = False
     description: str = ""
+    # Attributi 1-20 del ruolo (E.1, chiavi in `STAFF_ATTRIBUTES`); vuoto = tutti al riferimento (vecchi salvataggi).
+    attributes: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

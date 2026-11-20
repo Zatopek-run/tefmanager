@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
 from models.generator import generate_body, infer_gender
+from models.staff import normalize_attributes
 from models.entities import (
     AGENT_RELATION_START,
     Agent,
@@ -46,7 +47,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -164,6 +165,10 @@ V20_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V21_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("prep_weeks", "INTEGER NOT NULL DEFAULT 0")],
 }
+# Columns added in v22 (E.1: attributi 1-20 dello staff clinico; `{}` = tutti al riferimento, l'effetto di prima).
+V22_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "staff": [("attributes_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -184,6 +189,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     18: V19_COLUMNS,
     19: V20_COLUMNS,
     20: V21_COLUMNS,
+    21: V22_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -493,6 +499,15 @@ def _reports_to_json(reports: List[MonthlyReport]) -> str:
             for r in reports
         ]
     )
+
+
+def _staff_attributes_from_json(role: StaffRole, raw: Optional[str]) -> Dict[str, int]:
+    """Attributi dello staff (E.1) dalla colonna JSON: `{}` (vecchio salvataggio) o chiavi mancanti = riferimento."""
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    return normalize_attributes(role, data if isinstance(data, dict) else {})
 
 
 def _reports_from_json(raw: str) -> List[MonthlyReport]:
@@ -875,7 +890,8 @@ CREATE TABLE IF NOT EXISTS staff (
     skill INTEGER NOT NULL,
     weekly_cost INTEGER NOT NULL,
     hired INTEGER NOT NULL,
-    description TEXT NOT NULL
+    description TEXT NOT NULL,
+    attributes_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -1164,8 +1180,8 @@ class DatabaseManager:
 
             conn.executemany(
                 """
-                INSERT INTO staff (id, name, role, skill, weekly_cost, hired, description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO staff (id, name, role, skill, weekly_cost, hired, description, attributes_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -1176,6 +1192,7 @@ class DatabaseManager:
                         s.weekly_cost,
                         1 if s.hired else 0,
                         s.description,
+                        json.dumps(normalize_attributes(s.role, s.attributes), sort_keys=True),
                     )
                     for s in state.staff
                 ],
@@ -1328,6 +1345,7 @@ class DatabaseManager:
                     weekly_cost=r["weekly_cost"],
                     hired=bool(r["hired"]),
                     description=r["description"],
+                    attributes=_staff_attributes_from_json(StaffRole(r["role"]), r["attributes_json"]),
                 )
                 for r in conn.execute("SELECT * FROM staff ORDER BY id ASC").fetchall()
             ]

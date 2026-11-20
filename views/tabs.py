@@ -83,6 +83,7 @@ from models.entities import (
     stand_expansion_cost,
 )
 from controllers.game_controller import scouting_search_cost
+from models.staff import describe_attributes
 from models.finances import recent_reports
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
 from views.dialogs import (
@@ -1369,9 +1370,9 @@ class StaffTab(QWidget):
         title.setObjectName("SectionHeader")
         panel_layout.addWidget(title)
 
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
-            ["Nome", "Ruolo", "Livello", "Costo/sett", "Effetto", "Azione"]
+            ["Nome", "Ruolo", "Livello", "Costo/sett", "Attributi (1-20)", "Effetto", "Azione"]
         )
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -1381,6 +1382,7 @@ class StaffTab(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
 
         panel_layout.addWidget(self.table)
         root.addWidget(panel, stretch=1)
@@ -1473,13 +1475,14 @@ class StaffTab(QWidget):
                 s.role.value,
                 "★" * s.skill,
                 f"€{s.weekly_cost}",
+                describe_attributes(s),
                 s.description,
             ]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-                    if col in (0, 4)
+                    if col in (0, 4, 5)
                     else Qt.AlignmentFlag.AlignCenter
                 )
                 if s.hired and col == 0:
@@ -1489,7 +1492,7 @@ class StaffTab(QWidget):
             btn = QPushButton("Licenzia" if s.hired else "Assumi")
             btn.setObjectName("DangerButton" if s.hired else "PrimaryButton")
             btn.clicked.connect(lambda _c=False, sid=s.id: self.controller.toggle_staff(sid))
-            self.table.setCellWidget(row, 5, btn)
+            self.table.setCellWidget(row, 6, btn)
 
     def _on_coach_header_clicked(self, col: int) -> None:
         if col == 8:  # "Azione" column: button, not sortable data

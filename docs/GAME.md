@@ -115,7 +115,7 @@ calcolata da `age`, non salvata, mostrata nella scheda atleta.
 - `Relay`: 4 frazionisti in ordine + riserva, `harmony` (affiatamento 0-100), `last_change_week`.
 - `RivalClub`/`RivalAthlete`: società avversarie persistenti (livello, ambizione, storia del livello, un atleta per gara, `ranking_points`).
 - `SyntheticAthlete`: atleta di fantasia del ranking mondiale (nome, nazionalità, evento, sesso, livello, punti); non gareggia con il club (§5.15).
-- `StaffMember`: Fisioterapista, Medico Sportivo, Preparatore Mentale (attivabili/disattivabili).
+- `StaffMember`: Fisioterapista, Medico Sportivo, Preparatore Mentale (attivabili/disattivabili), con **due attributi 1-20** per ruolo (`attributes`, E.1).
 - `CompetitionSummary` / `EventResult` / `EventStanding`: risultato di un meeting (per evento: classifica, misure, punti, vento, meteo).
 - `EthicalDilemma`, `SeasonObjective` (con `target` e `value`: soglia e avanzamento degli obiettivi del Board), `SeasonEndResult` (anche il verdetto del Board), `Transaction`.
 
@@ -241,6 +241,7 @@ Pool di 5 candidati a settimana (4 studenti di 15-17 anni + 1 adulto): si può s
 Ogni **allenatore** ha 4 abilità (1-100). L'atleta che allena una qualità cresce tanto più quanto l'allenatore è bravo in quella; senza allenatore adatto ×0,6. Massimo 6 specializzati (una disciplina) e 2 del vivaio (solo ragazzi 14-17).
 Si assume scegliendo abilità principale, secondaria e livello di ingaggio (1500 × livello, 1-5, una tantum, più abilità = stipendio più alto), uno a settimana. Oltre 6 atleti a testa l'effetto cala; le abilità decadono lentamente (10%/sett. di −1 a un'abilità sopra 25).
 Lo **staff** (Fisioterapista, Medico Sportivo, Preparatore Mentale) si attiva/disattiva e dà effetti su fatica, guarigione, rischio infortunio e forma.
+Dal lotto **E.1** (2026-11-20, cifre provvisorie, Q33) ogni specialista ha due **attributi 1-20** che scalano quegli effetti (`models/staff.py`, tabella in `BALANCE.md` §R): Fisioterapista → *Competenza infortuni* (guarigione più veloce, settimane tolte) e *Velocità recupero* (fatica); Medico → *Prevenzione* (rischio infortunio in allenamento) e *Diagnosi* (rischio di ritiro in gara); Preparatore mentale → *Motivazione* (bonus di forma) e *Gestione pressione* (deviazione degli Impulsivi in gara). Gli attributi sono visibili nella scheda «Staff & Impianto». **Al valore 14 gli effetti sono quelli di sempre** e i tre candidati attuali stanno tutti a 14: finché non esiste un mercato dello staff gli attributi non fanno ancora differenza tra un candidato e l'altro (QUESTIONS Q33).
 
 ### 5.11 Impianti
 

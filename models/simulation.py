@@ -63,6 +63,9 @@ from models.entities import (
     TICKET_PRICE,
     TIER_CONFIG,
     YOUTH_TRAINING_MULT,
+    CALM_SIGMA,
+    MENTAL_FORM_BONUS,
+    STAFF_ATTR_REF,
     RaceAttitude,
     FieldRisk,
     RaceKick,
@@ -86,6 +89,18 @@ from models.entities import (
     WeatherCondition,
 )
 from models.agents import adjust_relation, drift_relations, ensure_agents, penalize_idle_athletes
+from models.staff import (
+    StaffAttrs,
+    attribute_of,
+    doctor_risk_multiplier,
+    hired_staff_attributes,
+    impulsive_sigma,
+    mental_form_bonus,
+    physio_cuts_injury_week,
+    physio_fatigue_relief,
+    physio_heal_step_chance,
+    physio_injury_recovery_bonus,
+)
 from models.finances import (
     close_month_if_due,
     merchandising_income,
@@ -326,10 +341,12 @@ def _recalculate_form(
     has_mental_coach: bool,
     leader_present: bool,
     peaking: bool = False,
+    mental_bonus: int = MENTAL_FORM_BONUS,
 ) -> int:
     """Recalculate athlete Form (1-100) from fatigue, sleep, nutrition, and tapering.
 
     `peaking`: fase «Gara (Picco)» nel tick che precede una settimana di gara.
+    `mental_bonus`: bonus del preparatore mentale assunto (E.1: dipende dalla sua Motivazione; conta solo se `has_mental_coach`).
     """
     lifestyle_bonus = ((athlete.sleep_quality + athlete.nutrition) / 2.0 - 70.0) * 0.18
     if athlete.is_injured:
@@ -348,7 +365,7 @@ def _recalculate_form(
     if peaking and not athlete.is_injured:
         target_form += PEAK_FORM_BONUS
     if has_mental_coach:
-        target_form += 4
+        target_form += mental_bonus
     if leader_present:
         target_form += 2
     if athlete.doping_boost_weeks > 0:
@@ -368,6 +385,7 @@ def apply_weekly_training(
     coach: Optional[Coach] = None,
     coach_load: int = 1,
     pre_meet: bool = False,
+    staff_attrs: Optional[StaffAttrs] = None,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
@@ -376,6 +394,8 @@ def apply_weekly_training(
     many athletes that coach is following; without a suitable coach growth is much slower.
     `pre_meet` è vero nel tick che precede una settimana di gara: con la fase «Gara (Picco)» dà un
     bonus al bersaglio di forma (la gara usa la forma calcolata qui).
+    `staff_attrs` (E.1): attributi dei ruoli assunti (`models.staff.hired_staff_attributes`); senza, ogni ruolo in
+    `hired_roles` vale il riferimento, cioè l'effetto di prima degli attributi.
 
     Returns:
         (stat_gains, injury_note, recovery_note, doping_scandal_note)
@@ -390,6 +410,9 @@ def apply_weekly_training(
     has_physio = StaffRole.PHYSIO in roles
     has_doctor = StaffRole.DOCTOR in roles
     has_mental = StaffRole.MENTAL_COACH in roles
+    physio_recovery = attribute_of(staff_attrs, StaffRole.PHYSIO, "recupero")
+    physio_skill = attribute_of(staff_attrs, StaffRole.PHYSIO, "competenza")
+    mental_bonus = mental_form_bonus(attribute_of(staff_attrs, StaffRole.MENTAL_COACH, "motivazione"))
 
     # Anti-doping check if pharmacological shortcut active
     if athlete.doping_boost_weeks > 0:
@@ -407,11 +430,14 @@ def apply_weekly_training(
     if athlete.is_injured:
         resilient = athlete.personality == Personality.RESILIENTE
         fast_heal = (has_physio or resilient) and athlete.injured_weeks > 1
-        heal_step = 2 if (fast_heal and r.random() < (0.55 if has_physio else 0.35)) else 1
+        heal_chance = physio_heal_step_chance(physio_skill) if has_physio else 0.35
+        heal_step = 2 if (fast_heal and r.random() < heal_chance) else 1
         athlete.injured_weeks = max(0, athlete.injured_weeks - heal_step)
-        rec_amt = r.randint(22, 30) + (8 if has_physio else 0)
+        rec_amt = r.randint(22, 30) + (physio_injury_recovery_bonus(physio_recovery) if has_physio else 0)
         athlete.fatigue = clamp_stat(athlete.fatigue - rec_amt, 0, 100)
-        athlete.form = _recalculate_form(athlete, True, False, has_mental, leader_present)
+        athlete.form = _recalculate_form(
+            athlete, True, False, has_mental, leader_present, mental_bonus=mental_bonus
+        )
         if athlete.injured_weeks == 0:
             recovery_note = f"{athlete.name} ha recuperato dall'infortunio ed è tornato in pista."
         return gains, injury_note, recovery_note, scandal_note
@@ -493,7 +519,7 @@ def apply_weekly_training(
     if athlete.personality == Personality.PERFEZIONISTA and not rested and not tapering:
         fatigue_add += 2
     if has_physio:
-        fatigue_add -= 7
+        fatigue_add -= physio_fatigue_relief(physio_recovery)
     recovery_lifestyle = int(((athlete.sleep_quality + athlete.nutrition) / 2.0 - 70.0) * 0.12)
     fatigue_add -= recovery_lifestyle
 
@@ -501,6 +527,7 @@ def apply_weekly_training(
     athlete.form = _recalculate_form(
         athlete, rested, tapering, has_mental, leader_present,
         peaking=pre_meet and period == PeriodizationPhase.GARA,
+        mental_bonus=mental_bonus,
     )
 
     # Veterans past their peak window slowly lose physical qualities
@@ -517,7 +544,9 @@ def apply_weekly_training(
         resilience_factor = max(0.35, 1.35 - athlete.resilience / 100.0)
         impulsive_mult = 1.25 if (athlete.personality == Personality.IMPULSIVO and not has_mental) else 1.0
         resilient_mult = 0.7 if athlete.personality == Personality.RESILIENTE else 1.0
-        doctor_mult = 0.55 if has_doctor else 1.0
+        doctor_mult = (
+            doctor_risk_multiplier(attribute_of(staff_attrs, StaffRole.DOCTOR, "prevenzione")) if has_doctor else 1.0
+        )
         youth_mult = 1.25 if athlete.age <= 17 else 1.0
         injury_prob = min(
             0.50,
@@ -525,7 +554,7 @@ def apply_weekly_training(
         )
         if r.random() < injury_prob:
             base_weeks = r.randint(1, 3)
-            if has_physio and base_weeks > 1:
+            if has_physio and base_weeks > 1 and physio_cuts_injury_week(physio_skill):
                 base_weeks -= 1
             athlete.injured_weeks = base_weeks
             athlete.season_injuries += 1
@@ -608,13 +637,16 @@ def _compute_athlete_event_score(
     track_condition: int,
     has_mental_coach: bool,
     rng: random.Random,
+    mental_pressure: int = STAFF_ATTR_REF,
 ) -> float:
-    """Calculate simulated performance score from attributes, form, personality, weather & track."""
+    """Calculate simulated performance score from attributes, form, personality, weather & track.
+
+    `mental_pressure`: Gestione pressione del preparatore mentale assunto (E.1), conta solo se `has_mental_coach`."""
     weather_mod = -1.8 if weather == WeatherCondition.PIOGGIA else (-0.8 if weather == WeatherCondition.CALDO else 0.0)
     doping_mod = 6.5 if athlete.doping_boost_weeks > 0 else 0.0
 
     # Impulsive athletes have wilder swings unless coached mentally
-    sigma = 5.6 if (athlete.personality == Personality.IMPULSIVO and not has_mental_coach) else 3.8
+    sigma = impulsive_sigma(has_mental_coach, mental_pressure) if athlete.personality == Personality.IMPULSIVO else CALM_SIGMA
     if athlete.personality == Personality.PERFEZIONISTA:
         sigma = 3.0
     variance = rng.gauss(0.0, sigma)
@@ -848,6 +880,9 @@ def simulate_competition(
     roles = _hired_roles(state)
     has_mental = StaffRole.MENTAL_COACH in roles
     has_doctor = StaffRole.DOCTOR in roles
+    staff_attrs = hired_staff_attributes(state)  # E.1: attributi dei clinici assunti
+    mental_bonus = mental_form_bonus(attribute_of(staff_attrs, StaffRole.MENTAL_COACH, "motivazione"))
+    mental_pressure = attribute_of(staff_attrs, StaffRole.MENTAL_COACH, "pressione")
     leader_present = any(
         a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
     )
@@ -924,7 +959,7 @@ def simulate_competition(
             # In-race injury check: attitude & accumulated fatigue drive the risk
             injury_chance = att["injury"] + max(0, player_athlete.fatigue - 60) * 0.004
             if has_doctor:
-                injury_chance *= 0.55
+                injury_chance *= doctor_risk_multiplier(attribute_of(staff_attrs, StaffRole.DOCTOR, "diagnosi"))
             if player_athlete.personality == Personality.RESILIENTE:
                 injury_chance *= 0.7
             withdrew = r.random() < injury_chance
@@ -943,7 +978,8 @@ def simulate_competition(
                 )
             else:
                 p_score = _compute_athlete_event_score(
-                    player_athlete, event_def, weather, state.track_condition, has_mental, r
+                    player_athlete, event_def, weather, state.track_condition, has_mental, r,
+                    mental_pressure=mental_pressure,
                 )
                 p_score += att["score"]
                 p_score += strategy_score
@@ -975,7 +1011,9 @@ def simulate_competition(
             player_athlete.fatigue = clamp_stat(
                 player_athlete.fatigue + int(att["fatigue"]) + strategy_fatigue, 0, 100
             )
-            player_athlete.form = _recalculate_form(player_athlete, False, False, has_mental, leader_present)
+            player_athlete.form = _recalculate_form(
+                player_athlete, False, False, has_mental, leader_present, mental_bonus=mental_bonus
+            )
 
             if not withdrew:  # il ritirato non è classificato: nessun punto ranking
                 ranking_holders[(state.team_name, player_athlete.name)] = player_athlete
@@ -1754,6 +1792,7 @@ def advance_week(
         travel_cost = comp_summary.travel_cost
 
     roles = _hired_roles(state)
+    staff_attrs = hired_staff_attributes(state)
     leader_present = any(
         a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
     )
@@ -1776,6 +1815,7 @@ def advance_week(
             coach=coach,
             coach_load=loads.get(coach.id, 1) if coach is not None else 1,
             pre_meet=pre_meet,
+            staff_attrs=staff_attrs,
         )
         stat_gains.extend(gains)
         if injury_note:

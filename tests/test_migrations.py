@@ -972,5 +972,81 @@ class TestMigrationV21PrepWeeks(_TmpCase):
         self.assertEqual(user_version(path), 20)
 
 
+class TestMigrationV22StaffAttributes(_TmpCase):
+    """v21 → v22 (E.1): `staff.attributes_json` (default `'{}'` = tutti gli attributi al riferimento, l'effetto di prima)."""
+
+    def test_v21_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 22)
+        self.assertIn(21, MIGRATIONS)
+        path = make_save(self.slot("v21"), 21)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("attributes_json", column_names(conn, "staff"))  # la fixture è davvero v21
+            self.assertIn("prep_weeks", column_names(conn, "game_state"))
+            _insert(conn, "staff", id=4, name="Dott.ssa Vecchia", role="Fisioterapista", skill=4, weekly_cost=300,
+                    hired=1, description="d")
+            conn.commit()
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT attributes_json FROM staff WHERE id = 4").fetchone(), ("{}",))
+            self.assertIn(("attributes_json", "TEXT", 1, "'{}'", 0), columns(conn, "staff"))
+        sentinel_ok(self, path, 21)
+        backup = self.backups("v21")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 21)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("attributes_json", column_names(conn, "staff"))
+        sentinel_ok(self, backup, 21)
+
+    def test_old_staff_row_loads_with_every_attribute_at_reference(self) -> None:
+        from models.entities import STAFF_ATTR_REF, StaffRole
+        from models.generator import create_initial_staff
+        from tests.test_assignments import make_state
+
+        path = self.slot("v21")
+        state = make_state(3)
+        state.staff = create_initial_staff()
+        state.staff[1].hired = True
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v21: senza la colonna
+            conn.execute("ALTER TABLE staff DROP COLUMN attributes_json")
+            conn.execute("PRAGMA user_version = 21")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()  # migra v21 → v22
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        doctor = next(s for s in loaded.staff if s.role == StaffRole.DOCTOR)
+        self.assertTrue(doctor.hired)
+        self.assertEqual(doctor.attributes, {"diagnosi": STAFF_ATTR_REF, "prevenzione": STAFF_ATTR_REF})
+
+    def test_attributes_roundtrip_and_corrupt_json_falls_back_to_reference(self) -> None:
+        from models.entities import STAFF_ATTR_REF
+        from tests.test_assignments import make_state
+        from models.generator import create_initial_staff
+
+        path = self.slot("v22")
+        state = make_state(3)
+        state.staff = create_initial_staff()
+        state.staff[0].attributes = {"competenza": 18, "recupero": 6}
+        DatabaseManager(db_path=path).save_game(state)
+        loaded = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(loaded.staff[0].attributes, {"competenza": 18, "recupero": 6})
+        self.assertEqual(loaded.staff[1].attributes, {"diagnosi": STAFF_ATTR_REF, "prevenzione": STAFF_ATTR_REF})
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("UPDATE staff SET attributes_json = 'non json' WHERE id = ?", (state.staff[2].id,))
+            conn.commit()
+        again = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(again.staff[2].attributes, {"motivazione": STAFF_ATTR_REF, "pressione": STAFF_ATTR_REF})
+
+    def test_failed_v21_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v21"), 21)
+        before = sha(path)
+        broken = {"staff": [("attributes_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {21: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+        self.assertEqual(user_version(path), 21)
+
+
 if __name__ == "__main__":
     unittest.main()

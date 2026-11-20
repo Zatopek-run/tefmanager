@@ -8,6 +8,7 @@ import random
 import re
 from typing import Dict, List, Optional
 
+from models.staff import normalize_attributes
 from models.board import create_board_objectives, create_foundation_objectives
 from models.entities import (
     COACH_BASE_SKILL,
@@ -483,7 +484,10 @@ def create_initial_coaches(
 
 
 def create_initial_staff() -> List[StaffMember]:
-    """Create the 3 medical & mental support staff candidates (coaches are separate)."""
+    """Create the 3 medical & mental support staff candidates (coaches are separate).
+
+    Attributi (E.1) tutti al valore di riferimento: l'effetto è quello di prima. Nessuna estrazione dell'RNG: finché non c'è
+    un mercato dello staff (QUESTIONS Q33) non c'è nulla da sorteggiare."""
     return [
         StaffMember(
             id=4,
@@ -493,6 +497,7 @@ def create_initial_staff() -> List[StaffMember]:
             weekly_cost=300,
             hired=False,
             description="Accelera recupero fatica (+8/sett) e dimezza durata infortuni.",
+            attributes=normalize_attributes(StaffRole.PHYSIO),
         ),
         StaffMember(
             id=5,
@@ -502,6 +507,7 @@ def create_initial_staff() -> List[StaffMember]:
             weekly_cost=340,
             hired=False,
             description="Riduce del 45% il rischio di infortuni da sovraccarico.",
+            attributes=normalize_attributes(StaffRole.DOCTOR),
         ),
         StaffMember(
             id=6,
@@ -511,6 +517,7 @@ def create_initial_staff() -> List[StaffMember]:
             weekly_cost=220,
             hired=False,
             description="Stabilizza forma in gara e migliora la resa degli Impulsivi.",
+            attributes=normalize_attributes(StaffRole.MENTAL_COACH),
         ),
     ]
 
