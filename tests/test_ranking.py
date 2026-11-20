@@ -113,13 +113,30 @@ class TestAwarding(unittest.TestCase):
         for athlete in state.athletes:
             self.assertTrue(set(athlete.ranking_points) <= events, athlete.ranking_points)
 
-    def test_a_withdrawn_athlete_is_not_classified_and_scores_nothing(self) -> None:
+    def test_injured_athletes_do_not_start_and_score_nothing(self) -> None:
         state = make_state(3)
-        # un'unica gara individuale per atleta e tutti infortunati: nessun punto al club, solo ai rivali
+        # tutti infortunati: nessuno parte, nessun punto al club, solo ai rivali
         for athlete in state.athletes:
             athlete.injured_weeks = 3
         simulate_competition(state, rng=random.Random(5))
         self.assertTrue(all(not a.ranking_points for a in state.athletes))
+        self.assertTrue(any(c.athlete_for("100m", "M").ranking_points for c in state.rivals_in()))
+
+
+class _AlwaysUnlucky(random.Random):
+    """`random()` vale sempre 0: ogni controllo «succede se r.random() < p» scatta (ritiro in gara compreso)."""
+
+    def random(self) -> float:
+        return 0.0
+
+
+class TestWithdrawalMidRace(unittest.TestCase):
+    def test_an_athlete_who_withdraws_during_the_race_is_not_classified_and_scores_nothing(self) -> None:
+        state = make_state(3)
+        summary = simulate_competition(state, rng=_AlwaysUnlucky(5))
+        withdrawn = [er for er in summary.event_results if er.withdrew_injured and er.event_name in state.active_events]
+        self.assertTrue(withdrawn, "nessun ritiro a metà gara simulato")
+        self.assertTrue(all(not a.ranking_points for a in state.athletes), [a.ranking_points for a in state.athletes])
         self.assertTrue(any(c.athlete_for("100m", "M").ranking_points for c in state.rivals_in()))
 
 

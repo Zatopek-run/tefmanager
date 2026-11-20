@@ -90,7 +90,7 @@ i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagion
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
-`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1: vuoto finché non si gioca il primo meeting o si apre la scheda «Ranking»).
+`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1: vuoto finché non si gioca il primo meeting o non si apre la finestra principale).
 
 ### 3.2 `Athlete`
 
@@ -263,7 +263,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 Ogni piazzamento in una gara **individuale** dà punti ranking: `RANKING_PLACE_POINTS[posto-1]` (100, 80, 65, 52, 42, 34, 28, 22; oltre l'8° nulla) × il moltiplicatore del livello (0,10 / 0,25 / 0,50 / 1,00). Li prendono gli atleti del club e quelli dei rivali (anche quando il club non iscrive nessuno); il ritirato non è classificato; le staffette non danno punti. A ogni meeting i punti già posseduti decadono ×0,9 (metà del peso in ~6 meeting), per tutti nello stesso tick e **prima** dei nuovi.
 
-Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. **Non usano l'RNG della partita**: estraggono da un flusso derivato con `hashlib` da squadra, stagione e settimana (eccezione alla convenzione 3, da confermare: Q26), così il ranking non sposta le estrazioni di nessun altro esito e ricaricare dà gli stessi risultati. Il campo si crea al primo meeting o alla prima apertura della scheda (anche per i salvataggi v14), non alla creazione della partita.
+Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. **Non usano l'RNG della partita**: estraggono da un flusso derivato con `hashlib` da squadra, stagione e settimana (eccezione alla convenzione 3, da confermare: Q26), così il ranking non sposta le estrazioni di nessun altro esito e ricaricare dà gli stessi risultati. Il campo si crea al primo meeting o appena si apre la finestra principale (anche per i salvataggi v14), non alla creazione della partita.
 
 Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + club), **nazionale** (solo `Italia`, Top 50), **società** (le società del livello attuale, per somma dei punti dei loro atleti). Un atleta del club fuori dalla Top N compare comunque in fondo alla tabella con il suo posto vero. Oggi è **solo informativo** (nessun effetto su sponsor, premi, inviti): gli inviti Diamond League sono il sottopunto C.1b, da decidere. Calibrazione misurata: chi vince sempre in Fase regionale resta fuori dalla Top 100, in Finale Oro è 1°.
 
@@ -338,7 +338,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 308 test, ~45 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 309 test, ~45 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 
