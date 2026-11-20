@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
 
 from controllers.game_controller import GameController
 from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, PeriodizationPhase, Specialty, TrainingFocus
-from models.ranking import athlete_rankings, ensure_ranking_pool
+from models.ranking import athlete_rankings
 from models.simulation import body_fit_score
 
 SPECIALTY_COLORS = {
@@ -397,7 +397,6 @@ class AthleteDetailDialog(QDialog):
     def _ranking_lines(self, a: Athlete) -> List[str]:
         """Una riga per ogni gara in cui l'atleta ha punti ranking: posto nel mondo, in Italia e punti (C.1)."""
         state = self.controller.state
-        ensure_ranking_pool(state)
         lines = []
         for event in state.active_events:
             world, national, points = athlete_rankings(state, a, event)

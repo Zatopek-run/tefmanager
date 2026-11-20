@@ -30,7 +30,6 @@ from views.athlete_dialog import AthleteDetailDialog
 from models.ranking import (
     club_points,
     club_ranking,
-    ensure_ranking_pool,
     national_ranking,
     world_ranking,
 )
@@ -2527,7 +2526,6 @@ class RankingTab(QWidget):
         event, gender = self._selection()
         if not event:
             return
-        ensure_ranking_pool(state)  # no-op se c'è già; non usa l'RNG della partita
         world = world_ranking(state, event, gender)
         national = national_ranking(state, event, gender)
 

@@ -292,7 +292,6 @@ RANKING_SYNTH_SKILL_BOTTOM = 58.0  # e del 100°
 RANKING_SYNTH_SKILL_JITTER = 2.0  # scarto iniziale casuale attorno alla retta fra i due estremi
 RANKING_SYNTH_DRIFT = 0.3  # passeggiata casuale del livello a ogni meeting (σ)
 RANKING_SYNTH_FIELD = 8  # partecipanti del campo virtuale con cui si simula il piazzamento di un sintetico
-RANKING_SYNTH_TAG = "ranking"  # etichetta del seed di ripiego per il campo sintetico dei salvataggi vecchi
 DNF_MARK = "Ritirato"
 
 

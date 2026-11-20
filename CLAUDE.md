@@ -23,9 +23,7 @@ sicurezza/refactor), `docs/PIANOLAVORO.md` (**piano di lavoro corrente**: lotti 
    completo è in `GameState.rng_state` (`models/rng_state.py`, colonna `rng_state_json`, schema v13) e si salva in ogni
    `_persist()` (**mai** `db.save_game` diretto nel controller) e si ripristina in `load_game`; un salvataggio vecchio
    senza stato si semina con `legacy_seed` (`hashlib`). `views/dialogs.py` usa `zlib.crc32`. **Resta:** il ripiego
-   `rng or random.Random()` nelle funzioni di `simulation.py`/`generator.py` (usato solo se non si passa l'RNG). **Eccezione dichiarata (C.1,
-   2026-11-20, QUESTIONS Q26, da confermare):** gli atleti sintetici del ranking (`models/ranking.py`) estraggono da un flusso derivato con
-   `hashlib` da squadra, stagione e settimana, non da `GameController.rng`, per non spostare la sequenza di nessun altro esito.
+   `rng or random.Random()` nelle funzioni di `simulation.py`/`generator.py` (usato solo se non si passa l'RNG). Gli atleti sintetici del ranking (C.1) usano `GameController.rng` (campo creato con `rng`, estrazioni al passo C-13b del tick).
 4. **Ogni migrazione ha backup + transazione + test su fixture**; mai `DROP` di dati su una versione sconosciuta.
    *Stato attuale: conforme* (lotti 1.1 e 1.2, 2026-11-19). Prima di ogni migrazione `_init_schema` crea un backup
    verificato con `Connection.backup()` in `<cartella dello slot>/backups/<slot>.v{N}.{timestamp-µs}.db.bak` (sempre
@@ -53,7 +51,7 @@ Verificati il 2026-11-19 (Linux, Python 3.14.4 nel `.venv`).
 ```bash
 .venv/bin/pip install -r requirements.txt  # PyQt6, pyinstaller
 .venv/bin/python main.py                   # avvia l'app (oppure ./TrackAndFieldManager.sh; --check mostra cosa userebbe)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 309 test, OK, ~45 s su Windows (~6 s su Linux)
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v   # 309 test, OK, ~42 s su Windows (~6 s su Linux)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_game        # 96 test (importa PyQt6)
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6 (python3 di sistema)
 pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py   # NON VERIFICATO (scrive build/, dist/, .spec)
@@ -91,8 +89,8 @@ data/        societa_atletica_lazio.csv      docs/  AUDIT, TICK, BALANCE, QUESTI
 Dal 2026-11-20 il lavoro segue `docs/PIANOLAVORO.md` (scritto dall'utente): sette lotti di gameplay, **A** fondamenta e
 bugfix → **B** strategia di gara → **C** progressione/carriera → **D** mercato e finanze → **E** staff e impianti →
 **F** narrativa → **G** UI/UX. Branch di sviluppo: `feature/gameplay-improvements` (creato da `main` il 2026-11-20).
-**Stato (2026-11-20):** lotti A e B chiusi; **C.1** (ranking, schema v15) fatto con atleti sintetici, cifre ed eccezione alla convenzione 3
-da confermare (QUESTIONS Q26); gli inviti Diamond League sono **C.1b**, da decidere. Prossimo: C.2 (obiettivi del Board).
+**Stato (2026-11-20):** lotti A e B chiusi; **C.1** (ranking, schema v15) fatto con atleti sintetici, cifre da confermare
+(QUESTIONS Q26; `test_economy` riscritto sulla distribuzione, AUDIT R21); gli inviti Diamond League sono **C.1b**, da decidere. Prossimo: C.2 (obiettivi del Board).
 
 - **Si procede per lotti e sottopunti nell'ordine del documento** (A.1 … A.5, poi B, C…), rispettando le «Dipendenze» di
   ogni lotto. Un sottopunto = uno o pochi commit piccoli, in italiano; non si salta avanti senza dirlo all'utente.

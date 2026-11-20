@@ -49,7 +49,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga |
 | ---: | --- | --- |
-| 0 | **Decadimento del ranking** (C.1, 2026-11-20): i punti ranking di club, rivali di ogni livello e atleti sintetici si moltiplicano per `RANKING_DECAY`, per tutti insieme e prima dei nuovi punti; se manca il campo sintetico (partita nuova, vecchio salvataggio) lo crea qui con un seed di `hashlib` (`world_seed`). **Non usa `r`** | `ranking.py: decay_ranking` |
+| 0 | **Decadimento del ranking** (C.1, 2026-11-20): i punti ranking di club, rivali di ogni livello e atleti sintetici si moltiplicano per `RANKING_DECAY`, per tutti insieme e prima dei nuovi punti. **Non usa `r`** | `ranking.py: decay_ranking` |
 | 1 | Meteo (Sereno indoor, altrimenti `r.choice`), stato pista, `is_home` | `:710-719`, `:708` |
 | 2 | Per divisione M poi F, per evento (ordine `active_events`: 100m, 400m, **800m**, 1500m, Lungo, Peso in Carriera; l'800m è stato inserito il 2026-11-19 e sposta la sequenza dell'RNG di ogni partita): se nessun convocato o infortunato → solo punti rivali | `:733-743` |
 | 3 | Atteggiamento, vento (se l'evento è sensibile), rischio ritiro (`r.random() < injury_chance`) | `:745-761` |
@@ -63,7 +63,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 11 | `_adapt_rival_ambition` | `:1032` |
 | 12 | Classifica del meeting (ordine di inserimento nei pari merito), bonus prestigio 1°/2°/3° | `:1033-1039` |
 | 13 | **Somma dei punti nella `league_table`** | `:1040-1041` |
-| 13b | **Atleti sintetici del ranking** (C.1): ogni sintetico muove il livello e simula un piazzamento contro un campo virtuale (`update_synthetic_field`). **Eccezione dichiarata alla convenzione 3 (QUESTIONS Q26): non usa `r`**, ma un flusso derivato con `hashlib` da squadra, stagione e settimana (`synthetic_meeting_rng`): l'RNG della partita resta intatto, quindi aggiungere il ranking **non sposta** la sequenza di nessun altro esito (c'è un test), e ricaricare dà gli stessi risultati | `ranking.py: update_synthetic_field` |
+| 13b | **Atleti sintetici del ranking** (C.1): ogni sintetico muove il livello (`gauss`) e simula un piazzamento contro un campo virtuale (`gauss` per la prestazione, una `random()` per ciascuno dei 7 avversari virtuali, nell'ordine della lista `ranking_pool`: `update_synthetic_field`). **Usa `r`**: aggiungerli sposta tutte le estrazioni successive a parità di seme (2026-11-20, decisione dell'utente). Senza campo (stato costruito a mano) non fa nulla e non consuma `r`. Il campo si crea fuori dal tick: alla partita nuova (`_create_fresh_state`) e al caricamento di un salvataggio vecchio (`upgrade_legacy_state`), con `rng` | `ranking.py: update_synthetic_field` |
 | 14 | Casa: biglietti e usura pista −3; trasferta: costo; `budget += premi + biglietti − trasferta`; `prestige += …` | `:1043-1052` |
 | 15 | Transazioni (premi, biglietti o trasferta), `CompetitionSummary` in testa alla storia, notizia | `:1054-1117` |
 | 16 | `_evaluate_objectives` (prima chiamata) | `:1118` |

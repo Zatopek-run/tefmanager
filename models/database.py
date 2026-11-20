@@ -127,7 +127,7 @@ V14_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("race_strategy_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
 # Columns added in v15 (C.1: punti ranking per evento di ogni atleta e campo mondiale di atleti sintetici;
-# `{}` / `[]` = salvataggio vecchio, il campo sintetico si genera al caricamento con un seed di `hashlib`).
+# `{}` / `[]` = salvataggio vecchio, il campo sintetico si genera al caricamento con l'RNG della partita).
 V15_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("ranking_json", "TEXT NOT NULL DEFAULT '{}'")],
     "game_state": [("ranking_pool_json", "TEXT NOT NULL DEFAULT '[]'")],

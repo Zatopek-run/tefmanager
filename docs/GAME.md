@@ -90,7 +90,7 @@ i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagion
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
-`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1: vuoto finché non si gioca il primo meeting o non si apre la finestra principale).
+`coach_hired_week`, `bankrupt`; il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1).
 
 ### 3.2 `Athlete`
 
@@ -263,7 +263,7 @@ Per atleta e per evento si tiene il **PB** (solo con vento legale); la società 
 
 Ogni piazzamento in una gara **individuale** dà punti ranking: `RANKING_PLACE_POINTS[posto-1]` (100, 80, 65, 52, 42, 34, 28, 22; oltre l'8° nulla) × il moltiplicatore del livello (0,10 / 0,25 / 0,50 / 1,00). Li prendono gli atleti del club e quelli dei rivali (anche quando il club non iscrive nessuno); il ritirato non è classificato; le staffette non danno punti. A ogni meeting i punti già posseduti decadono ×0,9 (metà del peso in ~6 meeting), per tutti nello stesso tick e **prima** dei nuovi.
 
-Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. **Non usano l'RNG della partita**: estraggono da un flusso derivato con `hashlib` da squadra, stagione e settimana (eccezione alla convenzione 3, da confermare: Q26), così il ranking non sposta le estrazioni di nessun altro esito e ricaricare dà gli stessi risultati. Il campo si crea al primo meeting o appena si apre la finestra principale (anche per i salvataggi v14), non alla creazione della partita.
+Per riempire le classifiche ci sono **100 atleti sintetici per disciplina e sesso**: nome e nazionalità di fantasia (25% italiani), un livello dal 94 al 58, che a ogni meeting si muove di poco e simula un piazzamento contro un campo virtuale di 7 avversari del livello di gara più vicino al loro, con la stessa tabella dei punti. Non invecchiano né si ritirano. Usano **l'RNG della partita** (convenzione 3; scelta dell'utente, Q26): il campo si crea con `rng` alla partita nuova e al caricamento di un salvataggio v14, e a ogni meeting estraggono da `r` al passo C-13b del tick; essendo lo stato dell'RNG salvato, ricaricare dà gli stessi risultati. Aggiungere il ranking ha spostato le estrazioni di ogni partita a parità di seme.
 
 Classifiche (`models/ranking.py`): **mondiale** (Top 100: sintetici + rivali + club), **nazionale** (solo `Italia`, Top 50), **società** (le società del livello attuale, per somma dei punti dei loro atleti). Un atleta del club fuori dalla Top N compare comunque in fondo alla tabella con il suo posto vero. Oggi è **solo informativo** (nessun effetto su sponsor, premi, inviti): gli inviti Diamond League sono il sottopunto C.1b, da decidere. Calibrazione misurata: chi vince sempre in Fase regionale resta fuori dalla Top 100, in Finale Oro è 1°.
 
@@ -329,7 +329,7 @@ Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewe
 ## 10. Determinismo e RNG
 
 La simulazione riceve un `rng` iniettabile (`random.Random`), quindi a parità di stato e di RNG gli esiti sono identici. **Dal 2026-11-20 (A.3)** il controller ha un solo `rng` per partita (seme casuale a ogni avvio dell'app), il cui **stato completo** (`getstate()` come JSON, `GameState.rng_state`, schema v13) è scritto a ogni salvataggio e ripristinato al caricamento: lo stesso salvataggio caricato due volte dà gli stessi esiti, e ricaricare dopo una ricerca vivaio non permette di rifarla. Un salvataggio vecchio senza stato si semina in modo deterministico con `hashlib` da società, stagione e settimana (`legacy_seed`).
-Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti. **Eccezione (C.1, Q26):** gli atleti sintetici del ranking (§5.15) usano un flusso derivato con `hashlib` da squadra, stagione e settimana, non `rng`, per non spostare la sequenza di nessun altro esito.
+Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti.
 
 ---
 
@@ -338,7 +338,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 309 test, ~45 s su Windows
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 309 test, ~42 s su Windows
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
 ```
 

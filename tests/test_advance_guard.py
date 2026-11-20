@@ -71,6 +71,11 @@ class TestAdvanceButton(unittest.TestCase):
     def test_button_is_disabled_during_the_tick_and_clicks_are_ignored(self) -> None:
         from views.main_window import MainWindow
 
+        # Un dilemma a metà prova aprirebbe un dialogo modale (blocca per sempre offscreen): qui non c'entra.
+        no_dilemma = mock.patch("models.simulation.maybe_generate_dilemma", return_value=None)
+        no_dilemma.start()
+        self.addCleanup(no_dilemma.stop)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             ctrl = GameController(
                 db_manager=DatabaseManager(db_path=Path(tmpdir) / "ui.db"), rng=random.Random(7)

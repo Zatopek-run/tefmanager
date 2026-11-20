@@ -36,6 +36,11 @@ from models.simulation import advance_week, close_season
 _app = QApplication.instance() or QApplication([])
 
 SEEDS = (1, 2, 3, 4, 5)
+# Per la stagione intera i cinque semi non bastano: una partita su sei o sette chiude in deficit (AUDIT R21), e con
+# cinque semi il test passava o falliva a seconda di come cadevano le estrazioni. Si guarda la distribuzione.
+SEASON_SEEDS = tuple(range(1, 31))
+SEASON_DEFICIT = -1000  # sotto questo saldo dopo 36 settimane la partita è «in deficit»
+SEASON_DEFICIT_MAX_SHARE = 0.30  # quota massima di partite in deficit (misurato il 2026-11-20: 15% su 40 semi)
 
 
 def _new_game(tmpdir: str, seed: int, mode: str) -> GameController:
@@ -46,18 +51,23 @@ def _new_game(tmpdir: str, seed: int, mode: str) -> GameController:
     return ctrl
 
 
-def _autopilot_deltas(mode: str, weeks: int) -> list[int]:
-    """Variazione del bilancio dopo `weeks` settimane senza alcuna azione del giocatore, per ogni seed."""
-    deltas = []
-    for seed in SEEDS:
+def _autopilot_runs(mode: str, weeks: int, seeds: tuple[int, ...] = SEEDS) -> list[tuple[int, bool]]:
+    """(variazione del bilancio, fallita) dopo `weeks` settimane senza alcuna azione del giocatore, per ogni seed."""
+    runs = []
+    for seed in seeds:
         with tempfile.TemporaryDirectory() as tmpdir:
             ctrl = _new_game(tmpdir, seed, mode)
             start = ctrl.state.budget
             for _ in range(weeks):
                 ctrl.dismiss_dilemma()
                 advance_week(ctrl.state, rng=ctrl.rng)
-            deltas.append(ctrl.state.budget - start)
-    return deltas
+            runs.append((ctrl.state.budget - start, ctrl.state.bankrupt))
+    return runs
+
+
+def _autopilot_deltas(mode: str, weeks: int, seeds: tuple[int, ...] = SEEDS) -> list[int]:
+    """Variazione del bilancio dopo `weeks` settimane senza alcuna azione del giocatore, per ogni seed."""
+    return [delta for delta, _bankrupt in _autopilot_runs(mode, weeks, seeds)]
 
 
 class TestStartingEconomy(unittest.TestCase):
@@ -65,10 +75,20 @@ class TestStartingEconomy(unittest.TestCase):
         deltas = _autopilot_deltas("career", 12)
         self.assertGreaterEqual(min(deltas), 0, f"Carriera in perdita dopo 12 settimane: {deltas}")
 
-    def test_career_ends_the_season_without_a_deficit_but_without_a_money_machine(self) -> None:
-        deltas = _autopilot_deltas("career", 36)
-        self.assertGreaterEqual(min(deltas), -1000, f"deficit oltre 1.000 € dopo 36 settimane: {deltas}")
-        self.assertLessEqual(sum(deltas) / len(deltas), 40_000, f"economia troppo generosa: {deltas}")
+    def test_career_season_is_sustainable_in_most_games_and_never_bankrupt(self) -> None:
+        """Sulla distribuzione di 30 partite in autopilota: la mediana chiude in attivo, poche vanno in deficit e
+        nessuna arriva al fallimento; l'economia non è una macchina per soldi."""
+        runs = _autopilot_runs("career", 36, SEASON_SEEDS)
+        deltas = [delta for delta, _bankrupt in runs]
+        ordered = sorted(deltas)
+        median = ordered[len(ordered) // 2]
+        in_deficit = sum(1 for d in deltas if d < SEASON_DEFICIT)
+        self.assertGreater(median, 0, f"la mediana chiude in perdita: {ordered}")
+        self.assertLessEqual(
+            in_deficit / len(deltas), SEASON_DEFICIT_MAX_SHARE, f"troppe partite in deficit ({in_deficit}): {ordered}"
+        )
+        self.assertFalse(any(bankrupt for _delta, bankrupt in runs), f"una partita arriva al fallimento: {ordered}")
+        self.assertLessEqual(sum(deltas) / len(deltas), 40_000, f"economia troppo generosa: {ordered}")
 
     def test_prototype_is_sustainable_over_its_two_meets(self) -> None:
         deltas = _autopilot_deltas("vertical_slice", 8)

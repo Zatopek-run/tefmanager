@@ -75,6 +75,7 @@ from models.generator import (
     generate_vertical_slice_roster,
     get_recruitment_fee,
 )
+from models.ranking import ensure_ranking_pool
 from models.rng_state import dump_rng_state, restore_or_seed
 from models.simulation import (
     WeekAdvanceReport,
@@ -233,6 +234,7 @@ class GameController(QObject):
         )
         auto_build_all_relays(state)
         ensure_contracts(state)
+        ensure_ranking_pool(state, self.rng)  # C.1: campo mondiale del ranking
         if persist:
             self._persist(state)
         return state

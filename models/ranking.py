@@ -9,18 +9,16 @@ nello stesso tick (altrimenti i confronti tra un meeting e l'altro si sfalsano).
 - Atleti del club e rivali: i punti vengono dai piazzamenti reali del meeting (`award_event_points`,
   `award_rival_place`), senza chiamate all'RNG.
 - Sintetici: ogni meeting si simula un piazzamento dal loro livello contro un campo virtuale del livello che
-  gareggia più vicino a loro (`update_synthetic_field`). **Non usano l'RNG della partita**: estraggono da un flusso
-  derivato con `hashlib` da dati salvati (squadra, stagione, settimana: `synthetic_meeting_rng`), così il ranking
-  non sposta la sequenza di nessun altro esito (stessa cautela di B.2 con «Sicuro») e ricaricare dà gli stessi
-  risultati. È un'eccezione dichiarata alla convenzione 3 di CLAUDE.md (QUESTIONS Q26): il campo sintetico è
-  cornice, non una regola di gioco che incide su gare, soldi o formazione.
+  gareggia più vicino a loro (`update_synthetic_field`). Usano **l'RNG della partita** (convenzione 3): il campo
+  si crea con `rng` alla partita nuova e al caricamento di un salvataggio vecchio (`upgrade_legacy_state`), e a
+  ogni meeting estraggono da `r` in un punto fisso del tick (vedi `docs/TICK.md`, passo C-13b). Poiché lo stato
+  dell'RNG è salvato, ricaricare dà gli stessi risultati.
 - Staffette: **non** danno punti ranking (non sono individuali).
 - Un rivale che si ritira porta via i suoi punti: il sostituto parte da zero.
 """
 
 from __future__ import annotations
 
-import hashlib
 import math
 import random
 from bisect import bisect_left
@@ -39,7 +37,6 @@ from models.entities import (
     RANKING_SYNTH_SKILL_BOTTOM,
     RANKING_SYNTH_SKILL_JITTER,
     RANKING_SYNTH_SKILL_TOP,
-    RANKING_SYNTH_TAG,
     RANKING_TIER_MULT,
     RANKING_WORLD_SIZE,
     RIVAL_RACE_SIGMA,
@@ -108,8 +105,7 @@ def _decay_pool(pool: Iterable[SyntheticAthlete]) -> None:
 
 def decay_ranking(state: GameState) -> None:
     """Decadimento di tutti i punti (club, rivali di ogni livello, sintetici): una volta per meeting, prima dei
-    nuovi punti. Crea il campo sintetico se manca (primo meeting di una partita nuova)."""
-    ensure_ranking_pool(state)
+    nuovi punti."""
     for athlete in state.athletes:
         _decay_dict(athlete.ranking_points)
     for club in state.rival_clubs:
@@ -152,7 +148,7 @@ def generate_synthetic_field(state: GameState, rng: random.Random) -> List[Synth
     """Crea il campo mondiale: `RANKING_WORLD_SIZE` atleti per evento attivo e sesso, con livello decrescente
     dal 1° al 100° e punti già a regime (stima analitica più `SYNTH_WARMUP_MEETINGS` meeting simulati).
 
-    Riceve un RNG dedicato (`random.Random(world_seed(state))` da `ensure_ranking_pool`), non quello della partita.
+    Riceve l'RNG della partita (`GameController.rng`, o quello passato a `upgrade_legacy_state`).
     """
     foreign = [n for n in NATIONALITIES if n != RANKING_HOME_NATION]
     pool: List[SyntheticAthlete] = []
@@ -200,37 +196,19 @@ def _play_meeting(pool: List[SyntheticAthlete], rng: random.Random) -> None:
         s.points = round(s.points + _TIER_POINTS[tier][ahead], 2)
 
 
-def update_synthetic_field(state: GameState, rng: Optional[random.Random] = None) -> None:
-    """Passo del tick: i sintetici gareggiano. Senza campo (stato costruito a mano, vecchi test) non fa nulla.
-    Senza `rng` usa `synthetic_meeting_rng` (mai l'RNG della partita). Il decadimento è già stato applicato a
-    tutti da `decay_ranking`."""
+def update_synthetic_field(state: GameState, rng: random.Random) -> None:
+    """Passo del tick: i sintetici gareggiano. Senza campo (stato costruito a mano, vecchi test) non fa nulla e
+    non consuma l'RNG. Il decadimento è già stato applicato a tutti da `decay_ranking`."""
     if state.ranking_pool:
-        _play_meeting(state.ranking_pool, rng or synthetic_meeting_rng(state))
+        _play_meeting(state.ranking_pool, rng)
 
 
-def _seed(key: str) -> int:
-    return int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "big")
-
-
-def world_seed(state: GameState) -> int:
-    """Seed del campo sintetico alla creazione: dipende dalla società e dai club rivali (già sorteggiati con
-    l'RNG della partita, quindi diversi da una partita all'altra), non consuma l'RNG."""
-    clubs = "|".join(f"{c.name}:{c.tier.value}:{c.offset}" for c in state.rival_clubs)
-    return _seed(f"{RANKING_SYNTH_TAG}|mondo|{state.team_name}|{clubs}")
-
-
-def synthetic_meeting_rng(state: GameState) -> random.Random:
-    """Flusso di numeri casuali dei sintetici per il meeting di questa settimana: funzione di società, stagione e
-    settimana (tutte nel salvataggio)."""
-    return random.Random(_seed(f"{RANKING_SYNTH_TAG}|meeting|{state.team_name}|{state.season_number}|{state.week}"))
-
-
-def ensure_ranking_pool(state: GameState) -> bool:
-    """Genera il campo sintetico se manca (partita nuova, salvataggio vecchio, stato costruito a mano). Non usa
-    l'RNG della partita: ritorna True se l'ha creato."""
+def ensure_ranking_pool(state: GameState, rng: random.Random) -> bool:
+    """Genera il campo sintetico se manca (partita nuova, salvataggio vecchio). Consuma `rng`: ritorna True se l'ha
+    creato, False (RNG intatto) se c'era già."""
     if state.ranking_pool:
         return False
-    state.ranking_pool = generate_synthetic_field(state, random.Random(world_seed(state)))
+    state.ranking_pool = generate_synthetic_field(state, rng)
     return True
 
 
@@ -334,8 +312,6 @@ __all__ = [
     "decay_ranking",
     "ensure_ranking_pool",
     "generate_synthetic_field",
-    "synthetic_meeting_rng",
-    "world_seed",
     "national_ranking",
     "place_points",
     "update_synthetic_field",

@@ -1209,7 +1209,7 @@ def simulate_competition(
         total = state.league_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
         for i, n in enumerate(counts):
             total[i] += n
-    update_synthetic_field(state)  # C.1: i sintetici gareggiano, con un flusso proprio (TICK.md, passo C-13b)
+    update_synthetic_field(state, r)  # C.1: i sintetici gareggiano (prima degli incassi: TICK.md, passo C-13b)
 
     # Home meets: no bus trip, but the gate brings ticket income and wears the track
     spectators, ticket_income = (0, 0)
@@ -1356,7 +1356,7 @@ def upgrade_legacy_state(state: GameState, rng: Optional[random.Random] = None) 
                 lineup[e] = filled.get(e)
     state.news_log[0:0] = normalize_assignments(state)
     ensure_contracts(state)
-    ensure_ranking_pool(state)  # C.1: campo sintetico dei vecchi salvataggi, con seed di hashlib (non tocca l'RNG)
+    ensure_ranking_pool(state, r)  # C.1: campo sintetico dei vecchi salvataggi
 
 
 def normalize_assignments(state: GameState) -> List[str]:

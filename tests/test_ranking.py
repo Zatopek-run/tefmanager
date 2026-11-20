@@ -35,10 +35,8 @@ from models.ranking import (
     generate_synthetic_field,
     national_ranking,
     place_points,
-    synthetic_meeting_rng,
     update_synthetic_field,
     world_ranking,
-    world_seed,
 )
 from models.simulation import simulate_competition
 from tests.test_assignments import make_state
@@ -198,72 +196,72 @@ class TestSyntheticField(unittest.TestCase):
         pool = generate_synthetic_field(make_state(3), random.Random(1))
         self.assertTrue(all(s.points > 0 for s in pool))
 
-    def test_ensure_ranking_pool_is_idempotent_and_does_not_touch_the_game_rng(self) -> None:
+    def test_ensure_ranking_pool_creates_the_field_once_with_the_given_rng(self) -> None:
         state = make_state(3)
         self.assertEqual(state.ranking_pool, [])
-        self.assertTrue(ensure_ranking_pool(state))
+        rng = random.Random(4)
+        self.assertTrue(ensure_ranking_pool(state, rng))
         first = list(state.ranking_pool)
-        self.assertFalse(ensure_ranking_pool(state))
+        after_creation = rng.getstate()
+        self.assertFalse(ensure_ranking_pool(state, rng))  # c'è già: nessuna estrazione
+        self.assertEqual(rng.getstate(), after_creation)
         self.assertEqual(state.ranking_pool, first)
-        # stesso stato → stesso campo (seed da hashlib, non salato per processo)
         again = make_state(3)
-        ensure_ranking_pool(again)
-        self.assertEqual(again.ranking_pool, first)
-        self.assertEqual(world_seed(state), world_seed(again))
+        ensure_ranking_pool(again, random.Random(4))
+        self.assertEqual(again.ranking_pool, first)  # stesso RNG → stesso campo
 
 
 class TestSyntheticMeeting(unittest.TestCase):
     def setUp(self) -> None:
         self.state = make_state(3)
-        ensure_ranking_pool(self.state)
+        ensure_ranking_pool(self.state, random.Random(1))
 
-    def test_without_a_pool_nothing_happens(self) -> None:
+    def test_without_a_pool_nothing_happens_and_the_rng_is_untouched(self) -> None:
         state = make_state(3)
-        update_synthetic_field(state)
+        rng = random.Random(1)
+        before = rng.getstate()
+        update_synthetic_field(state, rng)
         self.assertEqual(state.ranking_pool, [])
+        self.assertEqual(rng.getstate(), before)
 
-    def test_the_meeting_is_a_function_of_the_saved_state(self) -> None:
-        """Stesso stato → stessi esiti: ricaricare una partita non ritira i dadi dei sintetici."""
+    def test_the_meeting_is_a_function_of_the_pool_and_the_rng(self) -> None:
+        """Stesso campo e stesso stato dell'RNG → stessi esiti (l'RNG è salvato: ricaricare non ritira i dadi)."""
         other = copy.deepcopy(self.state)
-        update_synthetic_field(self.state)
-        update_synthetic_field(other)
+        update_synthetic_field(self.state, random.Random(9))
+        update_synthetic_field(other, random.Random(9))
         self.assertEqual(self.state.ranking_pool, other.ranking_pool)
 
-    def test_another_week_draws_differently(self) -> None:
+    def test_another_rng_state_draws_differently(self) -> None:
         other = copy.deepcopy(self.state)
-        other.week += 4
-        update_synthetic_field(self.state)
-        update_synthetic_field(other)
+        update_synthetic_field(self.state, random.Random(9))
+        update_synthetic_field(other, random.Random(10))
         self.assertNotEqual(self.state.ranking_pool, other.ranking_pool)
-        self.assertNotEqual(
-            synthetic_meeting_rng(self.state).random(), synthetic_meeting_rng(other).random()
-        )
 
     def test_levels_move_a_little_and_points_grow(self) -> None:
         before = copy.deepcopy(self.state.ranking_pool)
-        update_synthetic_field(self.state)
+        update_synthetic_field(self.state, random.Random(9))
         moved = [abs(a.skill - b.skill) for a, b in zip(before, self.state.ranking_pool)]
         self.assertLess(max(moved), 2.5)
         self.assertGreater(max(moved), 0)
         self.assertTrue(all(a.points >= b.points for a, b in zip(self.state.ranking_pool, before)))
 
-    def test_simulating_a_meeting_does_not_consume_the_game_rng_for_the_synthetics(self) -> None:
-        """La cautela di B.2: il campo sintetico non sposta la sequenza di nessun altro esito."""
-        a = make_state(3)
-        ra = random.Random(5)
-        sa = simulate_competition(a, rng=ra)
-        b = make_state(3)
-        rb = random.Random(5)
-        with mock.patch("models.simulation.update_synthetic_field"):
-            sb = simulate_competition(b, rng=rb)
-        self.assertEqual(ra.getstate(), rb.getstate())
-        self.assertEqual(sa, sb)
+    def test_the_meeting_draws_from_the_game_rng_after_the_league_and_before_the_gate(self) -> None:
+        """Passo C-13b del tick: i sintetici consumano `r`; senza campo la sequenza è quella di prima."""
+        with_pool = make_state(3)
+        ensure_ranking_pool(with_pool, random.Random(2))
+        r_with = random.Random(5)
+        simulate_competition(with_pool, rng=r_with)
+        without = make_state(3)
+        r_without = random.Random(5)
+        simulate_competition(without, rng=r_without)
+        self.assertNotEqual(r_with.getstate(), r_without.getstate())
+        self.assertEqual(without.ranking_pool, [])  # senza campo il meeting non lo crea né consuma l'RNG
 
 
 class TestRankings(unittest.TestCase):
     def setUp(self) -> None:
         self.state = make_state(3)
-        ensure_ranking_pool(self.state)
+        ensure_ranking_pool(self.state, random.Random(1))
 
     def test_world_ranking_is_sorted_by_points_and_numbered_from_one(self) -> None:
         ranking = world_ranking(self.state, "100m", "M")
@@ -332,7 +330,7 @@ class TestRankings(unittest.TestCase):
 class TestPersistence(unittest.TestCase):
     def test_save_and_load_keep_points_and_the_synthetic_field(self) -> None:
         state = make_state(3)
-        ensure_ranking_pool(state)
+        ensure_ranking_pool(state, random.Random(1))
         state.athletes[0].ranking_points = {"100m": 12.5, "400m": 3.0}
         state.rival_clubs[0].athletes["100m"].ranking_points = {"100m": 7.0}
         state.rival_clubs[0].female_athletes["100m"].ranking_points = {"100m": 9.0}
@@ -346,7 +344,7 @@ class TestPersistence(unittest.TestCase):
         self.assertEqual(loaded.rival_clubs[0].female_athletes["100m"].ranking_points, {"100m": 9.0})
         self.assertEqual(loaded.ranking_pool, state.ranking_pool)
 
-    def test_a_save_without_a_pool_gets_one_that_depends_only_on_the_state(self) -> None:
+    def test_a_save_without_a_pool_gets_one_when_it_is_upgraded(self) -> None:
         state = make_state(3)
         with tempfile.TemporaryDirectory() as tmp:
             db = DatabaseManager(db_path=Path(tmp) / "slot.db")
@@ -357,15 +355,9 @@ class TestPersistence(unittest.TestCase):
 
         upgrade_legacy_state(loaded, rng=random.Random(1))
         self.assertTrue(loaded.ranking_pool)
-        direct = make_state(3)
-        ensure_ranking_pool(direct)
-        self.assertEqual(loaded.ranking_pool, direct.ranking_pool)  # stesso stato → stesso campo
-        # `upgrade_legacy_state` può consumare l'RNG per altro, ma il campo sintetico non ne dipende
         again = make_state(3)
-        again_rng = random.Random(99)
-        again.ranking_pool = []
-        upgrade_legacy_state(again, rng=again_rng)
-        self.assertEqual(again.ranking_pool, direct.ranking_pool)
+        upgrade_legacy_state(again, rng=random.Random(1))
+        self.assertEqual(again.ranking_pool, loaded.ranking_pool)  # stesso stato e stesso RNG → stesso campo
 
 
 if __name__ == "__main__":
