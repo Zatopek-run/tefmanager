@@ -34,6 +34,7 @@ from models.entities import (
 from views.dialogs import (
     CompetitionResultsDialog,
     EthicalDilemmaDialog,
+    PressConferenceDialog,
     NewGameDialog,
     BoardObjectivesDialog,
     SeasonEndDialog,
@@ -354,6 +355,12 @@ class MainWindow(QMainWindow):
             RaceViewerDialog(summary, parent=self).exec()
         dlg = CompetitionResultsDialog(summary, parent=self)
         dlg.exec()
+        conference = self.controller.press_conference_for(summary)  # F.2: dopo i risultati, il giornalista
+        if conference is not None:
+            press = PressConferenceDialog(conference, parent=self)
+            press.exec()
+            if press.answered:
+                self.controller.answer_press_conference(conference, press.answers)
 
     def _show_season_end(self, result: SeasonEndResult) -> None:
         dlg = SeasonEndDialog(result, self.controller.state.team_name, parent=self)

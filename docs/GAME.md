@@ -88,7 +88,7 @@ Contiene: nome società, modalità, `budget`, `week`, `season_number`, `season_p
 gli **allenatori** (`coaches`) e lo **staff** (`staff`); le **convocazioni** per evento (`event_lineup` M, `event_lineup_f` F, un solo
 atleta per evento e divisione; ogni atleta al massimo in 2 gare individuali + 1 staffetta, e gli under 20 non gareggiano in «Finale Oro / Coppa Europa»), gli atteggiamenti di gara per evento (`event_attitude`), le **staffette** (`relays` M, `relays_f` F),
 i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagionali**, i traguardi (`milestones`), il registro notizie
-(`news_log`, max 70; dal lotto F.1 anche notizie dinamiche, vedi §5.13), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
+(`news_log`, max 70; dal lotto F.1 anche notizie dinamiche, vedi §5.20), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`, `facilities`, `academy_level` 0-5, `scout`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
 `coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1); gli ex atleti (`retired`, C.3), gli **agenti** (`agents`, D.1) e i **bilanci mensili** (`monthly_reports`, D.3).
@@ -344,6 +344,13 @@ Taglia solo lo sponsor società (non gli individuali, il merchandising o le quot
 
 **Diritti TV.** Solo per i meeting **in casa** del livello **Internazionale**: **€3.000** a meeting (libro mastro «Diritti TV»). Negli altri livelli e in trasferta nulla.
 
+### 5.20 Notizie dinamiche (F.1, 2026-11-21; soglie provvisorie, `QUESTIONS.md` Q36)
+Dal lotto **F.1** (2026-11-21, Q36) a ogni **chiusura di mese** (quattro settimane, quando si scrive il bilancio mensile) il giornale racconta, **al più una riga per tipo**, nel feed della Dashboard: **«Allenatore del Mese»** se il club ha vinto il meeting del mese; **«La stampa critica la tua gestione»** se i conti sono in rosso, il Board ha già bocciato una stagione o il club è ultimo nell'ultimo meeting (in quest'ordine di priorità); **«Tensione nello spogliatoio»** per l'atleta di Prima Squadra il cui agente ha una relazione con te ≤ 30. Sono solo cronaca (nessun effetto su morale o reputazione: arrivano con le conferenze stampa, F.2); la frase tra tre varianti si sceglie in modo deterministico, senza RNG. Niente notizie senza atleti in Prima Squadra né nella stagione di fondazione. I record sociali, i primati personali, gli infortuni e il resto del registro notizie c'erano già e non sono cambiati (`models/narrative.py`).
+
+### 5.21 Conferenza stampa (F.2, 2026-11-21; cifre provvisorie, `QUESTIONS.md` Q37)
+
+Dopo i risultati di ogni meeting del club si apre una **conferenza stampa** con due domande (solo se la società ha gareggiato): **«come giudica la prestazione?»** — dirsi *soddisfatti*, *cauti* o *critici* sposta la **reputazione** in modo coerente col risultato (classifica a squadre: tra i primi 2 = buono, tra gli ultimi 2 = brutto, con almeno 4 squadre; da +2 a −2: dirsi soddisfatti dopo un ultimo posto costa 2, la risposta cauta non fa mai male) — e **«punta sul futuro di X?»**, con X il miglior atleta del meeting: *punto fermo* (+3), *valuteremo* (0) o *il posto non è garantito* (−3) sulla **relazione con il suo agente** (D.1). Si può rispondere a una sola domanda o chiudere con «Nessun commento»: allora non cambia nulla. Una conferenza per meeting. Non c'è un morale per atleta: la relazione con l'agente è l'unico canale verso l'atleta. Nessun RNG (`models/press.py`, `BALANCE.md` §U).
+
 ---
 
 ## 6. Categorie: parametri principali
@@ -406,7 +413,7 @@ Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewe
 ## 10. Determinismo e RNG
 
 La simulazione riceve un `rng` iniettabile (`random.Random`), quindi a parità di stato e di RNG gli esiti sono identici. **Dal 2026-11-20 (A.3)** il controller ha un solo `rng` per partita (seme casuale a ogni avvio dell'app), il cui **stato completo** (`getstate()` come JSON, `GameState.rng_state`, schema v13) è scritto a ogni salvataggio e ripristinato al caricamento: lo stesso salvataggio caricato due volte dà gli stessi esiti, e ricaricare dopo una ricerca vivaio non permette di rifarla. Un salvataggio vecchio senza stato si semina in modo deterministico con `hashlib` da società, stagione e settimana (`legacy_seed`).
-Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti.
+Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Regola di progetto: nessun `hash()` su stringhe per ricavare seed (è salato per processo): la fascia del potenziale ora usa `zlib.crc32`. Lotti 2.1/2.2 di `PLAN.md` fatti. Dal 2026-11-21 (E.2, E.3, F.1, F.2) le novità sono **neutre per l'RNG** salvo: il centro medico (una estrazione per infortunio, solo se posseduto) e la rete scouting regionale (una o due estrazioni per ragazzo, solo con una regione); notizie dinamiche e conferenza stampa non estraggono nulla (varianti con `crc32`).
 
 ---
 
@@ -415,8 +422,8 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 572 test, ~65 s su Windows
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 55 test, SENZA PyQt6
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 761 test, ~36 s su Linux
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 95 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).
@@ -433,6 +440,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). **D.1** (agenti con personalità e relazione, 2026-11-20; cifre da confermare, Q29). **D.2** (trattative, clausola rescissoria, bonus per record, 2026-11-20; cifre da confermare, Q30). **D.3** (finanze dettagliate: bilancio mensile, merchandising, sponsor con obiettivo, diritti TV, 2026-11-20; cifre da confermare, Q31): **lotto D chiuso**. Prossimo: lotto E (staff e impianti).
+- ✅ **Lotto E** (2026-11-20/21): **E.1** staff con attributi e mercato dello staff (Q33), **E.2** impianti avanzati (schema v23, Q34), **E.3** Academy, osservatore e rete scouting (schema v24, Q35). **Lotto F** (in corso): **F.1** notizie dinamiche (Q36) e **F.2** conferenze stampa (Q37) fatte, restano F.3 relazioni tra atleti e F.4 momenti di gloria. Cifre provvisorie in `BALANCE.md` §R-§U.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
@@ -470,7 +478,3 @@ Le decisioni di design aperte (parte delle 22 domande, es. «che cosa è il fall
 - Non cambiare esiti di gara nelle viste; non introdurre comandi interattivi in gara; non toccare `MIGRATIONS`/`SCHEMA_VERSION` senza migrazione e test; non fare refactor o «già che ci sono».
 - Un difetto trovato per strada si annota in `docs/AUDIT.md`; una scelta di design si chiede all'utente (`docs/QUESTIONS.md`).
 - Commit in italiano e descrittivi; sviluppo sul branch indicato; non aprire PR se non richiesto.
-
-### 5.13 Notizie dinamiche (F.1)
-
-Dal lotto **F.1** (2026-11-21, Q36) a ogni **chiusura di mese** (quattro settimane, quando si scrive il bilancio mensile) il giornale racconta, **al più una riga per tipo**, nel feed della Dashboard: **«Allenatore del Mese»** se il club ha vinto il meeting del mese; **«La stampa critica la tua gestione»** se i conti sono in rosso, il Board ha già bocciato una stagione o il club è ultimo nell'ultimo meeting (in quest'ordine di priorità); **«Tensione nello spogliatoio»** per l'atleta di Prima Squadra il cui agente ha una relazione con te ≤ 30. Sono solo cronaca (nessun effetto su morale o reputazione: arrivano con le conferenze stampa, F.2); la frase tra tre varianti si sceglie in modo deterministico, senza RNG. Niente notizie senza atleti in Prima Squadra né nella stagione di fondazione. I record sociali, i primati personali, gli infortuni e il resto del registro notizie c'erano già e non sono cambiati (`models/narrative.py`).

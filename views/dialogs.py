@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -52,6 +54,7 @@ from models.entities import (
 from models.agents import negotiated_fee
 from models.generator import LAZIO_PROVINCES
 from models.market import Negotiation, NegotiationState, Terms
+from models.press import PressConference
 
 
 def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
@@ -68,6 +71,76 @@ def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
     lo = max(1, prospect.potential - half_width + offset)
     hi = min(99, prospect.potential + half_width + offset)
     return f"{lo}-{hi}"
+
+
+class PressConferenceDialog(QDialog):
+    """Conferenza stampa dopo la gara (F.2): una domanda per volta con le risposte possibili.
+
+    `answers` (domanda → chiave della risposta) è valido solo se `answered` è vero, cioè se si è premuto «Rispondi».
+    Chiudere la finestra o «Nessun commento» non ha effetti sul gioco.
+    """
+
+    def __init__(self, conference: PressConference, parent=None) -> None:
+        super().__init__(parent)
+        self.conference = conference
+        self.answered = False
+        self.answers: dict[str, str] = {}
+        self._groups: dict[str, dict[str, QRadioButton]] = {}
+        self._button_groups: list[QButtonGroup] = []
+        self.setWindowTitle(f"Conferenza stampa — {conference.meet_name}")
+        self.resize(560, 420)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+        title = QLabel("Il giornalista alza la mano…")
+        title.setStyleSheet("color: #fbbf24; font-size: 18px; font-weight: 800;")
+        layout.addWidget(title)
+        for question in self.conference.questions:
+            text = QLabel(question.text)
+            text.setWordWrap(True)
+            text.setStyleSheet("font-size: 13px; font-weight: 700; color: #e2e8f0;")
+            layout.addWidget(text)
+            buttons: dict[str, QRadioButton] = {}
+            group = QButtonGroup(self)  # un gruppo per domanda: senza, le radio dello stesso genitore si escluderebbero tra loro
+            for key, label in question.options.items():
+                radio = QRadioButton(label)
+                group.addButton(radio)
+                layout.addWidget(radio)
+                buttons[key] = radio
+            self._button_groups.append(group)
+            self._groups[question.key] = buttons
+        layout.addStretch()
+        hint = QLabel(
+            "Le risposte cambiano la reputazione (a seconda del risultato) e la relazione con l'agente dell'atleta citato. "
+            "Senza risposta non succede nulla."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.skip_btn = QPushButton("Nessun commento")
+        self.skip_btn.clicked.connect(self.reject)
+        row.addWidget(self.skip_btn)
+        self.answer_btn = QPushButton("Rispondi")
+        self.answer_btn.setObjectName("PrimaryButton")
+        self.answer_btn.clicked.connect(self._answer)
+        row.addWidget(self.answer_btn)
+        layout.addLayout(row)
+
+    def _answer(self) -> None:
+        """Raccoglie le risposte date (anche solo una); senza alcuna risposta equivale a «Nessun commento»."""
+        self.answers = {
+            qkey: okey for qkey, group in self._groups.items() for okey, radio in group.items() if radio.isChecked()
+        }
+        if not self.answers:
+            self.reject()
+            return
+        self.answered = True
+        self.accept()
 
 
 class CompetitionResultsDialog(QDialog):

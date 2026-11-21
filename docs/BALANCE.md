@@ -369,3 +369,19 @@ Regioni: Giamaica (Velocità, `speed`), Kenya (Mezzofondo, `stamina`), Nigeria (
 
 - **Nota sul tetto 0,95:** la probabilità di crescita è limitata a 0,95 (`try_improve`): un ragazzo con molto margine di crescita (potenziale alto, qualità bassa) e cinque stelle può già saturare il tetto, e allora le stelle in più non servono; l'effetto pieno si vede dove la probabilità di partenza è sotto ~0,63.
 - **L'OVR e il Potenziale dei ragazzi segnalati si vedono ora come fasce**: cambia rispetto a prima di E.3 solo l'OVR (prima esatto, ora ±5 senza scout); la fascia del potenziale senza scout è identica a quella di sempre (`views.dialogs.potential_band_display`, che non è stata toccata e resta per mercato e scheda atleta). L'ordinamento per OVR e Potenziale nei risultati è disattivato (rivelerebbe il valore vero).
+
+## U. Conferenza stampa (PIANOLAVORO F.2, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q37)
+
+Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in `models/press.py`.
+
+| Cosa | Cifra | Costante |
+| --- | --- | --- |
+| Prestazione «buona» | club tra i primi 2 della classifica a squadre del meeting | `PRESS_GOOD_MAX_PLACEMENT` 2 |
+| Prestazione «brutta» | club tra gli ultimi 2 | `PRESS_BAD_FROM_BOTTOM` 2 |
+| Squadre minime per giudicare | 4 (sotto, sempre «media») | `PRESS_MIN_TEAMS` |
+| Reputazione · buona | soddisfatto +2, cauto +1, critico −2 | `PRESS_REPUTATION["good"]` |
+| Reputazione · media | soddisfatto 0, cauto +1, critico 0 | `PRESS_REPUTATION["average"]` |
+| Reputazione · brutta | soddisfatto −2, cauto 0, critico +1 | `PRESS_REPUTATION["bad"]` |
+| Relazione con l'agente del miglior atleta | punto fermo +3, valuteremo 0, posto non garantito −3 | `PRESS_RELATION` |
+
+Ordine di grandezza: al massimo +2 di reputazione per meeting (9-10 meeting a stagione); la reputazione pesa sugli sponsor (`0,65 + rep/100 × 0,55`) e sulla domanda di pubblico (`0,6 + rep/250`), quindi ±2 vale circa ±1% dello sponsor. Il +3 / −3 sulla relazione è di poco più di una stagione di «resta fermo» (−2 per atleta).

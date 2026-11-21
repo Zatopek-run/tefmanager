@@ -504,3 +504,16 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Limiti dichiarati:** vedi AUDIT R33; **non provato con il mouse reale**; le notizie nuove non sono state lette in una partita lunga (solo test e un tick di prova).
 
 **Da decidere:** (a) altri eventi da raccontare (stagione, infortuni gravi, ritiri, contratti in scadenza)? (b) la notizia deve ripetersi ogni mese finché dura la condizione? (c) «Allenatore del Mese» deve dare un piccolo bonus di reputazione (con F.2)?
+
+
+## Q37 — Conferenza stampa (PIANOLAVORO F.2) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**
+
+**Proposta dell'utente accettata** («vai con la tua proposta»): conferenza **dopo la gara** con due domande; la risposta sulla prestazione sposta la **reputazione**, quella sul futuro del miglior atleta sposta la **relazione con il suo agente**; chiudere senza rispondere non ha effetti.
+
+**Cosa c'è** (nessuna modifica allo schema, nessun RNG): `models/press.py` (senza Qt), `GameController.press_conference_for` / `answer_press_conference`, `PressConferenceDialog` in `views/dialogs.py` aperto da `MainWindow._show_competition_results` dopo i risultati. Cifre in `BALANCE.md` §U. Test: `test_press_conference.py` (16, senza Qt), `test_press_conference_ui.py` (13, Qt offscreen).
+
+**Mie scelte, da confermare:** (a) il risultato è la classifica a squadre del meeting (primi 2 / ultimi 2 con almeno 4 squadre); (b) la risposta coerente col risultato premia (+2) e quella incoerente costa (−2): dirsi soddisfatti dopo un ultimo posto, o critici dopo una vittoria; la cauta non fa mai male; (c) +3 / 0 / −3 sulla relazione; (d) l'atleta citato è il miglior piazzamento individuale del meeting; (e) una sola conferenza per meeting, in memoria; (f) si può rispondere a una sola domanda.
+
+**Scostamenti dal piano:** (1) niente conferenza **prima** della gara; (2) niente «morale»: non esiste un morale per atleta (vedi AUDIT R34); (3) effetti sulla relazione con l'**agente**, non con l'atleta direttamente.
+
+**Da decidere:** (a) la conferenza pre-gara (sulle attese)? (b) un effetto delle risposte sulla **forma** della squadra (un «morale» minimo)? (c) più domande a seconda degli eventi (record, infortuni, polemiche)? (d) cifre e soglie.

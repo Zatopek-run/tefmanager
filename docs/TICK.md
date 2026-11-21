@@ -81,7 +81,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga |
 | ---: | --- | --- |
-| C3 | (E.3: una **ricerca di vivaio con regione**, fuori dal tick, fa in più una `rng.random()` per ragazzo segnalato e una `rng.randint(81, 90)` per ciascun talento, dopo la generazione dei ragazzi; senza regione l'ordine è invariato.) Azzera `scouting_results` e `free_agent_pool` (in memoria); poi `prune_idle_agents` (D.1: toglie gli agenti senza clienti e con relazione neutra, i candidati non presi) | `game_controller.py:845-846` |
+| C3 | (F.2: la **conferenza stampa** si apre dal controller dopo i risultati, **fuori dal tick**: non estrae dall'RNG e non cambia l'ordine di nulla; sposta reputazione e relazione con un agente solo se si risponde.) (E.3: una **ricerca di vivaio con regione**, fuori dal tick, fa in più una `rng.random()` per ragazzo segnalato e una `rng.randint(81, 90)` per ciascun talento, dopo la generazione dei ragazzi; senza regione l'ordine è invariato.) Azzera `scouting_results` e `free_agent_pool` (in memoria); poi `prune_idle_agents` (D.1: toglie gli agenti senza clienti e con relazione neutra, i candidati non presi) | `game_controller.py:845-846` |
 | C4 | `save_game` (DELETE + INSERT in una transazione) | `game_controller.py:847`; `database.py:575-581` |
 | C5 | Segnali: `state_changed`, `week_advanced` | `:848-849` |
 | C6 | Se gara: `competition_completed` → dialog modali (visualizzatore + risultati) | `:851-857`; `main_window.py:332-336` |

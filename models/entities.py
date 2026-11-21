@@ -301,6 +301,20 @@ SCOUT_REGION_FEE = 800
 # Notizie dinamiche (PIANOLAVORO F.1): a ogni chiusura di mese (`MONTH_WEEKS`) il generatore di `models/narrative.py` scrive al
 # più una riga per tipo, senza RNG. Soglia sotto la quale la relazione con l'agente è «insoddisfazione» (la neutra è 50).
 NARRATIVE_TENSION_RELATION = 30
+
+# Conferenza stampa dopo la gara (PIANOLAVORO F.2). CIFRE PROVVISORIE (Q37). La prestazione del club nel meeting è «good» se è tra
+# i primi PRESS_GOOD_MAX_PLACEMENT, «bad» se è tra gli ultimi PRESS_BAD_FROM_BOTTOM (con almeno PRESS_MIN_TEAMS squadre), altrimenti
+# «average». La risposta alla domanda sulla prestazione sposta la reputazione; quella sul miglior atleta del meeting sposta
+# la relazione con il suo agente (D.1). Chiudere la conferenza senza rispondere non ha alcun effetto.
+PRESS_GOOD_MAX_PLACEMENT = 2
+PRESS_BAD_FROM_BOTTOM = 2
+PRESS_MIN_TEAMS = 4
+PRESS_REPUTATION: Dict[str, Dict[str, int]] = {
+    "good": {"soddisfatto": 2, "cauto": 1, "critico": -2},
+    "average": {"soddisfatto": 0, "cauto": 1, "critico": 0},
+    "bad": {"soddisfatto": -2, "cauto": 0, "critico": 1},
+}
+PRESS_RELATION: Dict[str, int] = {"punto": 3, "valuto": 0, "dubbio": -3}
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).

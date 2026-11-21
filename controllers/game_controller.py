@@ -6,7 +6,7 @@ import random
 import traceback
 from datetime import timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
@@ -71,6 +71,7 @@ from models.entities import (
     stand_expansion_cost,
 )
 from models.facilities import facility_cost, facility_label, owns
+from models.press import PressConference, apply_answers, build_conference
 from models.scouting import (
     academy_upgrade_cost,
     apply_region_talent,
@@ -143,6 +144,7 @@ class GameController(QObject):
             Path(legacy_save_path) if legacy_save_path is not None else get_default_save_path()
         )
         self.rng = rng or random.Random()
+        self._press_done: set[tuple[int, int]] = set()  # (stagione, settimana) delle conferenze già date (solo in memoria)
         self.has_active_game: bool = False
         # Esito dell'ultimo caricamento fallito: «messaggio per l'utente», riga vuota, dettagli
         # (percorso del backup e traceback completo). Vuoto se l'ultimo caricamento è riuscito.
@@ -1197,6 +1199,30 @@ class GameController(QObject):
             0,
             Transaction(id=None, week=self.state.week, description=description, category="Dilemmi", amount=-paid),
         )
+
+    # ------------------------------------------------------------------ conferenza stampa (F.2)
+    def press_conference_for(self, summary: CompetitionSummary) -> Optional[PressConference]:
+        """La conferenza stampa dopo `summary`, se il club ha gareggiato e non ne ha già data una per quel meeting."""
+        key = (self.state.season_number, summary.week)
+        if key in self._press_done:
+            return None
+        return build_conference(self.state, summary)
+
+    def answer_press_conference(self, conference: PressConference, answers: Dict[str, str]) -> bool:
+        """Applica le risposte (reputazione, relazione con l'agente) e chiude la conferenza: una per meeting.
+        Una conferenza chiusa senza risposte non chiama questo metodo e non ha effetti. Non usa l'RNG."""
+        key = (self.state.season_number, conference.week)
+        if key in self._press_done or not answers:
+            return False
+        lines = apply_answers(self.state, conference, answers)
+        if not lines:
+            return False
+        self._press_done.add(key)
+        self.state.news_log[0:0] = lines
+        self._persist()
+        self.state_changed.emit(self.state)
+        self.status_message.emit("Conferenza stampa conclusa.")
+        return True
 
     def dismiss_dilemma(self) -> bool:
         """Chiude il dilemma pendente senza sceglierlo (finestra chiusa, Esc, «Ignora»): A.4.
