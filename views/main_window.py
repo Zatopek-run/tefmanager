@@ -34,6 +34,7 @@ from models.entities import (
 from views.dialogs import (
     CompetitionResultsDialog,
     EthicalDilemmaDialog,
+    GloryMomentDialog,
     PressConferenceDialog,
     NewGameDialog,
     BoardObjectivesDialog,
@@ -247,6 +248,7 @@ class MainWindow(QMainWindow):
 
         self.controller.state_changed.connect(self._refresh_all)
         self.controller.competition_completed.connect(self._show_competition_results)
+        self.controller.glory_moments.connect(self._show_glory_moments)
         self.controller.dilemma_triggered.connect(self._show_dilemma)
         self.controller.season_ended.connect(self._show_season_end)
         self.controller.status_message.connect(
@@ -361,6 +363,10 @@ class MainWindow(QMainWindow):
             press.exec()
             if press.answered:
                 self.controller.answer_press_conference(conference, press.answers)
+
+    def _show_glory_moments(self, moments) -> None:
+        for moment in moments:  # F.4: un popup per momento, uno dopo l'altro
+            GloryMomentDialog(moment, parent=self).exec()
 
     def _show_season_end(self, result: SeasonEndResult) -> None:
         dlg = SeasonEndDialog(result, self.controller.state.team_name, parent=self)

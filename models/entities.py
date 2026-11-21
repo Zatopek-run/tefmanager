@@ -758,6 +758,18 @@ MIDDLE_800M_CURVE: Dict[str, Tuple[float, float, float]] = {  # sesso -> (a, b, 
     "F": (160.0, 45.2, 113.28),
 }
 
+# Record del mondo del gioco (PIANOLAVORO F.4): sono i tetti già usati da `_score_to_mark` (che li ha ancora scritti a mano, AUDIT R36):
+# una misura che li raggiunge è un record del mondo. (evento, sesso) -> misura (secondi o metri).
+WORLD_RECORDS: Dict[Tuple[str, str], float] = {
+    ("100m", "M"): 9.58, ("100m", "F"): 10.49,
+    ("400m", "M"): 43.10, ("400m", "F"): 47.60,
+    ("800m", "M"): MIDDLE_800M_CURVE["M"][2], ("800m", "F"): MIDDLE_800M_CURVE["F"][2],
+    ("1500m", "M"): 206.0, ("1500m", "F"): 229.0,
+    ("Salto in Lungo", "M"): 8.95, ("Salto in Lungo", "F"): 7.52,
+    ("Getto del Peso", "M"): 23.56, ("Getto del Peso", "F"): 22.63,
+}
+WORLD_RECORD_EPSILON = 1e-6  # tolleranza sul confronto con il tetto (le misure sono float)
+
 VERTICAL_SLICE_EVENTS: List[str] = ["100m", "Salto in Lungo", "1500m"]
 
 

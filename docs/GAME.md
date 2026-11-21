@@ -355,6 +355,10 @@ Dopo i risultati di ogni meeting del club si apre una **conferenza stampa** con 
 
 Ogni coppia della Prima Squadra ha una **relazione** (−100…+100): per ora nessuna, un'**amicizia** (≥ +30) o una **rivalità** (≤ −30), assegnata la prima settimana in modo deterministico (circa il 12% di amicizie e il 6% di rivalità). Si vede nella tab **«Relazioni»** della scheda atleta. Effetti: una staffetta con **due frazioni amiche ha +10 di affiatamento in gara** (−10 con due rivali; amici e rivali insieme si annullano); la **chimica di squadra** (amicizie meno rivalità) sposta la forma di tutti fino a ±3 (di solito intorno a +2); chi corre insieme in staffetta si avvicina di +2 a meeting. Non c'è un morale per atleta (scelta dell'utente: opzione 1); nessun RNG (`models/relationships.py`, `BALANCE.md` §V).
 
+### 5.23 Momenti di gloria (F.4, 2026-11-21; regole provvisorie, `QUESTIONS.md` Q39)
+
+Cinque eventi aprono un **popup celebrativo** (finestra dorata con dissolvenza d'ingresso, uno dopo l'altro, dopo i risultati e la fine stagione): **record del mondo** (la misura raggiunge il tetto del gioco, solo gare individuali valide), **momento storico** (un muro di `historic_mark` abbattuto), **titolo** e **promozione** a fine stagione e **atleta dell'anno** (più vittorie, poi più podi nella stagione). Sono messe in scena: nessun effetto su soldi, reputazione o atleti. Record del mondo e atleta dell'anno lasciano anche una riga nelle notizie e nei traguardi (gli altri tre le avevano già); i momenti non sono salvati. **Non ci sono** la convocazione in nazionale e l'invito alla Diamond League del piano: nel gioco non esistono (C.1b). Il record sociale non apre popup (capita spesso e ha già la sua notizia). `models/glory.py`, `BALANCE.md` §W.
+
 ---
 
 ## 6. Categorie: parametri principali
@@ -426,7 +430,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 799 test, ~37 s su Linux
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 829 test, ~39 s su Linux
 PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 95 test, SENZA PyQt6
 ```
 
@@ -444,7 +448,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 - Fuori dai lotti, decisioni di `QUESTIONS.md` già implementate (2026-11-19): Q15 tetto 2+1, Q16 800m (anche in Godot; restano Salto in Alto e Disco), Q17 fascia d'età e under 20 fuori da Internazionale, Q18 nomi dei meeting,
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). **D.1** (agenti con personalità e relazione, 2026-11-20; cifre da confermare, Q29). **D.2** (trattative, clausola rescissoria, bonus per record, 2026-11-20; cifre da confermare, Q30). **D.3** (finanze dettagliate: bilancio mensile, merchandising, sponsor con obiettivo, diritti TV, 2026-11-20; cifre da confermare, Q31): **lotto D chiuso**. Prossimo: lotto E (staff e impianti).
-- ✅ **Lotto E** (2026-11-20/21): **E.1** staff con attributi e mercato dello staff (Q33), **E.2** impianti avanzati (schema v23, Q34), **E.3** Academy, osservatore e rete scouting (schema v24, Q35). **Lotto F** (in corso): **F.1** notizie dinamiche (Q36), **F.2** conferenze stampa (Q37) e **F.3** relazioni tra atleti (Q38, schema v25) fatte, resta F.4 momenti di gloria. Cifre provvisorie in `BALANCE.md` §R-§U.
+- ✅ **Lotto E** (2026-11-20/21): **E.1** staff con attributi e mercato dello staff (Q33), **E.2** impianti avanzati (schema v23, Q34), **E.3** Academy, osservatore e rete scouting (schema v24, Q35). **Lotto F** (chiuso, con i limiti di Q39): **F.1** notizie dinamiche (Q36), **F.2** conferenze stampa (Q37), **F.3** relazioni tra atleti (Q38, schema v25) e **F.4** momenti di gloria (Q39). Cifre provvisorie in `BALANCE.md` §R-§U.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 

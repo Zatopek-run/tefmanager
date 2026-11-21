@@ -400,3 +400,14 @@ Opzione 1 scelta dall'utente: **nessun morale per atleta**; amicizie e rivalità
 | Avvicinamento | +2 a ogni coppia della stessa staffetta a ogni meeting (una volta a coppia), fino a 100 | `RELATION_BOND_PER_RELAY` |
 
 Con 16 atleti le coppie sono 120: in media circa 14 amicizie e 7 rivalità, cioè +7 coppie nette e **+2 di forma** (il Leader dà +2, il picco +6). L'affiatamento di staffetta pesa `(affiatamento − 50) × 0,08` sul punteggio: +10 vale +0,8 punti, e fa scendere la probabilità di squalifica (`(60 − affiatamento) × 0,006` sotto 60).
+
+## W. Momenti di gloria (PIANOLAVORO F.4, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q39)
+
+Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in `models/glory.py`.
+
+| Cosa | Regola |
+| --- | --- |
+| Record del mondo | una misura individuale **valida** (non ritirata, non squalificata, vento legale) che raggiunge il tetto già usato da `_score_to_mark`: 100m 9,58 / 10,49; 400m 43,10 / 47,60; 800m 100,91 s / 113,28 s; 1500m 206,0 / 229,0 s; lungo 8,95 / 7,52 m; peso 23,56 / 22,63 m (`WORLD_RECORDS`, tolleranza `WORLD_RECORD_EPSILON`). Con le curve attuali serve un punteggio ben sopra il livello internazionale: un evento rarissimo |
+| Momento storico | un nuovo «MOMENTO STORICO!» in `milestones` nel tick (il muro di `historic_mark`) |
+| Promozione / titolo | `SeasonOutcome.PROMOTED` / `CHAMPION` a fine stagione |
+| Atleta dell'anno | l'atleta del club con più **vittorie**, poi più **podi** (1°-3°, gare individuali non ritirate né squalificate) nella stagione; a parità il nome alfabeticamente primo; serve almeno un podio |

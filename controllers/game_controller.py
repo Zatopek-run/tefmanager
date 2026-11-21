@@ -71,6 +71,7 @@ from models.entities import (
     stand_expansion_cost,
 )
 from models.facilities import facility_cost, facility_label, owns
+from models.glory import GloryMoment, meeting_moments, season_moments
 from models.press import PressConference, apply_answers, build_conference
 from models.scouting import (
     academy_upgrade_cost,
@@ -126,6 +127,7 @@ class GameController(QObject):
     competition_completed = pyqtSignal(object)  # emits CompetitionSummary
     dilemma_triggered = pyqtSignal(object)  # emits EthicalDilemma
     season_ended = pyqtSignal(object)  # emits SeasonEndResult
+    glory_moments = pyqtSignal(object)  # emits List[GloryMoment] (F.4), dopo gara e fine stagione
     status_message = pyqtSignal(str)
 
     def __init__(
@@ -1200,6 +1202,22 @@ class GameController(QObject):
             Transaction(id=None, week=self.state.week, description=description, category="Dilemmi", amount=-paid),
         )
 
+    # ------------------------------------------------------------------ momenti di gloria (F.4)
+    def _glory_of(self, report, milestones_before: set) -> List[GloryMoment]:
+        """I momenti di gloria del tick appena fatto. Scrive nel registro notizie e nei traguardi quelli che non hanno già
+        una riga (record del mondo, atleta dell'anno). Non usa l'RNG; il salvataggio lo fa il chiamante."""
+        moments: List[GloryMoment] = []
+        if report.competition_summary is not None:
+            fresh = [m for m in self.state.milestones if m not in milestones_before]
+            moments += meeting_moments(self.state, report.competition_summary, fresh)
+        if report.season_end is not None:
+            moments += season_moments(self.state, report.season_end)
+        for moment in moments:
+            if moment.log_line:
+                self.state.news_log.insert(0, moment.log_line)
+                self.state.milestones.insert(0, moment.log_line)
+        return moments
+
     # ------------------------------------------------------------------ conferenza stampa (F.2)
     def press_conference_for(self, summary: CompetitionSummary) -> Optional[PressConference]:
         """La conferenza stampa dopo `summary`, se il club ha gareggiato e non ne ha già data una per quel meeting."""
@@ -1274,7 +1292,9 @@ class GameController(QObject):
             return None
         # Un dilemma ancora pendente (salvataggio vecchio, finestra mai chiusa bene) non blocca più i successivi (A.4).
         self.dismiss_dilemma()
+        milestones_before = set(self.state.milestones)
         report = advance_week(self.state, rng=self.rng)
+        moments = self._glory_of(report, milestones_before)
         self.scouting_results = []
         self.free_agent_pool = []
         prune_idle_agents(self.state)  # D.1: il pool è vuoto, i suoi agenti nuovi senza clienti non servono più
@@ -1294,6 +1314,9 @@ class GameController(QObject):
 
         if report.season_end is not None:
             self.season_ended.emit(report.season_end)
+
+        if moments:  # F.4: dopo i risultati e la fine stagione, prima di un eventuale dilemma
+            self.glory_moments.emit(moments)
 
         if report.triggered_dilemma is not None:
             self.dilemma_triggered.emit(report.triggered_dilemma)

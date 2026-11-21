@@ -6,7 +6,7 @@ import random
 import zlib
 from typing import Dict, List, Optional
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPropertyAnimation, Qt
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -54,6 +54,7 @@ from models.entities import (
 from models.agents import negotiated_fee
 from models.generator import LAZIO_PROVINCES
 from models.market import Negotiation, NegotiationState, Terms
+from models.glory import GloryMoment
 from models.press import PressConference
 
 
@@ -71,6 +72,48 @@ def potential_band_display(prospect: Athlete, half_width: int = 8) -> str:
     lo = max(1, prospect.potential - half_width + offset)
     hi = min(99, prospect.potential + half_width + offset)
     return f"{lo}-{hi}"
+
+
+class GloryMomentDialog(QDialog):
+    """Popup celebrativo (F.4): un momento di gloria con dissolvenza d'ingresso. Solo messa in scena, nessun effetto sul gioco."""
+
+    FADE_MS = 600
+
+    def __init__(self, moment: GloryMoment, parent=None) -> None:
+        super().__init__(parent)
+        self.moment = moment
+        self.setWindowTitle(moment.title)
+        self.resize(520, 300)
+        self.setStyleSheet("QDialog { background: #0b1220; border: 3px solid #fbbf24; }")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+        star = QLabel("★  ★  ★")
+        star.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        star.setStyleSheet("color: #fbbf24; font-size: 22px; letter-spacing: 6px;")
+        layout.addWidget(star)
+        title = QLabel(moment.title)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("color: #fbbf24; font-size: 28px; font-weight: 900;")
+        layout.addWidget(title)
+        text = QLabel(moment.text)
+        text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text.setWordWrap(True)
+        text.setStyleSheet("color: #e2e8f0; font-size: 15px;")
+        layout.addWidget(text, stretch=1)
+        self.close_btn = QPushButton("Che emozione!")
+        self.close_btn.setObjectName("PrimaryButton")
+        self.close_btn.clicked.connect(self.accept)
+        layout.addWidget(self.close_btn)
+        self.setWindowOpacity(0.0)
+        self.fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self.fade.setDuration(self.FADE_MS)
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+
+    def showEvent(self, event) -> None:  # noqa: N802 (nome Qt)
+        super().showEvent(event)
+        self.fade.start()
 
 
 class PressConferenceDialog(QDialog):

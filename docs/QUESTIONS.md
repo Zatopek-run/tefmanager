@@ -532,3 +532,18 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Limiti dichiarati:** vedi AUDIT R35; **non provato con il mouse reale** (solo test offscreen e uno screenshot); l'effetto in partite lunghe non è misurato.
 
 **Da decidere:** (a) le cifre; (b) relazioni che nascono da eventi (compagni di allenatore, stesso vivaio, risultati) e che si rompono; (c) citare amicizie e rivalità nelle notizie (F.1) e nelle conferenze (F.2); (d) un morale per atleta (opzione 2), se la chimica deve diventare più di un bonus di forma.
+
+
+## Q39 — Momenti di gloria (PIANOLAVORO F.4) — 🟡 IN CORSO dal 2026-11-21, **regole da confermare**
+
+**Proposta dell'assistente accettata («ok»):** popup per ciò che esiste nel gioco — record del mondo, momento storico, titolo e promozione, atleta dell'anno — e **fuori** convocazione in nazionale e invito Diamond League (dipendono da C.1b).
+
+**Cosa c'è** (nessuna modifica allo schema, nessun RNG): `models/glory.py` (senza Qt), `WORLD_RECORDS` in `entities.py`, `GameController.glory_moments` (segnale) e `_glory_of`, `GloryMomentDialog` in `views/dialogs.py` e `MainWindow._show_glory_moments`. Regole in `BALANCE.md` §W. Test: `test_glory.py` (19, senza Qt), `test_glory_ui.py` (11, Qt offscreen); suite 829 test OK.
+
+**Mie scelte, da confermare:** (a) record del mondo = la misura raggiunge il tetto già usato dalla simulazione (non c'è una tabella dei record veri); (b) il record sociale **non** apre un popup; (c) atleta dell'anno = più vittorie, poi più podi, nel gioco individuale; (d) i momenti non sono salvati; (e) record del mondo e atleta dell'anno scrivono anche notizia e traguardo; (f) popup uno dopo l'altro, solo dissolvenza; (g) i popup compaiono dopo i risultati e la fine stagione, prima di un dilemma.
+
+**Scostamenti dal piano:** niente nazionale e Diamond League (C.1b); «animazione» ridotta a una dissolvenza.
+
+**Limiti dichiarati:** vedi AUDIT R36; il «test manuale» del piano (record del mondo → popup) **non eseguito con il mouse**: provato solo con test offscreen e misure forzate.
+
+**Da decidere:** (a) i momenti da celebrare (record sociale importante? primo podio? ritiro di un campione?); (b) un'animazione più ricca; (c) salvare i momenti per rivederli (un «albo» della gloria); (d) i criteri dell'atleta dell'anno (livello della gara, ranking); (e) C.1b per aggiungere nazionale e Diamond League.
