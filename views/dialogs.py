@@ -1095,7 +1095,8 @@ class BoardObjectivesDialog(QDialog):
         title.setObjectName("AppTitle")
         layout.addWidget(title)
         intro = QLabel(
-            f"Il Board si aspetta che tu ne centri almeno {BOARD_OBJECTIVES_TO_PASS} su {len(objectives)}. "
+            f"Il Board si aspetta che tu ne centri almeno {BOARD_OBJECTIVES_TO_PASS} su {len(objectives)}, "
+            "e il posto in lega è obbligatorio: senza, la stagione è fallita. "
             f"{BOARD_MAX_FAILED_STREAK} stagioni fallite di fila portano all'esonero."
         )
         intro.setObjectName("SubTitle")

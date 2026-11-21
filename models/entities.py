@@ -1225,6 +1225,9 @@ BOARD_LEAGUE_TARGET: Dict[CompetitionTier, int] = {
 }
 BOARD_MIN_RECORDS = 2  # record sociali da stabilire nella stagione (individuali e staffette)
 BOARD_OBJECTIVES_TO_PASS = 2  # obiettivi centrati su tre perché la stagione non sia fallita
+# Il posto in lega è OBBLIGATORIO (Q27, scelta dell'utente 2026-11-21): senza, la stagione è fallita anche con gli altri due obiettivi
+# centrati. Misurato: un club che non gioca (autopilota) non centrava mai il posto, ma passava con bilancio e record.
+BOARD_LEAGUE_REQUIRED = True
 BOARD_MAX_FAILED_STREAK = 2  # stagioni fallite di fila che portano all'esonero
 
 

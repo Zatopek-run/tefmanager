@@ -25,6 +25,7 @@ from models.entities import (
     BOARD_KEY_LEAGUE,
     BOARD_KEY_RECORDS,
     STANDARD_BOARD_KEYS,
+    BOARD_LEAGUE_REQUIRED,
     BOARD_LEAGUE_TARGET,
     BOARD_MAX_FAILED_STREAK,
     BOARD_MIN_RECORDS,
@@ -143,12 +144,14 @@ class TestProgress(unittest.TestCase):
 
 
 class TestVerdict(unittest.TestCase):
-    def test_two_of_three_is_enough_and_one_is_not(self) -> None:
+    def test_two_of_three_is_enough_but_the_league_place_is_mandatory(self) -> None:
+        """Q27 (scelta dell'utente, 2026-11-21): servono 2 obiettivi su 3 **e** il posto in lega: senza il piazzamento la stagione è fallita."""
         self.assertEqual(BOARD_OBJECTIVES_TO_PASS, 2)
+        self.assertTrue(BOARD_LEAGUE_REQUIRED)
         for position, records, budget_ok, passed, failed in (
             (1, 5, True, 3, False),
             (1, 5, False, 2, False),  # bilancio mancato
-            (8, 5, True, 2, False),  # piazzamento mancato
+            (8, 5, True, 2, True),  # piazzamento mancato: fallita anche con gli altri due centrati
             (1, 0, True, 2, False),  # record mancati
             (1, 0, False, 1, True),
             (8, 0, True, 1, True),
@@ -158,6 +161,17 @@ class TestVerdict(unittest.TestCase):
             self.assertEqual(sum(1 for _t, ok in result.board_results if ok), passed, (position, records, budget_ok))
             self.assertEqual(result.board_failed, failed, (position, records, budget_ok))
             self.assertEqual(len(result.board_results), 3)
+
+    def test_a_club_that_does_nothing_is_fired_in_two_seasons(self) -> None:
+        """Il difetto che il posto obbligatorio chiude: prima bilancio e record bastavano (2 su 3) senza mai centrare il posto."""
+        state = board_state()
+        first = close(state, 8, 9, True)
+        self.assertTrue(first.board_failed)
+        self.assertEqual(first.board_streak, 1)
+        self.assertFalse(state.fired)
+        second = close(state, 8, 9, True)
+        self.assertTrue(second.board_failed)
+        self.assertTrue(state.fired)
 
     def test_the_league_target_is_inclusive(self) -> None:
         top = BOARD_LEAGUE_TARGET[CompetitionTier.PROVINCIALE]

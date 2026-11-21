@@ -220,9 +220,10 @@ Calibrazione: vedi Q26 (chi vince sempre in Fase regionale resta fuori dalla Top
 | `BOARD_MIN_RECORDS` | 2 record sociali nella stagione (individuali e di staffetta) | `entities.py` |
 | Bilancio | budget a fine stagione ≥ budget a inizio stagione (prima del bonus promozione) | `board.py` |
 | `BOARD_OBJECTIVES_TO_PASS` | 2 obiettivi su 3: sotto, la stagione è fallita | `entities.py` |
+| `BOARD_LEAGUE_REQUIRED` | vero (scelta dell'utente, 2026-11-21): il posto in lega è obbligatorio, senza la stagione è fallita anche con gli altri due obiettivi centrati | `entities.py` |
 | `BOARD_MAX_FAILED_STREAK` | 2 stagioni fallite di fila → esonero (game over) | `entities.py` |
 
-Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilancio 83%, record 100%; stagione fallita 17%; esonerati entro la 2ª stagione 2 su 30 (Q27).
+Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilancio 83%, record 100%; stagione fallita 17%; esonerati entro la 2ª stagione 2 su 30 (Q27). Rimisurato il 2026-11-21 (20 partite × 3 stagioni): posto mai centrato, 4 stagioni su 60 fallite per il bilancio, nessun esonero; con il posto obbligatorio quel club sarebbe esonerato in due stagioni.
 
 ## M. Ritiro e post-carriera (PIANOLAVORO C.3, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q28)
 
@@ -424,7 +425,7 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 
 | `STAT_LEVEL_GREAT` / `STAT_LEVEL_GOOD` / `STAT_LEVEL_MID` | 80 / 65 / 45 | scheda atleta (G.2): soglie dei livelli di una caratteristica (verde / giallo / arancione / rosso), le stesse del badge di prima; la fatica si legge al contrario |
 
-## L. Inviti alla Diamond League (PIANOLAVORO C.1b, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q42)
+## Y. Inviti alla Diamond League (PIANOLAVORO C.1b, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q42)
 
 | Nome | Valore | File |
 | --- | --- | --- |
@@ -434,7 +435,7 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | `DIAMOND_PRIZE_MULT` / `DIAMOND_PRESTIGE_MULT` | 2,0 / 2,0 — moltiplicatori di premio e prestigio di ogni gara del meeting a invito (nessun bonus squadra) | `entities.py` |
 | `DIAMOND_MEET_LABEL` | «Diamond League» — prefisso del nome del meeting | `entities.py` |
 
-## M. Primati personali per gara (Q43, 2026-11-21)
+## Z. Primati personali per gara (Q43, 2026-11-21)
 
 | Nome | Valore | File |
 | --- | --- | --- |

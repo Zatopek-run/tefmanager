@@ -9,7 +9,8 @@ A inizio stagione (solo Carriera: il Prototipo non ha stagioni) il Board assegna
   partita nuova sono facili: in una società senza record, ogni primato lo è).
 
 A fine stagione (`settle_season`, chiamata da `close_season`) la stagione è **fallita** se si centrano meno di
-`BOARD_OBJECTIVES_TO_PASS` obiettivi su tre. `BOARD_MAX_FAILED_STREAK` stagioni fallite **di fila** portano all'esonero
+`BOARD_OBJECTIVES_TO_PASS` obiettivi su tre **oppure** se non si centra il posto in lega (`BOARD_LEAGUE_REQUIRED`: il piazzamento è
+obbligatorio, scelta dell'utente del 2026-11-21, Q27). `BOARD_MAX_FAILED_STREAK` stagioni fallite **di fila** portano all'esonero
 (`GameState.fired`, game over come il fallimento): una stagione non fallita azzera il conto. Un salvataggio iniziato
 prima di C.2 ha ancora gli obiettivi vecchi fino a fine stagione: quella stagione non viene giudicata.
 
@@ -30,6 +31,7 @@ from models.entities import (
     BOARD_KEY_LEAGUE,
     BOARD_KEY_RECORDS,
     BOARD_KEYS,
+    BOARD_LEAGUE_REQUIRED,
     BOARD_LEAGUE_TARGET,
     BOARD_MAX_FAILED_STREAK,
     BOARD_MIN_RECORDS,
@@ -54,7 +56,7 @@ def create_board_objectives(tier: CompetitionTier, budget: int, top: Optional[in
     """I tre obiettivi di una stagione che inizia nel livello `tier` con `budget` in cassa (`top` = posto massimo in lega)."""
     top = BOARD_LEAGUE_TARGET[tier] if top is None else top
     return [
-        SeasonObjective(BOARD_KEY_LEAGUE, f"Chiudi la stagione tra i primi {top} della lega {tier.display_name}", target=top),
+        SeasonObjective(BOARD_KEY_LEAGUE, f"Chiudi la stagione tra i primi {top} della lega {tier.display_name} (obbligatorio)", target=top),
         SeasonObjective(
             BOARD_KEY_BUDGET, f"Non chiudere la stagione in perdita: bilancio almeno €{budget:,}", target=budget
         ),
@@ -187,7 +189,8 @@ def settle_season(state: GameState, placement: int) -> Optional[BoardVerdict]:
             fired=False,
             foundation=True,
         )
-    failed = passed < BOARD_OBJECTIVES_TO_PASS
+    league_met = all(o.completed for o in objectives if o.key == BOARD_KEY_LEAGUE)
+    failed = passed < BOARD_OBJECTIVES_TO_PASS or (BOARD_LEAGUE_REQUIRED and not league_met)  # Q27: il posto in lega è obbligatorio
     state.board_failed_streak = state.board_failed_streak + 1 if failed else 0
     if state.board_failed_streak >= BOARD_MAX_FAILED_STREAK:
         state.fired = True
