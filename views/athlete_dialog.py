@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -26,6 +27,7 @@ from controllers.game_controller import GameController
 from models.agents import agent_of
 from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, PeriodizationPhase, Specialty, TrainingFocus
 from models.ranking import athlete_rankings
+from models.relationships import is_friend, is_rival, relation_label, relations_of
 from models.simulation import body_fit_score
 from views.dialogs import release_question_text
 
@@ -125,6 +127,8 @@ class AthleteDetailDialog(QDialog):
         self.tabs.addTab(self.overview_page, "PANORAMICA")
         self.tabs.addTab(self.training_page, "ALLENAMENTO")
         self.tabs.addTab(self.results_page, "COMPETIZIONI")
+        self.relations_page = QWidget()
+        self.tabs.addTab(self.relations_page, "RELAZIONI")  # F.3
         root.addWidget(self.tabs, stretch=1)
 
         actions = QHBoxLayout()
@@ -166,6 +170,7 @@ class AthleteDetailDialog(QDialog):
         self._rebuild(self.overview_page, self._build_overview(athlete))
         self._rebuild(self.training_page, self._build_training(athlete))
         self._rebuild(self.results_page, self._build_results(athlete))
+        self._rebuild(self.relations_page, self._build_relations(athlete))
 
     @staticmethod
     def _rebuild(page: QWidget, content: QWidget) -> None:
@@ -431,6 +436,44 @@ class AthleteDetailDialog(QDialog):
             home = f", {national}° in {RANKING_HOME_NATION}" if national is not None else ""
             lines.append(f"{event}: {where}{home} — {points:.0f} punti")
         return lines
+
+    def _build_relations(self, a: Athlete) -> QWidget:
+        """Tab «Relazioni» (F.3): amicizie e rivalità con gli altri atleti, dalla più positiva alla più negativa."""
+        state = self.controller.state
+        rows = relations_of(state, a)
+        holder = QWidget()
+        lay = QVBoxLayout(holder)
+        lay.setContentsMargins(0, 0, 0, 0)
+        hint = QLabel(
+            "Un'amicizia tra due frazioni dà +10 di affiatamento alla staffetta, una rivalità −10. "
+            "Le amicizie in squadra (meno le rivalità) danno un piccolo bonus di forma a tutti. "
+            "Correre insieme in staffetta avvicina."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        self.relations_table = QTableWidget(0, 4)
+        self.relations_table.setHorizontalHeaderLabels(["Atleta", "Disciplina", "Relazione", "Valore"])
+        self.relations_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.relations_table.verticalHeader().setVisible(False)
+        self.relations_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.relations_table.setRowCount(len(rows))
+        for row, (other, value) in enumerate(rows):
+            for col, text in enumerate((other.name, other.specialty.value, relation_label(value), f"{value:+d}")):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_friend(value):
+                    item.setForeground(QColor("#34d399"))
+                elif is_rival(value):
+                    item.setForeground(QColor("#f87171"))
+                self.relations_table.setItem(row, col, item)
+        lay.addWidget(self.relations_table, stretch=1)
+        if not rows:
+            empty = QLabel("Nessuna relazione particolare con gli altri atleti (si formano alla prima settimana in Prima Squadra).")
+            empty.setObjectName("SubTitle")
+            empty.setWordWrap(True)
+            lay.addWidget(empty)
+        return holder
 
     def _build_results(self, a: Athlete) -> QWidget:
         body = self._build_results_table(a)

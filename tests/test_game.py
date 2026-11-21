@@ -1484,7 +1484,7 @@ class TestPyQtViewsV2(unittest.TestCase):
             self.assertTrue(150 <= first.height_cm <= 205 and 45 <= first.weight_kg <= 140)
             self.assertIn(first.nationality, NATIONALITIES)
             detail = AthleteDetailDialog(ctrl, ctrl.state.athletes[0].id)
-            self.assertEqual(detail.tabs.count(), 3)
+            self.assertEqual(detail.tabs.count(), 4)  # + «Relazioni» (F.3)
             detail.refresh()
             detail.close()
 

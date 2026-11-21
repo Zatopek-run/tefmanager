@@ -517,3 +517,18 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Scostamenti dal piano:** (1) niente conferenza **prima** della gara; (2) niente «morale»: non esiste un morale per atleta (vedi AUDIT R34); (3) effetti sulla relazione con l'**agente**, non con l'atleta direttamente.
 
 **Da decidere:** (a) la conferenza pre-gara (sulle attese)? (b) un effetto delle risposte sulla **forma** della squadra (un «morale» minimo)? (c) più domande a seconda degli eventi (record, infortuni, polemiche)? (d) cifre e soglie.
+
+
+## Q38 — Relazioni tra atleti (PIANOLAVORO F.3) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**
+
+**Decisione dell'utente (2026-11-21):** **opzione 1**, senza un morale per atleta: le amicizie e le rivalità agiscono sull'affiatamento di staffetta e, come chimica di squadra, sulla forma di tutti. Insieme: **le partite esistenti sono sacrificabili** (registrato in `CLAUDE.md` e nella memoria dell'assistente): niente vincolo di neutralità o compatibilità per le novità.
+
+**Cosa c'è** (schema v25, `athletes.relationships_json`): `Athlete.relationships` (id dell'altro → −100…+100, simmetrico) in `models/relationships.py` (senza Qt, senza RNG); relazione di nascita deterministica (crc32 degli id) assegnata dal primo tick a ogni coppia della Prima Squadra; +10 / −10 di affiatamento in gara alle staffette con un'amicizia / una rivalità tra le frazioni; chimica di squadra → ±3 al bersaglio di forma; +2 alle coppie che corrono insieme in staffetta; tab «Relazioni» nella scheda atleta. Cifre in `BALANCE.md` §V. Test: `test_relationships.py` (29, senza Qt), `test_relationships_ui.py` (5), `TestMigrationV25Relationships` (4); suite 799 test OK.
+
+**Mie scelte, da confermare:** (a) le relazioni nascono da una funzione degli id (12% amicizie, 6% rivalità, ±40…±90), non da eventi; (b) il +10 / −10 vale per la staffetta, non per coppia; (c) chimica = `0,25 × (amicizie − rivalità)`, tra −3 e +3; (d) +2 per coppia a meeting in staffetta (avvicina anche le rivalità); (e) il piano dice «generare relazioni a inizio stagione»: le coppie nascono al primo tick in cui sono insieme in Prima Squadra, non solo a inizio stagione.
+
+**Scostamenti dal piano:** (1) niente morale generale (vedi sopra); (2) il piano mette `relationships` in `Athlete` — fatto — e chiede la tab nella scheda atleta — fatta.
+
+**Limiti dichiarati:** vedi AUDIT R35; **non provato con il mouse reale** (solo test offscreen e uno screenshot); l'effetto in partite lunghe non è misurato.
+
+**Da decidere:** (a) le cifre; (b) relazioni che nascono da eventi (compagni di allenatore, stesso vivaio, risultati) e che si rompono; (c) citare amicizie e rivalità nelle notizie (F.1) e nelle conferenze (F.2); (d) un morale per atleta (opzione 2), se la chimica deve diventare più di un bonus di forma.

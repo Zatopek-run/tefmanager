@@ -315,6 +315,25 @@ PRESS_REPUTATION: Dict[str, Dict[str, int]] = {
     "bad": {"soddisfatto": -2, "cauto": 0, "critico": 1},
 }
 PRESS_RELATION: Dict[str, int] = {"punto": 3, "valuto": 0, "dubbio": -3}
+
+# Relazioni tra atleti (PIANOLAVORO F.3). CIFRE PROVVISORIE (Q38). Ogni coppia della Prima Squadra ha, in modo deterministico
+# (crc32 degli id, nessun RNG), nessuna relazione, un'amicizia (valore +40..+90) o una rivalità (−40..−90); il valore sta in
+# `Athlete.relationships` (id dell'altro atleta → −100..+100, simmetrico). Da ≥ RELATION_FRIEND_MIN è amicizia, da ≤ RELATION_RIVAL_MAX
+# rivalità. Una staffetta con un'amicizia tra le sue frazioni ha +RELAY_FRIEND_HARMONY di affiatamento in gara, con una rivalità
+# RELAY_RIVAL_HARMONY (le due cose si sommano). La chimica di squadra (amicizie meno rivalità nella Prima Squadra) sposta il
+# bersaglio di forma di tutti di CHEMISTRY_FORM_PER_NET_PAIR per coppia netta, al più ±CHEMISTRY_FORM_MAX. Correre insieme in
+# staffetta avvicina: +RELATION_BOND_PER_RELAY a ogni coppia della staffetta a ogni meeting.
+RELATION_FRIEND_MIN = 30
+RELATION_RIVAL_MAX = -30
+RELATION_FRIEND_PCT = 12  # % di coppie che nascono amiche
+RELATION_RIVAL_PCT = 6  # % di coppie che nascono rivali
+RELATION_STRENGTH_MIN = 40
+RELATION_STRENGTH_MAX = 90
+RELAY_FRIEND_HARMONY = 10
+RELAY_RIVAL_HARMONY = -10
+CHEMISTRY_FORM_PER_NET_PAIR = 0.25
+CHEMISTRY_FORM_MAX = 3
+RELATION_BOND_PER_RELAY = 2
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
@@ -800,6 +819,8 @@ class Athlete:
     ranking_points: Dict[str, float] = field(default_factory=dict)  # punti ranking per evento (C.1)
     season_injuries: int = 0  # infortuni subiti nella stagione in corso (C.3: ritiro anticipato)
     agent_id: Optional[int] = None  # agente (D.1); None = ancora da assegnare (vecchi salvataggi, atleti creati a mano)
+    # Relazioni con gli altri atleti (F.3): id dell'altro → −100..+100, simmetrico; vuoto = nessuna (atleta nuovo, vecchi salvataggi).
+    relationships: Dict[int, int] = field(default_factory=dict)
     record_bonus: int = 0  # € pagati a ogni record sociale individuale finché dura il contratto (D.2); 0 = nessun bonus
 
     @property

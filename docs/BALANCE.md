@@ -385,3 +385,18 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | Relazione con l'agente del miglior atleta | punto fermo +3, valuteremo 0, posto non garantito −3 | `PRESS_RELATION` |
 
 Ordine di grandezza: al massimo +2 di reputazione per meeting (9-10 meeting a stagione); la reputazione pesa sugli sponsor (`0,65 + rep/100 × 0,55`) e sulla domanda di pubblico (`0,6 + rep/250`), quindi ±2 vale circa ±1% dello sponsor. Il +3 / −3 sulla relazione è di poco più di una stagione di «resta fermo» (−2 per atleta).
+
+## V. Relazioni tra atleti (PIANOLAVORO F.3, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q38)
+
+Opzione 1 scelta dall'utente: **nessun morale per atleta**; amicizie e rivalità agiscono sull'affiatamento di staffetta e, come «chimica», sul bersaglio di forma di tutti. Nessun RNG. Schema v25 (`athletes.relationships_json`). Costanti in `entities.py`, logica in `models/relationships.py`.
+
+| Cosa | Cifra | Costante |
+| --- | --- | --- |
+| Coppie che nascono amiche / rivali | 12% / 6% (crc32 degli id: deterministico e simmetrico) | `RELATION_FRIEND_PCT`, `RELATION_RIVAL_PCT` |
+| Forza di una relazione di nascita | ±40…±90 | `RELATION_STRENGTH_MIN`, `RELATION_STRENGTH_MAX` |
+| Soglie | amicizia ≥ +30, rivalità ≤ −30 | `RELATION_FRIEND_MIN`, `RELATION_RIVAL_MAX` |
+| Affiatamento di staffetta in gara | +10 se due frazioni sono amiche, −10 se rivali (non si sommano per coppia; amici e rivali insieme = 0) | `RELAY_FRIEND_HARMONY`, `RELAY_RIVAL_HARMONY` (del piano) |
+| Chimica di squadra → forma | `round(0,25 × (coppie amiche − coppie rivali))` nella Prima Squadra, tra −3 e +3 | `CHEMISTRY_FORM_PER_NET_PAIR`, `CHEMISTRY_FORM_MAX` |
+| Avvicinamento | +2 a ogni coppia della stessa staffetta a ogni meeting (una volta a coppia), fino a 100 | `RELATION_BOND_PER_RELAY` |
+
+Con 16 atleti le coppie sono 120: in media circa 14 amicizie e 7 rivalità, cioè +7 coppie nette e **+2 di forma** (il Leader dà +2, il picco +6). L'affiatamento di staffetta pesa `(affiatamento − 50) × 0,08` sul punteggio: +10 vale +0,8 punti, e fa scendere la probabilità di squalifica (`(60 − affiatamento) × 0,006` sotto 60).

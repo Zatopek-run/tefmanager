@@ -104,6 +104,12 @@ from models.staff import (
 )
 from models.scouting import academy_growth_multiplier
 from models.narrative import monthly_news
+from models.relationships import (
+    bond_relay_teammates,
+    ensure_relationships,
+    relay_chemistry_bonus,
+    team_chemistry_form_bonus,
+)
 from models.facilities import growth_multiplier, injury_weeks_with_medical_center
 from models.finances import (
     close_month_if_due,
@@ -347,6 +353,7 @@ def _recalculate_form(
     leader_present: bool,
     peaking: bool = False,
     mental_bonus: int = MENTAL_FORM_BONUS,
+    chemistry_bonus: int = 0,
 ) -> int:
     """Recalculate athlete Form (1-100) from fatigue, sleep, nutrition, and tapering.
 
@@ -377,6 +384,7 @@ def _recalculate_form(
         target_form += 10
 
     target_form += lifestyle_bonus
+    target_form += chemistry_bonus  # F.3: chimica di squadra (amicizie meno rivalità), uguale per tutti
     blended = athlete.form * 0.35 + target_form * 0.65
     return clamp_stat(blended, 5, 100)
 
@@ -393,6 +401,7 @@ def apply_weekly_training(
     staff_attrs: Optional[StaffAttrs] = None,
     facilities: Optional[Dict[str, int]] = None,
     academy_level: int = 0,
+    chemistry_bonus: int = 0,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
@@ -405,6 +414,7 @@ def apply_weekly_training(
     `hired_roles` vale il riferimento, cioè l'effetto di prima degli attributi.
     `facilities` (E.2): impianti avanzati posseduti (`GameState.facilities`); vuoto/None = come prima di E.2, nessuna
     estrazione in più dell'RNG.
+    `chemistry_bonus` (F.3): bonus/malus al bersaglio di forma dovuto alla chimica di squadra (0 = nessuna relazione).
     `academy_level` (E.3): stelle dell'Academy; moltiplicano la crescita dei soli ragazzi del vivaio (0 = come prima).
 
     Returns:
@@ -446,7 +456,8 @@ def apply_weekly_training(
         rec_amt = r.randint(22, 30) + (physio_injury_recovery_bonus(physio_recovery) if has_physio else 0)
         athlete.fatigue = clamp_stat(athlete.fatigue - rec_amt, 0, 100)
         athlete.form = _recalculate_form(
-            athlete, True, False, has_mental, leader_present, mental_bonus=mental_bonus
+            athlete, True, False, has_mental, leader_present, mental_bonus=mental_bonus,
+            chemistry_bonus=chemistry_bonus,
         )
         if athlete.injured_weeks == 0:
             recovery_note = f"{athlete.name} ha recuperato dall'infortunio ed è tornato in pista."
@@ -539,6 +550,7 @@ def apply_weekly_training(
         athlete, rested, tapering, has_mental, leader_present,
         peaking=pre_meet and period == PeriodizationPhase.GARA,
         mental_bonus=mental_bonus,
+        chemistry_bonus=chemistry_bonus,
     )
 
     # Veterans past their peak window slowly lose physical qualities
@@ -895,6 +907,7 @@ def simulate_competition(
     staff_attrs = hired_staff_attributes(state)  # E.1: attributi dei clinici assunti
     mental_bonus = mental_form_bonus(attribute_of(staff_attrs, StaffRole.MENTAL_COACH, "motivazione"))
     mental_pressure = attribute_of(staff_attrs, StaffRole.MENTAL_COACH, "pressione")
+    chemistry_form = team_chemistry_form_bonus(state)  # F.3
     leader_present = any(
         a.personality == Personality.LEADER and not a.is_injured for a in state.main_squad
     )
@@ -1025,7 +1038,8 @@ def simulate_competition(
                 player_athlete.fatigue + int(att["fatigue"]) + strategy_fatigue, 0, 100
             )
             player_athlete.form = _recalculate_form(
-                player_athlete, False, False, has_mental, leader_present, mental_bonus=mental_bonus
+                player_athlete, False, False, has_mental, leader_present, mental_bonus=mental_bonus,
+                chemistry_bonus=chemistry_form,
             )
 
             if not withdrew:  # il ritirato non è classificato: nessun punto ranking
@@ -1164,6 +1178,7 @@ def simulate_competition(
             )
 
     # ---- Relays: harmony, legs and baton changes (M & F); no effect on individual form or fans
+    relay_bonded: set = set()
     for relay_name in state.active_relays:
         rdef = RELAYS[relay_name]
         for gender in ("M", "F"):
@@ -1182,7 +1197,8 @@ def simulate_competition(
                 _rival_only_points(clubs, rdef.requires_event, team_points, meet_places, r, gender=gender)
                 continue
 
-            harmony = relay.harmony - (15 if substituted else 0)
+            harmony = relay.harmony - (15 if substituted else 0) + relay_chemistry_bonus(legs)  # F.3: amicizie e rivalità
+            bond_relay_teammates(state, [[a.id for a in legs]], relay_bonded)  # F.3: correre insieme avvicina (una volta a coppia)
             change = state.change_for(relay_name)  # cambio scelto (B.3): solo punteggio e soglia, nessuna estrazione in più
             change_text = relay_change_label(change)
             disqualified = r.random() < _relay_dq_chance(harmony, substituted, rdef.name, change)
@@ -1800,6 +1816,7 @@ def advance_week(
     travel_cost = 0
     season_end: Optional[SeasonEndResult] = None
 
+    ensure_relationships(state)  # F.3: le coppie nuove della Prima Squadra ricevono la relazione di nascita (senza RNG)
     if state.is_competition_week:
         comp_summary = simulate_competition(state, rng=r)
         travel_cost = comp_summary.travel_cost
@@ -1815,6 +1832,7 @@ def advance_week(
     stat_gains: List[str] = []
     doping_scandals: List[str] = []
 
+    chemistry = team_chemistry_form_bonus(state)  # F.3
     loads = {c.id: state.coach_load(c) for c in state.coaches}
     pre_meet = state.weeks_until_competition == 1  # la settimana dopo è di gara
     for athlete in state.athletes:
@@ -1831,6 +1849,7 @@ def advance_week(
             staff_attrs=staff_attrs,
             facilities=state.facilities,
             academy_level=state.academy_level,
+            chemistry_bonus=chemistry,
         )
         stat_gains.extend(gains)
         if injury_note:

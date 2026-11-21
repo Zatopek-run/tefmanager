@@ -18,6 +18,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga | Usa RNG |
 | ---: | --- | --- | :-: |
+| 0 | **Relazioni** (F.3, 2026-11-21): `ensure_relationships(state)` dà il valore di nascita alle coppie nuove della Prima Squadra e toglie i legami verso atleti usciti. **Non usa `r`** (crc32 degli id); va **prima** di ogni gara e allenamento, e dal passo 4 al passo C-8 la chimica di squadra (`team_chemistry_form_bonus`, ±3) sposta il bersaglio di forma di tutti | `relationships.py` | no |
 | 1 | Se `is_competition_week` (sett. % 4 == 0 **e non in Preparazione**, `GameState.is_race_week`): `simulate_competition` (sotto-sequenza in §C) | `:1270-1272`; `entities.py:923-926` | sì |
 | 2 | Ruoli staff assunti, presenza di un Leader sano | `:1274-1277` | no |
 | 3 | Carichi allenatore `coach_load` calcolati **una volta** | `:1284` | no |
@@ -64,6 +65,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 6 | Ordinamento, piazzamenti, **punti squadra** `TEAM_POINTS`. Subito dopo, **punti ranking** (C.1) a chi è classificato: club e rivali, `RANKING_PLACE_POINTS[posto-1]` × moltiplicatore del livello (`award_event_points`; il ritirato del club non è classificato e non ne ha; stessa regola per i rivali quando il club non iscrive nessuno, `_rival_only_points`). Le staffette non danno punti ranking. **Non usa `r`** | `:822-832` |
 | 7 | PB, record sociale, momento storico (solo vento legale e non ritirato). Ogni record sociale (anche di staffetta) conta per l'obiettivo del Board «record» (`note_club_record`, C.2; senza RNG) | `:834-888` |
 | 8 | Premi, prestigio, fan | `:890-901` |
+| 8c | **Staffette** (F.3): l'affiatamento in gara è `harmony − 15 se c'è una riserva + relay_chemistry_bonus(frazioni)` (+10 se due frazioni sono amiche, −10 se rivali) e, **subito dopo averlo calcolato**, ogni coppia di frazioni si avvicina di `RELATION_BOND_PER_RELAY` (una volta a coppia per meeting). **Non usa `r`**: la `r.random()` della squalifica e la `gauss` del punteggio restano le stesse | `relationships.py` | no |
 | 8b | Subito dopo i fan, per ogni gara **individuale** dell'atleta del club non ritirato con piazzamento 1°-3°: `adjust_relation(agent, +AGENT_RELATION_PODIUM)` (D.1, 2026-11-20). **Non usa `r`**: le staffette non contano | `simulation.py: simulate_competition` | no |
 | 9 | Fatica (+atteggiamento) e forma ricalcolata dell'atleta | `:797-799` |
 | 10 | Staffette M e F: sostituzioni dalla riserva, DQ, tempo, punti, record, premi. **Cambio scelto (B.3): nessuna chiamata RNG in più** — cambiano solo la soglia della `r.random()` della DQ e i punti sommati a `p_score`; l'ordine e il numero delle chiamate sono quelli di prima. Nota (R20): una squadra squalificata salta la `r.gauss(0; 2,5)` del proprio tempo, quindi la sequenza dopo la DQ dipende dall'esito | `:926-1030` |
