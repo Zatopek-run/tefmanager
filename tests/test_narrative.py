@@ -12,14 +12,18 @@ import unittest
 from models.agents import ensure_agents
 from models.entities import (
     MONTH_WEEKS,
+    NARRATIVE_COACH_REPUTATION,
     NARRATIVE_TENSION_RELATION,
+    RETIREMENT_INJURIES_PER_SEASON,
     CompetitionSummary,
     CompetitionTier,
     SeasonPhase,
     WeatherCondition,
 )
 from models.narrative import (
+    coach_award,
     coach_of_the_month_news,
+    injuries_news,
     locker_room_news,
     monthly_news,
     press_news,
@@ -127,6 +131,107 @@ class TestCoachOfTheMonth(unittest.TestCase):
         state = state_with_agents()
         self.assertIsNone(coach_of_the_month_news(state, meet(4, 2)))
         self.assertIsNone(coach_of_the_month_news(state, None))
+
+
+class TestInjuriesNews(unittest.TestCase):
+    """Q36b: gli infortuni gravi (3+ in stagione, la soglia del ritiro anticipato) fanno notizia."""
+
+    def test_nothing_below_the_threshold(self) -> None:
+        state = state_with_agents()
+        for a in state.athletes:
+            a.season_injuries = RETIREMENT_INJURIES_PER_SEASON - 1
+        self.assertIsNone(injuries_news(state))
+
+    def test_the_most_injured_athlete_is_named_with_the_count(self) -> None:
+        state = state_with_agents()
+        a, b = state.main_squad[0], state.main_squad[1]
+        a.season_injuries, b.season_injuries = RETIREMENT_INJURIES_PER_SEASON, RETIREMENT_INJURIES_PER_SEASON + 2
+        text = injuries_news(state)
+        self.assertIn(b.name, text)
+        self.assertNotIn(a.name, text)
+        self.assertIn(str(RETIREMENT_INJURIES_PER_SEASON + 2), text)
+
+    def test_a_veteran_is_said_to_risk_retirement_a_young_one_is_not(self) -> None:
+        state = state_with_agents()
+        a = state.main_squad[0]
+        a.season_injuries = RETIREMENT_INJURIES_PER_SEASON
+        a.age = 24
+        self.assertNotIn("dire basta", injuries_news(state))
+        a.age = 33
+        self.assertIn("rischia di dover dire basta", injuries_news(state))
+
+    def test_the_youth_squad_is_not_in_the_news(self) -> None:
+        state = state_with_agents()
+        for a in state.athletes:
+            a.season_injuries = 0
+        kid = state.athletes[0]
+        kid.in_youth_squad, kid.season_injuries = True, 5
+        self.assertIsNone(injuries_news(state))
+
+    def test_it_comes_between_the_press_and_the_locker_room(self) -> None:
+        state = state_with_agents()
+        state.budget = -100
+        state.week = 5
+        state.competition_history.insert(0, meet(4, 1))
+        a = state.main_squad[0]
+        a.season_injuries = RETIREMENT_INJURIES_PER_SEASON
+        next(g for g in state.agents if g.id == a.agent_id).relation = 10
+        lines = monthly_news(state, 1, 4)
+        self.assertEqual(len(lines), 4)
+        self.assertIn("Allenatore del Mese", lines[0])
+        self.assertIn("conti in rosso", lines[1])
+        self.assertIn(a.name, lines[2])
+        self.assertIn(str(RETIREMENT_INJURIES_PER_SEASON), lines[2])  # è la riga degli infortuni, non quella dello spogliatoio
+        self.assertNotIn("agente", lines[2])
+
+
+class TestCoachAward(unittest.TestCase):
+    """Q36c: «Allenatore del Mese» vale reputazione."""
+
+    def test_award_follows_the_win_of_the_month(self) -> None:
+        state = state_with_agents()
+        state.competition_history.insert(0, meet(4, 1))
+        self.assertTrue(coach_award(state, 1, 4))
+        self.assertFalse(coach_award(state, 5, 8))  # un meeting di un altro mese non conta
+        state.competition_history[0] = meet(4, 2)
+        self.assertFalse(coach_award(state, 1, 4))
+
+    def test_no_award_without_a_squad_or_in_the_foundation_season(self) -> None:
+        state = state_with_agents()
+        state.competition_history.insert(0, meet(4, 1))
+        state.athletes = []
+        self.assertFalse(coach_award(state, 1, 4))
+
+    def test_the_line_states_the_bonus(self) -> None:
+        text = coach_of_the_month_news(state_with_agents(), meet(4, 1))
+        self.assertIn(f"+{NARRATIVE_COACH_REPUTATION} reputazione", text)
+
+    def test_in_the_tick_a_won_month_raises_the_reputation_by_exactly_the_bonus(self) -> None:
+        from unittest import mock
+
+        def one_month(award: bool, reputation: int):
+            state = state_with_agents()
+            state.week, state.reputation, state.transactions = 1, reputation, []
+            with mock.patch("models.simulation.coach_award", return_value=award) as patched:
+                for _ in range(MONTH_WEEKS):
+                    state.pending_dilemma = None
+                    advance_week(state, rng=random.Random(state.week))
+            return state.reputation, patched.call_count
+
+        (won, calls), (lost, _) = one_month(True, 50), one_month(False, 50)
+        self.assertEqual(calls, 1)  # una volta sola, alla chiusura del mese
+        self.assertEqual(won - lost, NARRATIVE_COACH_REPUTATION)
+
+    def test_the_reputation_bonus_is_capped_at_100(self) -> None:
+        from unittest import mock
+
+        state = state_with_agents()
+        state.week, state.reputation, state.transactions = 1, 100, []
+        with mock.patch("models.simulation.coach_award", return_value=True):
+            for _ in range(MONTH_WEEKS):
+                state.pending_dilemma = None
+                advance_week(state, rng=random.Random(state.week))
+        self.assertLessEqual(state.reputation, 100)
 
 
 class TestMonthlyNews(unittest.TestCase):

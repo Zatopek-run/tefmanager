@@ -322,6 +322,8 @@ SCOUT_REGION_FEE = 800
 # Notizie dinamiche (PIANOLAVORO F.1): a ogni chiusura di mese (`MONTH_WEEKS`) il generatore di `models/narrative.py` scrive al
 # più una riga per tipo, senza RNG. Soglia sotto la quale la relazione con l'agente è «insoddisfazione» (la neutra è 50).
 NARRATIVE_TENSION_RELATION = 30
+# Q36c (2026-11-21, scelta dell'utente; cifra mia): «Allenatore del Mese» dà questa reputazione in più (tetto 100). Prima era solo cronaca.
+NARRATIVE_COACH_REPUTATION = 1
 
 # Conferenza stampa dopo la gara (PIANOLAVORO F.2). CIFRE PROVVISORIE (Q37). La prestazione del club nel meeting è «good» se è tra
 # i primi PRESS_GOOD_MAX_PLACEMENT, «bad» se è tra gli ultimi PRESS_BAD_FROM_BOTTOM (con almeno PRESS_MIN_TEAMS squadre), altrimenti

@@ -11,6 +11,7 @@ from models.entities import (
     DIAMOND_PRESTIGE_MULT,
     DIAMOND_PRIZE_MULT,
     MONTH_WEEKS,
+    NARRATIVE_COACH_REPUTATION,
     SPONSOR_MISS_PENALTY,
     AGENT_RELATION_NOT_RENEWED,
     AGENT_RELATION_PODIUM,
@@ -105,7 +106,7 @@ from models.staff import (
     physio_injury_recovery_bonus,
 )
 from models.scouting import academy_growth_multiplier
-from models.narrative import monthly_news
+from models.narrative import coach_award, monthly_news
 from models.history import record_result, record_weekly
 from models.relationships import (
     bond_relay_teammates,
@@ -2034,6 +2035,8 @@ def advance_week(
     if close_month_if_due(state):  # D.3: bilancio del mese appena finito (dopo ogni movimento del tick, bonus promozione compreso)
         # F.1: le notizie del mese appena chiuso; senza RNG, dopo tutto il resto del tick
         state.news_log[0:0] = monthly_news(state, state.week - MONTH_WEEKS, state.week - 1)
+        if coach_award(state, state.week - MONTH_WEEKS, state.week - 1):  # Q36c: «Allenatore del Mese» vale reputazione (nessun RNG)
+            state.reputation = clamp_stat(state.reputation + NARRATIVE_COACH_REPUTATION, 0, 100)
 
     record_weekly(state)  # G.1: forma e fatica di fine tick per i grafici (nessun RNG, nessun effetto sul gioco)
 

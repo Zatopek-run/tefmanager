@@ -446,3 +446,11 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | Nome | Valore | File |
 | --- | --- | --- |
 | `PB_LOG_MAX` | 20 — quanti miglioramenti del primato si ricordano per gara e per atleta (i più recenti; l'ultimo è il primato attuale, quindi tagliare i vecchi non lo cambia) | `entities.py` |
+
+## Notizie dinamiche (F.1, Q36)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `NARRATIVE_TENSION_RELATION` | 30: relazione con l'agente sotto la quale c'è «tensione nello spogliatoio» | `entities.py` |
+| `NARRATIVE_COACH_REPUTATION` | +1 reputazione (tetto 100) per «Allenatore del Mese» (Q36c, cifra mia, 2026-11-21) | `entities.py` |
+| infortuni gravi | soglia = `RETIREMENT_INJURIES_PER_SEASON` (3) infortuni nella stagione; da `RETIREMENT_INJURY_MIN_AGE` (30) anni la riga cita il rischio di ritiro (Q36b) | `entities.py`, `narrative.py` |

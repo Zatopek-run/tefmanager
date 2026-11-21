@@ -493,7 +493,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Esito della ricerca (2026-11-21, frammentario, non una classifica completa):** *Velocità*: USA primi per distacco (85 medaglie olimpiche nelle gare veloci), Giamaica seconda (6 titoli mondiali sui 100 m maschili, 18 medaglie mondiali sui 100 m femminili); il terzo posto non emerge (Trinidad e Tobago, Bahamas, Gran Bretagna con pochi risultati); la Nigeria non compare. *Mezzofondo*: Kenya prima (800 m: 6 ori olimpici e 14 medaglie mondiali maschili; 1500 m: 7 ori olimpici), Gran Bretagna seconda (6 ori olimpici nei 1500 m, più finalisti a Tokyo); Norvegia con Ingebrigtsen (oro olimpico 1500 m 2021) ed Etiopia (prima medaglia mondiale sugli 800 m solo nel 2013) non quantificate. *Salti* (lungo): USA primi (22 ori e 47 medaglie olimpiche maschili; 19 medaglie mondiali), Cuba seconda (5 medaglie mondiali, 4 ori di Pedroso), poi Grecia (2 ori olimpici) e Giamaica (2 argenti); nel lungo femminile Unione Sovietica/Russia (9+5 medaglie). *Lanci* (peso): USA primi (19 ori e 51 medaglie olimpiche maschili, 12 ori mondiali), Germania (7 medaglie mondiali nel peso femminile; 18 nel giavellotto); il terzo posto non emerge (Nuova Zelanda con Tom Walsh, Polonia nel martello con 14 medaglie mondiali, Finlandia nel giavellotto). **La Nigeria (oggi regione dei Lanci) non è confermata da nessun risultato.**
 
 
-## Q36 — Notizie dinamiche (PIANOLAVORO F.1) — 🟡 IN CORSO dal 2026-11-21, **soglie e tipi da confermare**
+## Q36 — Notizie dinamiche (PIANOLAVORO F.1) — ✅ FATTA il 2026-11-21: soglie confermate, nuova notizia sugli infortuni gravi, «Allenatore del Mese» +1 reputazione
 
 **Cosa c'è** (nessuna modifica allo schema): `models/narrative.py` (senza Qt e senza RNG) genera a ogni chiusura di mese al più una riga per tipo: **Allenatore del Mese** (vittoria del meeting del mese), **stampa critica** (conti in rosso; oppure Board con una stagione fallita; oppure ultimo posto nell'ultimo meeting) e **tensione nello spogliatoio** (relazione con l'agente ≤ `NARRATIVE_TENSION_RELATION` = 30). Agganciato al tick dopo il bilancio mensile (`TICK.md` 21c). Test: `test_narrative.py` (20, senza Qt).
 
@@ -503,8 +503,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Limiti dichiarati:** vedi AUDIT R33; **non provato con il mouse reale**; le notizie nuove non sono state lette in una partita lunga (solo test e un tick di prova).
 
-**Da decidere:** (a) altri eventi da raccontare (stagione, infortuni gravi, ritiri, contratti in scadenza)? (b) la notizia deve ripetersi ogni mese finché dura la condizione? (c) «Allenatore del Mese» deve dare un piccolo bonus di reputazione (con F.2)?
-
+**Deciso il 2026-11-21 (utente):** (a) cadenza mensile, una riga per tipo, soglia 30 e le tre cause della stampa critica confermate; (b) altri eventi: solo **infortuni gravi** (`narrative.injuries_news`, 3+ infortuni in stagione = soglia del ritiro anticipato C.3; da 30 anni «rischia di dover dire basta»; nessun'altra: né contratti in scadenza né altro); (c) **«Allenatore del Mese» dà +1 reputazione** (`NARRATIVE_COACH_REPUTATION`, cifra mia; `narrative.coach_award`, applicato in `simulation` subito dopo `monthly_news`, tetto 100; la riga dichiara «(+1 reputazione)»). Nessun RNG, nessuno schema nuovo. La notizia si ripete ogni mese finché la condizione dura (decisione di prima, non rimessa in discussione).
 
 ## Q37 — Conferenza stampa (PIANOLAVORO F.2) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**
 
