@@ -579,7 +579,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Confermato dall'utente il 2026-11-21, nessuna modifica al codice:** tutte le «mie scelte» di G.1 (Dashboard), G.2 (scheda atleta), G.3 (tabellone live) e del design system esteso, così come elencate sopra. Resta valida la nota sulla doppia manutenzione del ripiego QWidget della Dashboard.
 
 
-## Q41 — Gare di corsa «piatte» e rientro alla corda nei 800m e 1500m — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
+## Q41 — Gare di corsa «piatte» e rientro alla corda nei 800m e 1500m — ✅ FATTA il 2026-11-21: cifre confermate, stile dal piano gara (b), sorpassi nelle staffette (c, d)
 
 **Segnalazione dell'utente:** (1) nelle corse «gli atleti partono e arrivano con la stessa velocità, non si superano mai»; (2) nei 800 e 1500m, appena il regolamento lo permette, i corridori prendono il lato stretto della
 curva, e nel gioco non succedeva.
@@ -597,10 +597,10 @@ gara). **Misurate su 226 gare di 5 partite:** con queste cifre il 29% dei 100m e
 (100m 2 m, 400m 10 m, 800m 26 m, 1500m 42 m). Formazione: file larghe 0,95 m, distanza lungo la pista 1,6 m davanti e 3,0 m dietro, rientro 800m 115,6-145 m e 1500m 10-90 m, uscita di chi si ferma in 5 s.
 
 **Mie scelte, da confermare:** (a) lo stile è casuale e uguale per tutti i tipi di atleta: **non** dipende dal carattere né dal piano gara scelto dal giocatore (B.1: la messa in scena lo ignora, un sorpasso in
-scena non contraddice il piano ma non lo riflette); (b) le **staffette** non hanno stile (i cambi di testimone restano com'erano); (c) la **4x400m** usa la formazione dopo i 400 m (rientro a 515,6 m, fine della prima curva della seconda frazione); come le altre staffette **non ha stile**, quindi nessun sorpasso; (d) nei concorsi nulla cambia;
+scena non contraddice il piano ma non lo riflette); (b) le **staffette** non hanno stile (i cambi di testimone restano com'erano) — *superato il 2026-11-21: vedi Q41c sotto*; (c) la **4x400m** usa la formazione dopo i 400 m (rientro a 515,6 m, fine della prima curva della seconda frazione); come le altre staffette **non ha stile**, quindi nessun sorpasso; (d) nei concorsi nulla cambia;
 (e) chi taglia il traguardo esce verso l'esterno (prima restava sul posto e l'ultimo attraversava il gruppo).
 
-**Deciso il 2026-11-21 (utente):** (a) cifre dello stile e della formazione confermate; (b) **lo stile del tuo atleta segue il piano gara B.1**: `plan_pace_style` (ritmo + scatto, `PLAN_PACE_STYLE`, `PLAN_KICK_STYLE`, cifre mie), memorizzato in `EventResult.plan_style` (nel JSON della storia dei meeting, senza migrazione di schema) e usato da `race_viewer.runner_style` sia dalle viste PyQt sia dall'export per Godot (Godot legge la stessa colonna `pace_style`: nessun codice GDScript cambiato); gli avversari restano casuali; solo 800m/1500m (gli altri eventi non hanno un piano di ritmo); (c) staffette con sorpassi ai cambi: **scelto, da fare** (vedi sotto).
+**Deciso il 2026-11-21 (utente):** (a) cifre dello stile e della formazione confermate; (b) **lo stile del tuo atleta segue il piano gara B.1**: `plan_pace_style` (ritmo + scatto, `PLAN_PACE_STYLE`, `PLAN_KICK_STYLE`, cifre mie), memorizzato in `EventResult.plan_style` (nel JSON della storia dei meeting, senza migrazione di schema) e usato da `race_viewer.runner_style` sia dalle viste PyQt sia dall'export per Godot (Godot legge la stessa colonna `pace_style`: nessun codice GDScript cambiato); gli avversari restano casuali; solo 800m/1500m (gli altri eventi non hanno un piano di ritmo); (c) **staffette con sorpassi ai cambi: fatto** con stili per frazione (`leg_styles`, `PACE_AMPLITUDE["relay"]` = 0,010 provvisoria, misurata: 28 staffette su 29 hanno almeno un sorpasso vero, circa 9 a gara); (d) la 4x400m **ha** ora i sorpassi (stessi stili per frazione; formazione dopo i 400 m invariata). Verificato con Godot 4.7.2 (flatpak): `verify_pack` (parità con Python per le staffette), `verify_race` (14 gare), `verify_replay`, `verify_bib`, `verify_stride`, `verify_pack_scene` sulla 4x400m (vedi AUDIT R46).
 
 ## Q42 — Inviti alla Diamond League (PIANOLAVORO C.1b) — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
 

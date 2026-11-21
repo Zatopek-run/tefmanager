@@ -466,3 +466,13 @@ Solo messa in scena: non entra in nessun risultato. Stile in [−1, 1] (> 0 part
 | `PLAN_PACE_STYLE` | Lento −0,5 · Medio 0 · Veloce +0,8 | `entities.py` |
 | `PLAN_KICK_STYLE` | Nessuno 0 · Ultimi 200m −0,4 · Ultimo giro −0,7 | `entities.py` |
 | `PLAN_STYLE_JITTER` | 0,2: quota dello stile casuale di sempre che si somma a ritmo + scatto, poi limitato a [−1, 1] | `entities.py` |
+
+## Stile di passo per frazione nelle staffette (Q41c, 2026-11-21) — CIFRA MIA PROVVISORIA
+
+Solo messa in scena. 4 stili in [−1, 1] per squadra (uno per frazione); scostamenti cumulativi ai cambi D_k = AMP·Σ_{i<k}(stile_i − media), D_0 = D_4 = 0, smoothstep tra un cambio e l'altro. Monotona finché 12·AMP < 1.
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `PACE_AMPLITUDE["relay"]` (Godot: `4x100m` e `4x400m`) | 0,010 della durata della gara per frazione di scarto (a 40 s ≈ 0,4 s ≈ 3,6 m; a 190 s ≈ 1,9 s ≈ 14 m) | `race_viewer.py`, `RaceMotion.gd` |
+
+**Misura** (29 staffette vere di 5 partite, soglia 2 m): senza stili 12 gare su 29 hanno almeno un sorpasso (25 in tutto: sono le oscillazioni sceniche di fondo); con 0,006 23/29 (142), con **0,010 28/29 (251, circa 9 per gara su 8 squadre)**, con 0,015 29/29 (369), con 0,020 29/29 (447).

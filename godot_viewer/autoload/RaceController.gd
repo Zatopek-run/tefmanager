@@ -277,8 +277,8 @@ func _apply_motion() -> void:
 ## Distanza e velocita' di un corridore al tempo di gara `t` (con il suo stile di passo).
 func _state_of(r: RunnerData, t: float) -> Vector2:
 	if r.dnf:
-		return RaceMotion.state_at_dnf(t, r.reaction_time, r.final_time, event_kind, r.pace_style)
-	return RaceMotion.state_at(t, r.reaction_time, r.final_time, event_kind, r.pace_style)
+		return RaceMotion.state_at_dnf(t, r.reaction_time, r.final_time, event_kind, r.motion_style())
+	return RaceMotion.state_at(t, r.reaction_time, r.final_time, event_kind, r.motion_style())
 
 
 ## Prepara la formazione del gruppo per la gara caricata (solo 800m, 1500m e 4x400m; altrimenti nessuna: `lateral` resta -1).
@@ -293,7 +293,7 @@ func _build_pack() -> void:
 	for r: RunnerData in runners:
 		starts.append(float(r.lane - 1) * TrackGeometry.LANE_WIDTH)
 		# chi si ferma lascia la corda: il ritirato dove si arresta, chi arriva dal traguardo (final_time). Senza, l'ultimo attraversava il gruppo gia' rallentato.
-		stops.append(RaceMotion.time_at_distance(RaceMotion.dnf_stop_distance(event_kind), r.reaction_time, r.final_time, event_kind, r.pace_style) if r.dnf else r.final_time)
+		stops.append(RaceMotion.time_at_distance(RaceMotion.dnf_stop_distance(event_kind), r.reaction_time, r.final_time, event_kind, r.motion_style()) if r.dnf else r.final_time)
 	_pack = PackFormation.new(event_kind, starts, func(i: int, t: float) -> float: return _state_of(runners[i], t).x, stops)
 
 
@@ -305,7 +305,7 @@ func lateral_when_reaching(r: RunnerData, distance: float) -> float:
 	var i: int = runners.find(r)
 	if i < 0:
 		return -1.0
-	var t: float = RaceMotion.time_at_distance(distance, r.reaction_time, r.final_time, event_kind, r.pace_style)
+	var t: float = RaceMotion.time_at_distance(distance, r.reaction_time, r.final_time, event_kind, r.motion_style())
 	return (_pack.lateral_offsets(t) as PackedFloat64Array)[i]
 
 

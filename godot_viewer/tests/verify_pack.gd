@@ -47,6 +47,20 @@ const PROGRESS_FIXTURE: Array = [
 ]
 
 
+## (stili delle 4 frazioni, u, progress) calcolati da Python con curve_progress("relay", u, 0, 0, stili): la copia GDScript deve dare gli stessi valori per 4x100m e 4x400m.
+const RELAY_FIXTURE: Array = [
+	[[1, -1, 0.5, -0.5], 0.13, 0.131382721], [[1, -1, 0.5, -0.5], 0.25, 0.258154146], [[1, -1, 0.5, -0.5], 0.4, 0.400321160],
+	[[1, -1, 0.5, -0.5], 0.5, 0.500000000], [[1, -1, 0.5, -0.5], 0.62, 0.617949921], [[1, -1, 0.5, -0.5], 0.75, 0.754010967],
+	[[1, -1, 0.5, -0.5], 0.9, 0.898490855],
+	[[0.9, 0.4, -0.5, -0.8], 0.13, 0.130832349], [[0.9, 0.4, -0.5, -0.8], 0.25, 0.257317201], [[0.9, 0.4, -0.5, -0.8], 0.4, 0.408716004],
+	[[0.9, 0.4, -0.5, -0.8], 0.5, 0.510698966], [[0.9, 0.4, -0.5, -0.8], 0.62, 0.626555535], [[0.9, 0.4, -0.5, -0.8], 0.75, 0.756482994],
+	[[0.9, 0.4, -0.5, -0.8], 0.9, 0.899589034],
+	[[-1, -1, -1, 1], 0.13, 0.123132285], [[-1, -1, -1, 1], 0.25, 0.245062287], [[-1, -1, -1, 1], 0.4, 0.388094288],
+	[[-1, -1, -1, 1], 0.5, 0.489920209], [[-1, -1, -1, 1], 0.62, 0.602757826], [[-1, -1, -1, 1], 0.75, 0.734772826],
+	[[-1, -1, -1, 1], 0.9, 0.891170976],
+]
+
+
 func _curve_parity() -> void:
 	var ok: bool = true
 	for row: Array in PROGRESS_FIXTURE:
@@ -66,6 +80,27 @@ func _curve_parity() -> void:
 					slope_ok = false
 					print("      derivata %s stile %.1f u=%.1f: %.4f vs %.4f" % [kind, style, u, RaceMotion.slope(u, kind, style), fd])
 	_check(slope_ok, "slope() con stile coincide con la differenza finita di progress()")
+	# staffette (Q41c): stili per frazione, stessi valori di Python su entrambe le distanze
+	var relay_ok: bool = true
+	for kind: String in ["4x100m", "4x400m"]:
+		for row: Array in RELAY_FIXTURE:
+			var legs: PackedFloat64Array = PackedFloat64Array(row[0])
+			var got_r: float = RaceMotion.progress(float(row[1]), kind, legs)
+			if absf(got_r - float(row[2])) > TOL:
+				relay_ok = false
+				print("      %s stili %s u=%.2f: Godot %.9f, Python %.9f" % [kind, row[0], row[1], got_r, row[2]])
+	_check(relay_ok, "staffette: curva con stili per frazione identica a Python (%d valori x 2 distanze)" % RELAY_FIXTURE.size())
+	var relay_slope_ok: bool = true
+	for legs_arr: Array in [[1, -1, 0.5, -0.5], [-1, -1, -1, 1], [0.9, 0.4, -0.5, -0.8]]:
+		var legs: PackedFloat64Array = PackedFloat64Array(legs_arr)
+		# lontano dai cambi: li' la velocita' delle staffette ha una discontinuita' vera (la frazione riparte) e la differenza finita la mediarebbe
+		for u: float in [0.1, 0.18, 0.36, 0.62, 0.86]:
+			var h: float = 1e-4
+			var fd_r: float = (RaceMotion.progress(u + h, "4x100m", legs) - RaceMotion.progress(u - h, "4x100m", legs)) / (2.0 * h)
+			if absf(fd_r - RaceMotion.slope(u, "4x100m", legs)) > 0.02 * maxf(1.0, fd_r):
+				relay_slope_ok = false
+				print("      derivata staffetta %s u=%.2f: %.4f vs %.4f" % [legs_arr, u, RaceMotion.slope(u, "4x100m", legs), fd_r])
+	_check(relay_slope_ok, "staffette: slope() con stili per frazione coincide con la differenza finita")
 
 
 # ---- 2) invarianti della curva ---------------------------------------------------------------------------------------
@@ -79,7 +114,35 @@ func _curve_invariants() -> void:
 				same = false
 	_check(same, "stile 0 = valori di sempre (progress e slope, tutti gli eventi)")
 	var relay_flat: bool = RaceMotion.progress(0.4, "4x100m", 1.0) == RaceMotion.progress(0.4, "4x100m") and RaceMotion.progress(0.4, "4x400m", -1.0) == RaceMotion.progress(0.4, "4x400m")
-	_check(relay_flat, "le staffette non hanno stile di passo")
+	_check(relay_flat, "le staffette non hanno stile numerico (un numero singolo e' inerte)")
+	var same_legs: bool = true
+	for kind: String in ["4x100m", "4x400m"]:
+		for i in range(0, 101):
+			var u2: float = float(i) / 100.0
+			if RaceMotion.progress(u2, kind, PackedFloat64Array()) != RaceMotion.progress(u2, kind) or RaceMotion.progress(u2, kind, PackedFloat64Array([0.8, 0.8, 0.8, 0.8])) - RaceMotion.progress(u2, kind) > 1e-12:
+				same_legs = false
+	_check(same_legs, "staffette: nessuno stile per frazione, o stili tutti uguali = valori di sempre")
+	for kind: String in ["4x100m", "4x400m"]:
+		var rtotal: float = RaceMotion.race_distance(kind)
+		var rfinal: float = {"4x100m": 40.0, "4x400m": 190.0}[kind]
+		for legs_arr: Array in [[1, 1, 1, -1], [1, -1, 1, -1], [1, 1, -1, -1], [-1, -1, -1, -1], [1, -1, -1, -1]]:
+			var legs: PackedFloat64Array = PackedFloat64Array(legs_arr)
+			var react2: float = 0.15
+			var st_a: Vector2 = RaceMotion.state_at(react2, react2, rfinal, kind, legs)
+			var st_b: Vector2 = RaceMotion.state_at(rfinal, react2, rfinal, kind, legs)
+			var mono2: bool = true
+			var prev2: float = -1.0
+			var t2: float = 0.0
+			while t2 < rfinal + 2.0:
+				var s2: Vector2 = RaceMotion.state_at(t2, react2, rfinal, kind, legs)
+				if s2.x + 1e-9 < prev2 or s2.y < 0.0:
+					mono2 = false
+				prev2 = s2.x
+				t2 += rfinal / 400.0
+			_check(absf(st_a.x) < TOL and absf(st_b.x - rtotal) < 1e-6, "%s stili %s: parte da 0 e arriva ESATTAMENTE a %.0f m a final_time (%.6f)" % [kind, legs_arr, rtotal, st_b.x])
+			_check(mono2, "%s stili %s: distanza monotona, velocita' mai negativa" % [kind, legs_arr])
+			var ta2: float = RaceMotion.time_at_distance(0.42 * rtotal, react2, rfinal, kind, legs)
+			_check(absf(RaceMotion.state_at(ta2, react2, rfinal, kind, legs).x - 0.42 * rtotal) < 0.05, "%s stili %s: time_at_distance e' l'inversa" % [kind, legs_arr])
 	for kind: String in ["100m", "400m", "800m", "1500m"]:
 		var total: float = RaceMotion.race_distance(kind)
 		var final_time: float = {"100m": 10.0, "400m": 47.0, "800m": 110.0, "1500m": 235.0}[kind]
@@ -215,7 +278,21 @@ func _runner_data_and_db() -> void:
 	_check(is_equal_approx(r.pace_style, 0.4), "RunnerData legge pace_style")
 	_check(RunnerData.from_row({"pace_style": 7.0}).pace_style == 1.0 and RunnerData.from_row({"pace_style": -7.0}).pace_style == -1.0, "pace_style fuori scala viene riportato in [-1, 1]")
 	_check(RunnerData.from_row({}).pace_style == 0.0, "senza colonna: stile 0 (DB esportati prima)")
+	# staffette (Q41c): 4 stili per frazione dalla colonna leg_styles
+	var legs_row: RunnerData = RunnerData.from_row({"lane": 2, "athlete_name": "A", "reaction_time": 0.15, "final_time": 40.0, "leg_styles": "0.5,-0.25,1.0,-1.0"})
+	_check(legs_row.leg_styles.size() == 4 and is_equal_approx(legs_row.leg_styles[1], -0.25), "RunnerData legge i 4 stili per frazione")
+	_check(legs_row.motion_style() is PackedFloat64Array and (legs_row.motion_style() as PackedFloat64Array).size() == 4, "una staffetta passa a RaceMotion i suoi stili per frazione")
+	_check(RunnerData.from_row({"pace_style": 0.3}).motion_style() is float, "una gara individuale passa a RaceMotion il suo stile numerico")
+	_check(RunnerData.parse_leg_styles("").is_empty() and RunnerData.parse_leg_styles("0.1,0.2,0.3").is_empty() and RunnerData.parse_leg_styles("0.1,0.2,x,0.4").is_empty(), "stili per frazione non validi (vuoti, meno di 4, non numeri) = nessuno stile")
+	var clamped: PackedFloat64Array = RunnerData.parse_leg_styles("9,-9,0.5,0")
+	_check(clamped.size() == 4 and clamped[0] == 1.0 and clamped[1] == -1.0, "stili per frazione fuori scala riportati in [-1, 1]")
+	_check(RunnerData.from_row({}).leg_styles.is_empty(), "senza colonna: nessuno stile per frazione (DB esportati prima)")
 	var db: Node = root.get_node("DatabaseManager")
+	for relay_id: int in [7, 8]:
+		var all_legs: bool = true
+		for x: RunnerData in db.get_race_runners(relay_id):
+			all_legs = all_legs and x.leg_styles.size() == 4
+		_check(all_legs, "gara demo %d (staffetta): il seed porta 4 stili per frazione a ogni squadra" % relay_id)
 	var runners: Array[RunnerData] = db.get_race_runners(13)
 	var lo: float = 9.0
 	var hi: float = -9.0

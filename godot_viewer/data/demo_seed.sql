@@ -212,3 +212,17 @@ UPDATE race_results SET pace_style = ROUND(-1.0 + 2.0 *
     (SELECT COUNT(*) FROM race_results o WHERE o.race_id = race_results.race_id AND o.final_time < race_results.final_time) /
     MAX(1, (SELECT COUNT(*) FROM race_results o WHERE o.race_id = race_results.race_id) - 1), 3)
 WHERE race_id IN (1, 2, 3, 4, 5, 6, 13, 14);
+
+-- Stili di passo per frazione delle staffette di fantasia (4x100m = gara 7, 4x400m = gara 8): quattro numeri in [-1, 1] per squadra, uno per frazione.
+-- Cosi' nelle gare dimostrative le squadre si superano ai cambi: senza, il seed girava tutto senza stili e non provava nulla.
+UPDATE race_results SET leg_styles = CASE lane
+    WHEN 1 THEN '0.9,0.4,-0.5,-0.8'
+    WHEN 2 THEN '-0.8,-0.3,0.6,0.9'
+    WHEN 3 THEN '0.2,-0.7,0.8,-0.2'
+    WHEN 4 THEN '-0.5,0.8,-0.4,0.6'
+    WHEN 5 THEN '0.7,-0.6,-0.1,0.5'
+    WHEN 6 THEN '-0.9,0.1,0.7,-0.3'
+    WHEN 7 THEN '0.0,0.6,-0.8,0.3'
+    ELSE '0.5,-0.2,0.3,-0.9'
+END
+WHERE race_id IN (7, 8);

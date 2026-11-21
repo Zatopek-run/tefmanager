@@ -16,7 +16,12 @@ const DNF_TAU: float = 0.7      # ...e rallenta con questa costante di tempo (s)
 ## Stile di passo (solo messa in scena): ogni corridore ha `style` in [-1, 1] (lo calcola Python, vedi `pace_style` in views/race_viewer.py, e lo esporta).
 ## Il tempo normalizzato si deforma in u' = u + style * AMP * sin(PI * u): 0 e 1 restano fissi, quindi l'arrivo e' ESATTAMENTE `final_time`.
 ## > 0 parte forte e cala, < 0 parte piano e chiude forte. Con style = 0 i valori sono quelli di sempre. AMP: copia di PACE_AMPLITUDE di race_viewer.py.
-const PACE_AMPLITUDE: Dictionary = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014}
+const PACE_AMPLITUDE: Dictionary = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014, "4x100m": 0.010, "4x400m": 0.010}
+## Staffette (Q41c): lo stile e' PER FRAZIONE, un PackedFloat64Array di 4 numeri in [-1, 1] (colonna `leg_styles`, li calcola Python). Il tempo normalizzato si deforma
+## con scostamenti cumulativi ai cambi, D_k = AMP * somma_{i<k}(stile_i - media), D_0 = D_4 = 0 (via e arrivo ESATTI), raccordati con una smoothstep tra un cambio e
+## l'altro: ai cambi le squadre non sono nell'ordine d'arrivo, e la velocita' resta continua. I cambi cadono su quarti esatti di tempo perche' la velocita' delle
+## staffette e' periodica sui quarti. Copia di `relay_offset` di views/race_viewer.py (stesse cifre): se cambi una, cambia l'altra. Uno stile numerico singolo su una staffetta e' inerte.
+const RELAY_LEGS: int = 4
 
 static var _tables: Dictionary = {}
 
@@ -67,15 +72,69 @@ static func pace_amplitude(kind: String) -> float:
 	return float(PACE_AMPLITUDE.get(kind, 0.0))
 
 
-## Tempo normalizzato deformato dallo stile di passo (identita' con style = 0; 0 e 1 fissi).
-static func warp(u: float, kind: String, style: float) -> float:
+static func _is_relay(kind: String) -> bool:
+	return kind == "4x100m" or kind == "4x400m"
+
+
+## Vero se `style` deforma qualcosa: un numero diverso da 0 oppure una lista di stili per frazione non vuota.
+static func _has_style(style: Variant) -> bool:
+	if style is PackedFloat64Array:
+		return (style as PackedFloat64Array).size() > 0
+	return float(style) != 0.0
+
+
+## Scostamenti di tempo normalizzato ai cambi (nodi): D_0 = D_n = 0, D_k = amp * somma_{i<k}(stile_i - media).
+static func _relay_nodes(styles: PackedFloat64Array, amp: float) -> PackedFloat64Array:
+	var n: int = styles.size()
+	var mean: float = 0.0
+	for s: float in styles:
+		mean += s
+	mean /= float(n)
+	var nodes: PackedFloat64Array = PackedFloat64Array([0.0])
+	for i in range(n - 1):
+		nodes.append(nodes[i] + amp * (styles[i] - mean))
+	nodes.append(0.0)  # arrivo esatto per costruzione (e senza portarsi dietro l'errore dei float)
+	return nodes
+
+
+static func _relay_offset(styles: PackedFloat64Array, amp: float, u: float) -> float:
+	var n: int = styles.size()
+	var nodes: PackedFloat64Array = _relay_nodes(styles, amp)
+	var x: float = clampf(u, 0.0, 1.0) * float(n)
+	var k: int = mini(n - 1, int(x))
+	var f: float = x - float(k)
+	return nodes[k] + (nodes[k + 1] - nodes[k]) * (f * f * (3.0 - 2.0 * f))
+
+
+## Derivata di _relay_offset rispetto a u (la smoothstep ha derivata 6 f (1 - f)).
+static func _relay_offset_slope(styles: PackedFloat64Array, amp: float, u: float) -> float:
+	var n: int = styles.size()
+	var nodes: PackedFloat64Array = _relay_nodes(styles, amp)
+	var x: float = clampf(u, 0.0, 1.0) * float(n)
+	var k: int = mini(n - 1, int(x))
+	var f: float = x - float(k)
+	return (nodes[k + 1] - nodes[k]) * float(n) * 6.0 * f * (1.0 - f)
+
+
+## Tempo normalizzato deformato dallo stile di passo (identita' senza stile; 0 e 1 fissi). `style`: un numero, o per le staffette la lista dei 4 stili per frazione.
+static func warp(u: float, kind: String, style: Variant) -> float:
 	var c: float = clampf(u, 0.0, 1.0)
-	return c + style * pace_amplitude(kind) * sin(PI * c)
+	if style is PackedFloat64Array:
+		var legs: PackedFloat64Array = style
+		return c + _relay_offset(legs, pace_amplitude(kind), c) if legs.size() > 0 else c
+	if _is_relay(kind):
+		return c
+	return c + float(style) * pace_amplitude(kind) * sin(PI * c)
 
 
 ## Derivata di warp() rispetto a u (positiva finche' |style| * AMP * PI <= 1).
-static func warp_slope(u: float, kind: String, style: float) -> float:
-	return 1.0 + style * pace_amplitude(kind) * PI * cos(PI * clampf(u, 0.0, 1.0))
+static func warp_slope(u: float, kind: String, style: Variant) -> float:
+	if style is PackedFloat64Array:
+		var legs: PackedFloat64Array = style
+		return 1.0 + _relay_offset_slope(legs, pace_amplitude(kind), u) if legs.size() > 0 else 1.0
+	if _is_relay(kind):
+		return 1.0
+	return 1.0 + float(style) * pace_amplitude(kind) * PI * cos(PI * clampf(u, 0.0, 1.0))
 
 
 static func _raw_progress(u: float, kind: String) -> float:
@@ -92,13 +151,13 @@ static func _raw_slope(u: float, kind: String) -> float:
 
 
 ## Frazione di percorso (0..1) al tempo normalizzato u. Monotona; 0 a u=0, 1 a u=1 (anche con uno stile di passo).
-static func progress(u: float, kind: String = "100m", style: float = 0.0) -> float:
-	return _raw_progress(warp(u, kind, style) if style != 0.0 else u, kind)
+static func progress(u: float, kind: String = "100m", style: Variant = 0.0) -> float:
+	return _raw_progress(warp(u, kind, style) if _has_style(style) else u, kind)
 
 
 ## Derivata di progress() rispetto a u (spazio normalizzato per unita' di tempo normalizzato).
-static func slope(u: float, kind: String = "100m", style: float = 0.0) -> float:
-	if style == 0.0:
+static func slope(u: float, kind: String = "100m", style: Variant = 0.0) -> float:
+	if not _has_style(style):
 		return _raw_slope(u, kind)
 	return _raw_slope(warp(u, kind, style), kind) * warp_slope(u, kind, style)
 
@@ -108,7 +167,7 @@ static func slope(u: float, kind: String = "100m", style: float = 0.0) -> float:
 ## - prima di `reaction`: fermo ai blocchi
 ## - fino a `final_time`: corre sulla curva, arrivando a race_distance(kind) esatti a `final_time`
 ## - dopo: continua e rallenta (lancio oltre il traguardo)
-static func state_at(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> Vector2:
+static func state_at(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: Variant = 0.0) -> Vector2:
 	if race_t <= reaction:
 		return Vector2.ZERO
 	var total: float = race_distance(kind)
@@ -123,7 +182,7 @@ static func state_at(race_t: float, reaction: float, final_time: float, kind: St
 
 
 ## Tempo di gara (s dallo sparo) a cui un corridore ha percorso `distance` m, sulla stessa curva di state_at().
-static func time_at_distance(distance: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> float:
+static func time_at_distance(distance: float, reaction: float, final_time: float, kind: String = "100m", style: Variant = 0.0) -> float:
 	var target: float = clampf(distance / race_distance(kind), 0.0, 1.0)
 	var lo: float = 0.0
 	var hi: float = 1.0
@@ -137,7 +196,7 @@ static func time_at_distance(distance: float, reaction: float, final_time: float
 
 
 ## Come state_at(), ma per un ritirato: corre sulla stessa curva fino a dnf_stop_distance(kind), poi rallenta e si ferma.
-static func state_at_dnf(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> Vector2:
+static func state_at_dnf(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: Variant = 0.0) -> Vector2:
 	var t_stop: float = time_at_distance(dnf_stop_distance(kind), reaction, final_time, kind, style)
 	if race_t < t_stop:
 		return state_at(race_t, reaction, final_time, kind, style)

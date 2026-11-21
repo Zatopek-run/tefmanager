@@ -16,6 +16,7 @@ var place: int = 0              # 1 = vincitore, deciso da final_time (i ritirat
 var dnf: bool = false           # ritirato o squalificato: si ferma prima e non taglia il traguardo
 var dq: bool = false            # squalificato (staffetta: cambio fuori zona)
 var pace_style: float = 0.0     # stile di passo in [-1, 1] (solo messa in scena, lo decide Python): > 0 parte forte e cala, < 0 chiude forte
+var leg_styles: PackedFloat64Array = PackedFloat64Array()  # staffette (Q41c): stili delle 4 frazioni in [-1, 1], vuoto per le altre gare (solo messa in scena)
 
 # --- runtime ---
 var distance: float = 0.0       # metri dalla linea di partenza (oltre 100 = lancio dopo il traguardo)
@@ -41,7 +42,28 @@ static func from_row(row: Dictionary) -> RunnerData:
 	r.dq = st == "DQ"
 	r.dnf = st == "DNF" or r.dq
 	r.pace_style = clampf(float(row.get("pace_style", 0.0)), -1.0, 1.0)
+	r.leg_styles = parse_leg_styles(str(row.get("leg_styles", "")))
 	return r
+
+
+## Stili per frazione dalla colonna `leg_styles` (4 numeri separati da virgola). Qualunque cosa diversa da 4 numeri validi = nessuno stile (come un DB senza la colonna).
+static func parse_leg_styles(text: String) -> PackedFloat64Array:
+	var out: PackedFloat64Array = PackedFloat64Array()
+	var parts: PackedStringArray = text.split(",", false)
+	if parts.size() != 4:
+		return out
+	for p: String in parts:
+		if not p.strip_edges().is_valid_float():
+			return PackedFloat64Array()
+		out.append(clampf(p.strip_edges().to_float(), -1.0, 1.0))
+	return out
+
+
+## Lo stile da passare a RaceMotion: i 4 stili per frazione di una staffetta se ci sono, altrimenti il numero di sempre.
+func motion_style() -> Variant:
+	if leg_styles.size() > 0:
+		return leg_styles
+	return pace_style
 
 
 func is_valid() -> bool:
