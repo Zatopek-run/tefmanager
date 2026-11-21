@@ -295,10 +295,23 @@ SCOUT_CURRENT_BAND_MIN = 0
 SCOUT_BAND_OFFSET = 3  # scarto deterministico del centro della fascia (come `potential_band_display`)
 # Rete scouting globale: una regione è un filtro in più della ricerca (+1 punto e una quota fissa). Chiave → (nome,
 # disciplina, qualità, nazionalità). Ogni ragazzo segnalato ha REGION_STAR_CHANCE di avere quella qualità tra i due estremi.
+# Q35d (2026-11-21, scelta dell'utente dopo una ricerca online sui medaglieri olimpici e mondiali): tre regioni per area, 12 in tutto. Le prime due
+# di ogni area sono sostenute dai dati (USA e Giamaica nella velocità; Kenya e Regno Unito nel mezzofondo; USA e Cuba nel lungo; USA e Germania
+# nei lanci); la TERZA (Trinidad e Tobago, Etiopia, Grecia, Nuova Zelanda) è la scelta meno sostenuta. Gli Stati Uniti compaiono in tre aree:
+# la chiave è unica per (nazione, area), la nazionalità del ragazzo è quella della regione. Qualità tipica = abilità principale della disciplina.
 SCOUT_REGIONS: Dict[str, Tuple[str, Specialty, str, str]] = {
     "giamaica": ("Giamaica", Specialty.SPRINTS, "speed", "Giamaica"),
+    "usa_velocita": ("Stati Uniti", Specialty.SPRINTS, "speed", "Stati Uniti"),
+    "trinidad": ("Trinidad e Tobago", Specialty.SPRINTS, "speed", "Trinidad e Tobago"),
     "kenya": ("Kenya", Specialty.MIDDLE_DISTANCE, "stamina", "Kenya"),
-    "nigeria": ("Nigeria", Specialty.THROWS, "strength", "Nigeria"),
+    "regno_unito": ("Regno Unito", Specialty.MIDDLE_DISTANCE, "stamina", "Regno Unito"),
+    "etiopia": ("Etiopia", Specialty.MIDDLE_DISTANCE, "stamina", "Etiopia"),
+    "usa_salti": ("Stati Uniti", Specialty.JUMPS, "technique", "Stati Uniti"),
+    "cuba": ("Cuba", Specialty.JUMPS, "technique", "Cuba"),
+    "grecia": ("Grecia", Specialty.JUMPS, "technique", "Grecia"),
+    "usa_lanci": ("Stati Uniti", Specialty.THROWS, "strength", "Stati Uniti"),
+    "germania": ("Germania", Specialty.THROWS, "strength", "Germania"),
+    "nuova_zelanda": ("Nuova Zelanda", Specialty.THROWS, "strength", "Nuova Zelanda"),
 }
 SCOUT_REGION_STAR_CHANCE = 0.20
 SCOUT_REGION_STAR_STAT_MIN = 81
@@ -848,7 +861,14 @@ NATIONALITIES: Dict[str, str] = {
     "Brasile": "🇧🇷",
     "Giappone": "🇯🇵",
     "Australia": "🇦🇺",
+    "Cuba": "🇨🇺",  # Q35d: nazionalità delle regioni di scouting
+    "Grecia": "🇬🇷",
+    "Trinidad e Tobago": "🇹🇹",
+    "Nuova Zelanda": "🇳🇿",
 }
+# Nazionalità che arrivano SOLO dalle regioni di scouting (Q35d): la generazione normale di atleti stranieri non le pesca, così il pool
+# di prima (e con esso la sequenza dell'RNG) non cambia.
+REGION_ONLY_NATIONALITIES = frozenset({"Cuba", "Grecia", "Trinidad e Tobago", "Nuova Zelanda"})
 
 
 @dataclass

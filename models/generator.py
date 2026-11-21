@@ -29,6 +29,7 @@ from models.entities import (
     EthicalDilemma,
     GameState,
     NATIONALITIES,
+    REGION_ONLY_NATIONALITIES,
     PeriodizationPhase,
     Personality,
     RivalAthlete,
@@ -167,7 +168,7 @@ def generate_nationality(r: random.Random) -> str:
     """About 70% of athletes are Italian, the rest come from the other countries."""
     if r.random() < 0.7:
         return "Italia"
-    return r.choice([n for n in NATIONALITIES if n != "Italia"])
+    return r.choice([n for n in NATIONALITIES if n != "Italia" and n not in REGION_ONLY_NATIONALITIES])
 
 
 # (mean height cm, height sd, mean BMI) per discipline: throwers are heavy, distance runners lean.

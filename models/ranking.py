@@ -27,6 +27,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from models.entities import (
     NATIONALITIES,
+    REGION_ONLY_NATIONALITIES,
     RANKING_DECAY,
     RANKING_HOME_NATION,
     RANKING_NATIONAL_SIZE,
@@ -162,7 +163,7 @@ def generate_synthetic_field(state: GameState, rng: random.Random) -> List[Synth
 
     Riceve l'RNG della partita (`GameController.rng`, o quello passato a `upgrade_legacy_state`).
     """
-    foreign = [n for n in NATIONALITIES if n != RANKING_HOME_NATION]
+    foreign = [n for n in NATIONALITIES if n != RANKING_HOME_NATION and n not in REGION_ONLY_NATIONALITIES]
     pool: List[SyntheticAthlete] = []
     for gender in ("M", "F"):
         first_names = FEMALE_NAME_LIST if gender == "F" else MALE_FIRST_NAMES

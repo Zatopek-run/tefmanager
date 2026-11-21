@@ -2106,7 +2106,7 @@ class YouthTab(QWidget):
         self.scout_fire_btn.setEnabled(scout is not None)
         self.scout_hire_btn.setText("Assumi" if scout is None else "Sostituisci")
 
-        # La rete in Nigeria (lanci) non c'è nel Prototipo, che non ha quella disciplina
+        # Le reti dei Lanci non ci sono nel Prototipo, che non ha quella disciplina
         region_view = self.region_combo.view()
         for i in range(self.region_combo.count()):
             key = self.region_combo.itemData(i)

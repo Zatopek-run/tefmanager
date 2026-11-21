@@ -179,7 +179,9 @@ class TestRegionSearch(unittest.TestCase):
 
     def test_the_prototype_has_no_throws_region(self) -> None:
         self.ctrl.state.game_mode = "vertical_slice"
-        self.assertEqual(self.ctrl.run_youth_scouting(region="nigeria"), [])
+        for key, (_label, spec, _stat, _nat) in SCOUT_REGIONS.items():
+            if spec == Specialty.THROWS:
+                self.assertEqual(self.ctrl.run_youth_scouting(region=key), [], key)
         self.assertEqual(self.ctrl.state.scouting_points_used, 0)
 
     def test_not_enough_money_for_the_fee_refuses_the_region_search(self) -> None:

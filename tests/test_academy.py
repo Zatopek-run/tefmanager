@@ -236,6 +236,38 @@ class TestRegions(unittest.TestCase):
                 ref.randint(SCOUT_REGION_STAR_STAT_MIN, SCOUT_REGION_STAR_STAT_MAX)
             self.assertEqual(rng.getstate(), ref.getstate(), seed)
 
+    def test_three_regions_per_area_twelve_in_all(self) -> None:
+        """Q35d: tre regioni per ognuna delle quattro aree; gli Stati Uniti compaiono in tre aree con chiavi diverse."""
+        from collections import Counter
+
+        self.assertEqual(len(SCOUT_REGIONS), 12)
+        self.assertEqual(Counter(spec for _l, spec, _s, _n in SCOUT_REGIONS.values()), {s: 3 for s in Specialty})
+        self.assertNotIn("nigeria", SCOUT_REGIONS)  # nessun dato la sosteneva (ricerca del 2026-11-21)
+        usa = [k for k, (_l, _s, _st, nat) in SCOUT_REGIONS.items() if nat == "Stati Uniti"]
+        self.assertEqual(sorted(usa), ["usa_lanci", "usa_salti", "usa_velocita"])
+        self.assertEqual(len({(label, spec) for label, spec, _s, _n in SCOUT_REGIONS.values()}), 12)  # etichette distinguibili nel menu
+
+    def test_each_region_boosts_the_main_quality_of_its_area(self) -> None:
+        from models.generator import SPECIALTY_COACH_FOCUS
+
+        for key, (_label, spec, stat, _nat) in SCOUT_REGIONS.items():
+            self.assertEqual(stat, SPECIALTY_COACH_FOCUS[spec][0], key)
+
+    def test_the_new_nationalities_have_a_flag(self) -> None:
+        from models.entities import NATIONALITIES
+
+        for nat in ("Cuba", "Grecia", "Trinidad e Tobago", "Nuova Zelanda"):
+            self.assertTrue(NATIONALITIES[nat])
+
+    def test_normal_generation_never_picks_a_region_only_nationality(self) -> None:
+        from models.entities import REGION_ONLY_NATIONALITIES
+        from models.generator import generate_nationality
+
+        r = random.Random(1)
+        picked = {generate_nationality(r) for _ in range(3000)}
+        self.assertFalse(picked & REGION_ONLY_NATIONALITIES)
+        self.assertEqual(len(picked), 14)  # Italia più le 13 straniere di prima, invariate
+
     def test_every_region_matches_a_nationality_the_game_knows(self) -> None:
         from models.entities import NATIONALITIES
 
