@@ -101,6 +101,7 @@ from models.staff import (
     physio_heal_step_chance,
     physio_injury_recovery_bonus,
 )
+from models.facilities import growth_multiplier, injury_weeks_with_medical_center
 from models.finances import (
     close_month_if_due,
     merchandising_income,
@@ -387,6 +388,7 @@ def apply_weekly_training(
     coach_load: int = 1,
     pre_meet: bool = False,
     staff_attrs: Optional[StaffAttrs] = None,
+    facilities: Optional[Dict[str, int]] = None,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
@@ -397,6 +399,8 @@ def apply_weekly_training(
     bonus al bersaglio di forma (la gara usa la forma calcolata qui).
     `staff_attrs` (E.1): attributi dei ruoli assunti (`models.staff.hired_staff_attributes`); senza, ogni ruolo in
     `hired_roles` vale il riferimento, cioè l'effetto di prima degli attributi.
+    `facilities` (E.2): impianti avanzati posseduti (`GameState.facilities`); vuoto/None = come prima di E.2, nessuna
+    estrazione in più dell'RNG.
 
     Returns:
         (stat_gains, injury_note, recovery_note, doping_scandal_note)
@@ -482,6 +486,7 @@ def apply_weekly_training(
         chance = min(
             0.95,
             base_chance * age_factor * coach_bonus(stat_name) * personality_growth * period_growth * facility_growth * headroom
+            * growth_multiplier(facilities, stat_name, athlete.specialty)
         )
         if r.random() < chance:
             delta = 2 if (max_gain >= 2 and r.random() < 0.25 and current < cap - 3) else 1
@@ -557,6 +562,7 @@ def apply_weekly_training(
             base_weeks = r.randint(1, 3)
             if has_physio and base_weeks > 1 and physio_cuts_injury_week(physio_skill):
                 base_weeks -= 1
+            base_weeks = injury_weeks_with_medical_center(base_weeks, facilities, r)  # E.2: solo con il centro medico
             athlete.injured_weeks = base_weeks
             athlete.season_injuries += 1
             athlete.form = clamp_stat(athlete.form - 18, 5, 100)
@@ -969,6 +975,7 @@ def simulate_competition(
                 p_val = 9999.0 if event_def.lower_is_better else 0.0
                 p_disp = DNF_MARK
                 weeks_out = r.randint(1, 3) + (1 if attitude == RaceAttitude.AGGRESSIVO else 0)
+                weeks_out = injury_weeks_with_medical_center(weeks_out, state.facilities, r)  # E.2
                 player_athlete.injured_weeks = max(player_athlete.injured_weeks, weeks_out)
                 player_athlete.season_injuries += 1
                 player_athlete.form = clamp_stat(player_athlete.form - 15, 5, 100)
@@ -1817,6 +1824,7 @@ def advance_week(
             coach_load=loads.get(coach.id, 1) if coach is not None else 1,
             pre_meet=pre_meet,
             staff_attrs=staff_attrs,
+            facilities=state.facilities,
         )
         stat_gains.extend(gains)
         if injury_note:

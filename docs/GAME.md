@@ -247,6 +247,7 @@ Dal lotto **E.1** (2026-11-20, cifre provvisorie, Q33) ogni specialista ha due *
 
 **Palestra** livelli 0-5 (+6% di crescita in allenamento per livello, costa 2500 × (livello+1) da ampliare e 40 × livello a settimana). **Tribune** da ampliare di 500 posti alla volta fino a 20.000 (nessun costo di gestione).
 La condizione della **pista** cala ogni settimana e ogni meeting in casa, e influenza il punteggio.
+Dal lotto **E.2** (2026-11-21, cifre del piano, Q34) quattro **impianti avanzati** si comprano una volta sola nella tab «Staff & Impianto» (nessuna manutenzione): **Centro medico** (€15.000: −15% sui tempi di infortunio, in allenamento e in gara; non sulla squalifica per doping; in pratica ≈−12,5% perché gli stop sono interi e mai sotto 1 settimana), **Centro analisi video** (€10.000: +5% di probabilità di migliorare la Tecnica), **Palestra pesi** (€12.000: +10% sulla Forza, si somma alla Palestra a livelli) e **Campo altura** (€20.000: +10% sulla Resistenza, solo atleti di Mezzofondo). Il «%» è la probabilità settimanale di crescita in allenamento, come la Palestra. Senza impianti il gioco è identico a prima (`models/facilities.py`, `BALANCE.md` §S).
 
 ### 5.12 Fan e sponsor
 

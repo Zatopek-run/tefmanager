@@ -1010,6 +1010,7 @@ class TestMigrationV22StaffAttributes(_TmpCase):
         DatabaseManager(db_path=path).save_game(state)
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v21: senza la colonna
             conn.execute("ALTER TABLE staff DROP COLUMN attributes_json")
+            conn.execute("ALTER TABLE game_state DROP COLUMN facilities_json")  # v23, successiva
             conn.execute("PRAGMA user_version = 21")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v21 → v22
@@ -1067,3 +1068,68 @@ class TestMigrationV22StaffAttributes(_TmpCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMigrationV23Facilities(_TmpCase):
+    """v22 → v23 (E.2): `game_state.facilities_json` (default `'{}'` = nessun impianto avanzato, l'effetto di prima)."""
+
+    def test_v22_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 23)
+        self.assertIn(22, MIGRATIONS)
+        path = make_save(self.slot("v22"), 22)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("facilities_json", column_names(conn, "game_state"))  # la fixture è davvero v22
+            self.assertIn("attributes_json", column_names(conn, "staff"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertIn(("facilities_json", "TEXT", 1, "'{}'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 22)
+        backup = self.backups("v22")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 22)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("facilities_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 22)
+
+    def test_old_save_loads_without_facilities_and_they_roundtrip_once_bought(self) -> None:
+        from models.entities import FACILITY_MEDICAL, FACILITY_VIDEO
+        from tests.test_assignments import make_state
+
+        path = self.slot("v22")
+        state = make_state(3)
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v22: senza la colonna
+            conn.execute("ALTER TABLE game_state DROP COLUMN facilities_json")
+            conn.execute("PRAGMA user_version = 22")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()  # migra v22 → v23
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        self.assertEqual(loaded.facilities, {})
+        loaded.facilities = {FACILITY_MEDICAL: 1, FACILITY_VIDEO: 1}
+        DatabaseManager(db_path=path).save_game(loaded)
+        self.assertEqual(DatabaseManager(db_path=path).load_game().facilities, {FACILITY_MEDICAL: 1, FACILITY_VIDEO: 1})
+
+    def test_corrupt_or_unknown_facilities_load_as_the_safe_value(self) -> None:
+        from models.entities import FACILITY_WEIGHTS
+        from tests.test_assignments import make_state
+
+        path = self.slot("v23")
+        DatabaseManager(db_path=path).save_game(make_state(3))
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("UPDATE game_state SET facilities_json = 'non json'")
+            conn.commit()
+        self.assertEqual(DatabaseManager(db_path=path).load_game().facilities, {})
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("UPDATE game_state SET facilities_json = ?", ('{"palestra_pesi": 1, "ignoto": 1}',))
+            conn.commit()
+        self.assertEqual(DatabaseManager(db_path=path).load_game().facilities, {FACILITY_WEIGHTS: 1})
+
+    def test_failed_v22_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v22"), 22)
+        before = sha(path)
+        broken = {"game_state": [("facilities_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {22: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)

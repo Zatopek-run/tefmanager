@@ -38,6 +38,7 @@ from models.entities import (
     RELAYS,
     Relay,
     coach_hire_cost,
+    FACILITY_COSTS,
     GYM_MAX_LEVEL,
     SCOUTING_FEES,
     SCOUTING_SEARCH_POINTS,
@@ -67,6 +68,7 @@ from models.entities import (
     gym_upgrade_cost,
     stand_expansion_cost,
 )
+from models.facilities import facility_cost, facility_label, owns
 from models.agents import adjust_relation, assign_agent, ensure_agents, prune_idle_agents
 from models.market import Terms, is_valid_terms, opening_terms
 from models.generator import (
@@ -803,6 +805,23 @@ class GameController(QObject):
         self._persist()
         self.state_changed.emit(self.state)
         self.status_message.emit(f"Palestra al livello {self.state.gym_level}.")
+        return True
+
+    def buy_facility(self, key: str) -> bool:
+        """Compra un impianto avanzato (E.2): una tantum, effetti in `models/facilities.py`."""
+        if key not in FACILITY_COSTS:
+            return False
+        label = facility_label(key)
+        if owns(self.state.facilities, key):
+            self.status_message.emit(f"{label} già acquistato.")
+            return False
+        if not self._pay(facility_cost(key), f"Acquisto {label}", "Impianto"):
+            return False
+        self.state.facilities[key] = 1
+        self.state.news_log.insert(0, f"Sett. {self.state.week}: nuovo impianto, {label}.")
+        self._persist()
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"{label} acquistato.")
         return True
 
     def expand_stands(self) -> bool:

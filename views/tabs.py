@@ -54,6 +54,8 @@ from models.entities import (
     Athlete,
     harmony_grade,
     EVENTS,
+    FACILITY_LABELS,
+    FACILITY_ORDER,
     GYM_MAX_LEVEL,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
@@ -84,6 +86,7 @@ from models.entities import (
     StaffRole,
 )
 from controllers.game_controller import scouting_search_cost
+from models.facilities import FACILITY_EFFECTS, facility_cost, owns
 from models.staff import describe_attributes, hired_of_role, severance_pay
 from models.finances import recent_reports
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
@@ -1325,6 +1328,32 @@ class StaffTab(QWidget):
 
         root.addLayout(facilities_row)
 
+        # Impianti avanzati (E.2): una scheda per impianto, acquisto una tantum.
+        advanced_row = QHBoxLayout()
+        advanced_row.setSpacing(12)
+        self.facility_btns: Dict[str, QPushButton] = {}
+        self.facility_subs: Dict[str, QLabel] = {}
+        for key in FACILITY_ORDER:
+            card = QFrame()
+            card.setObjectName("StatCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            head = QLabel(FACILITY_LABELS[key])
+            head.setObjectName("SectionHeader")
+            sub = QLabel(FACILITY_EFFECTS[key])
+            sub.setObjectName("SubTitle")
+            sub.setWordWrap(True)
+            btn = QPushButton("")
+            btn.setObjectName("PrimaryButton")
+            btn.clicked.connect(lambda _checked=False, k=key: self.controller.buy_facility(k))
+            card_layout.addWidget(head)
+            card_layout.addWidget(sub)
+            card_layout.addWidget(btn)
+            self.facility_btns[key] = btn
+            self.facility_subs[key] = sub
+            advanced_row.addWidget(card)
+        root.addLayout(advanced_row)
+
         coach_panel = QFrame()
         coach_panel.setObjectName("SectionPanel")
         coach_layout = QVBoxLayout(coach_panel)
@@ -1404,6 +1433,14 @@ class StaffTab(QWidget):
         else:
             self.gym_btn.setText(f"Amplia a livello {lvl + 1} (€{gym_upgrade_cost(lvl):,})")
             self.gym_btn.setEnabled(True)
+
+        for key, btn in self.facility_btns.items():
+            if owns(state.facilities, key):
+                btn.setText("Posseduto")
+                btn.setEnabled(False)
+            else:
+                btn.setText(f"Acquista (€{facility_cost(key):,})")
+                btn.setEnabled(True)
 
         price = TICKET_PRICE[state.tier.value]
         self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")

@@ -243,6 +243,33 @@ SCOUTING_FEES: Dict[int, int] = {0: 0, 1: 0, 2: 150, 3: 350, 4: 600, 5: 1000, 6:
 GYM_MAX_LEVEL = 5
 GYM_TRAINING_BONUS_PER_LEVEL = 0.06
 GYM_UPKEEP_PER_LEVEL = 40
+# Impianti avanzati (PIANOLAVORO E.2): acquisto una tantum, nessuna manutenzione (il piano non ne indica: aperta, Q34).
+# Chiave → (nome, costo €, effetto in una riga). Senza l'impianto ogni effetto vale come prima di E.2.
+FACILITY_MEDICAL = "centro_medico"
+FACILITY_VIDEO = "analisi_video"
+FACILITY_WEIGHTS = "palestra_pesi"
+FACILITY_ALTITUDE = "campo_altura"
+FACILITY_ORDER: List[str] = [FACILITY_MEDICAL, FACILITY_VIDEO, FACILITY_WEIGHTS, FACILITY_ALTITUDE]
+FACILITY_LABELS: Dict[str, str] = {
+    FACILITY_MEDICAL: "Centro medico",
+    FACILITY_VIDEO: "Centro analisi video",
+    FACILITY_WEIGHTS: "Palestra pesi",
+    FACILITY_ALTITUDE: "Campo altura",
+}
+FACILITY_COSTS: Dict[str, int] = {
+    FACILITY_MEDICAL: 15000,
+    FACILITY_VIDEO: 10000,
+    FACILITY_WEIGHTS: 12000,
+    FACILITY_ALTITUDE: 20000,
+}
+# Centro medico: taglia del 15% i tempi di infortunio (allenamento e gare, non la squalifica per doping). Su 1-3 settimane
+# intere si arrotonda a caso (una sola estrazione dell'RNG, solo con l'impianto) e non si scende sotto 1 settimana.
+MEDICAL_CENTER_INJURY_CUT = 0.15
+INJURY_MIN_WEEKS = 1
+# Gli altri tre moltiplicano la probabilità settimanale di miglioramento della qualità indicata (come la Palestra).
+VIDEO_CENTER_TECHNIQUE_BONUS = 0.05
+WEIGHTS_ROOM_STRENGTH_BONUS = 0.10
+ALTITUDE_CAMP_STAMINA_BONUS = 0.10  # solo atleti di Mezzofondo
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
@@ -1306,6 +1333,8 @@ class GameState:
     # Campo mondiale di atleti sintetici per il ranking (C.1); vuoto = salvataggio vecchio, si genera al caricamento.
     ranking_pool: List[SyntheticAthlete] = field(default_factory=list)
     gym_level: int = 0
+    # Impianti avanzati posseduti (E.2): chiave di `FACILITY_ORDER` → livello (1 = posseduto). Vuoto = nessuno.
+    facilities: Dict[str, int] = field(default_factory=dict)
     stand_seats: int = 500
     fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
     scouting_points_used: int = 0
