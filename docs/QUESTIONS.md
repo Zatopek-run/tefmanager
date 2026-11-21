@@ -548,7 +548,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Deciso il 2026-11-21 (utente):** (a) regole confermate (record del mondo = tetto della simulazione; il record sociale non apre popup; atleta dell'anno = più vittorie poi più podi; popup dopo risultati e fine stagione, prima di un dilemma); (b) tra i momenti nuovi l'utente ha scelto l'**invito alla Diamond League**: **era già implementato** con C.1b (`glory.meeting_moments` crea un `DIAMOND` quando `summary.is_diamond`, prima di un eventuale record del mondo; nessuna riga nuova nel registro, il meeting ha già la sua notizia) ma **non aveva test**: aggiunti 4 in `test_glory.py` e 1 in `test_glory_ui.py`; la convocazione in nazionale resta inesistente; (c) i momenti non si salvano (nessun «albo della gloria»); (d) l'atleta dell'anno resta vittorie e podi, senza livello né ranking.
 
 
-## Q40 — Lotto G (UI/UX) — 🟡 IN CORSO dal 2026-11-21, **direzione grafica da approvare**
+## Q40 — Lotto G (UI/UX) — ✅ FATTA il 2026-11-21: direzione approvata e tutte le «mie scelte» di G.1, G.2, G.3 e del design system confermate
 
 **Decisioni dell'utente (2026-11-21):** (1) ~~nessuna libreria di grafici~~ **revocata lo stesso giorno**: prima scelta QPainter (come `finance_chart.py`) per il prototipo; poi l'utente ha approvato la direzione e **tolto ogni vincolo sulle nuove dipendenze** («disponibile a progetti più radicali»). I grafici del prototipo restano QPainter perché già fatti, non per una regola; (2) risultato «il più rifinito possibile, **a costo di ridisegnare tutta l'interfaccia**»; (3) **schema v26** (`athletes.history_json`) autorizzato, anche se il piano scriveva «Lotto G: nessuna modifica schema»: senza storico non si può fare il grafico forma/fatica né le «ultime 10 gare»; (4) font **Inter** (OFL) incluso in `assets/fonts/` (4 pesi, 1,6 MB con la licenza).
 
@@ -576,6 +576,8 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Mie scelte, da confermare:** (a) i titoli delle sezioni non sono più in maiuscolo; (b) la Rosa si chiama solo «Rosa» (il titolo lungo non stava con i pulsanti, con Inter più largo); (c) una tabella più larga dello spazio mostra la barra di scorrimento orizzontale invece di tagliare i testi; (d) il pulsante «Partita» perde la freccia testuale e prende un'icona; (e) l'icona di ogni voce della barra laterale la scelgo io (`icons.NAV_ICONS`).
 
+**Confermato dall'utente il 2026-11-21, nessuna modifica al codice:** tutte le «mie scelte» di G.1 (Dashboard), G.2 (scheda atleta), G.3 (tabellone live) e del design system esteso, così come elencate sopra. Resta valida la nota sulla doppia manutenzione del ripiego QWidget della Dashboard.
+
 
 ## Q41 — Gare di corsa «piatte» e rientro alla corda nei 800m e 1500m — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
 
@@ -598,7 +600,7 @@ gara). **Misurate su 226 gare di 5 partite:** con queste cifre il 29% dei 100m e
 scena non contraddice il piano ma non lo riflette); (b) le **staffette** non hanno stile (i cambi di testimone restano com'erano); (c) la **4x400m** usa la formazione dopo i 400 m (rientro a 515,6 m, fine della prima curva della seconda frazione); come le altre staffette **non ha stile**, quindi nessun sorpasso; (d) nei concorsi nulla cambia;
 (e) chi taglia il traguardo esce verso l'esterno (prima restava sul posto e l'ultimo attraversava il gruppo).
 
-**Da decidere:** (a) legare lo stile al carattere dell'atleta o al piano gara B.1; (b) ampiezze diverse per categoria; (c) staffette con sorpassi ai cambi; (d) la 4x400m con sorpassi (oggi tutte le squadre seguono la stessa curva).
+**Deciso il 2026-11-21 (utente):** (a) cifre dello stile e della formazione confermate; (b) **lo stile del tuo atleta segue il piano gara B.1**: `plan_pace_style` (ritmo + scatto, `PLAN_PACE_STYLE`, `PLAN_KICK_STYLE`, cifre mie), memorizzato in `EventResult.plan_style` (nel JSON della storia dei meeting, senza migrazione di schema) e usato da `race_viewer.runner_style` sia dalle viste PyQt sia dall'export per Godot (Godot legge la stessa colonna `pace_style`: nessun codice GDScript cambiato); gli avversari restano casuali; solo 800m/1500m (gli altri eventi non hanno un piano di ritmo); (c) staffette con sorpassi ai cambi: **scelto, da fare** (vedi sotto).
 
 ## Q42 — Inviti alla Diamond League (PIANOLAVORO C.1b) — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
 

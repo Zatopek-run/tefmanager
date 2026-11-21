@@ -16,6 +16,8 @@ from models.database import DatabaseManager
 from models.entities import (
     KICK_EFFECTS,
     PACE_EFFECTS,
+    PLAN_KICK_STYLE,
+    PLAN_PACE_STYLE,
     STRATEGY_EVENTS,
     STRATEGY_STAMINA_REF,
     CompetitionTier,
@@ -23,6 +25,7 @@ from models.entities import (
     RacePace,
 )
 from models.simulation import (
+    plan_pace_style,
     race_strategy_effect,
     simulate_competition,
     strategy_endurance_factor,
@@ -93,6 +96,33 @@ def _meet_state(seed: int = 3):
     return state, runner
 
 
+class TestPlanStyle(unittest.TestCase):
+    """Q41b: lo stile di passo in scena del tuo atleta segue il piano gara (solo messa in scena)."""
+
+    def test_the_neutral_plan_fixes_nothing(self) -> None:
+        self.assertIsNone(plan_pace_style(RacePace.MEDIO, RaceKick.NESSUNO))
+
+    def test_a_fast_start_goes_out_hard_a_slow_one_comes_from_behind(self) -> None:
+        self.assertGreater(plan_pace_style(RacePace.VELOCE, RaceKick.NESSUNO), 0)  # parte forte e cala
+        self.assertLess(plan_pace_style(RacePace.LENTO, RaceKick.NESSUNO), 0)  # parte piano e chiude forte
+
+    def test_a_kick_pushes_towards_a_strong_finish_and_a_longer_kick_more(self) -> None:
+        values = [plan_pace_style(RacePace.MEDIO, k) for k in (RaceKick.ULTIMI_200, RaceKick.ULTIMO_GIRO)]
+        self.assertTrue(all(v < 0 for v in values))
+        self.assertLess(values[1], values[0])
+
+    def test_the_value_is_always_in_the_range_the_staging_accepts(self) -> None:
+        for pace in RacePace:
+            for kick in RaceKick:
+                value = plan_pace_style(pace, kick)
+                if value is not None:
+                    self.assertTrue(-1.0 <= value <= 1.0, (pace, kick))
+
+    def test_every_pace_and_kick_has_a_style(self) -> None:
+        self.assertEqual(set(PLAN_PACE_STYLE), set(RacePace))
+        self.assertEqual(set(PLAN_KICK_STYLE), set(RaceKick))
+
+
 class TestStrategyInSimulation(unittest.TestCase):
     def run_meet(self, pace: RacePace, kick: RaceKick, event: str = "1500m"):
         state, runner = _meet_state()
@@ -133,6 +163,21 @@ class TestStrategyInSimulation(unittest.TestCase):
         self.assertIn("Ritmo Veloce", planned.attitude)
         self.assertIn("Ultimi 200m", planned.attitude)
 
+    def test_the_result_carries_the_plan_style_only_for_the_planned_race(self) -> None:
+        _s, _r, _sum, plain = self.run_meet(RacePace.MEDIO, RaceKick.NESSUNO)
+        self.assertIsNone(plain.plan_style)
+        _s, _r, summary, planned = self.run_meet(RacePace.VELOCE, RaceKick.ULTIMI_200)
+        self.assertEqual(planned.plan_style, plan_pace_style(RacePace.VELOCE, RaceKick.ULTIMI_200))
+        others = [r for r in summary.event_results if not (r.event_name == "1500m" and r.gender == "M")]
+        self.assertTrue(all(r.plan_style is None for r in others))  # l'800m, i 100m, i concorsi non lo portano
+
+    def test_the_plan_style_does_not_change_the_result(self) -> None:
+        """Solo messa in scena: lo stile non entra in nessun calcolo (il tempo cambia solo per gli effetti del piano B.1)."""
+        _s, _r, _sum, a = self.run_meet(RacePace.VELOCE, RaceKick.NESSUNO)
+        _s, _r, _sum, b = self.run_meet(RacePace.VELOCE, RaceKick.NESSUNO)
+        self.assertEqual(a.player_mark, b.player_mark)
+        self.assertEqual(a.plan_style, b.plan_style)
+
     def test_deterministic_with_the_same_seed(self) -> None:
         a = self.run_meet(RacePace.VELOCE, RaceKick.ULTIMI_200)[3]
         b = self.run_meet(RacePace.VELOCE, RaceKick.ULTIMI_200)[3]
@@ -150,6 +195,21 @@ class TestStrategyState(unittest.TestCase):
 
     def test_strategy_events_are_the_middle_distance_events(self) -> None:
         self.assertEqual(set(STRATEGY_EVENTS), {"800m", "1500m"})
+
+    def test_plan_style_roundtrips_through_the_database(self) -> None:
+        state, _runner = _meet_state()
+        state.race_strategy["1500m"] = {"pace": "Veloce", "kick": "Ultimi 200m"}
+        summary = simulate_competition(state, rng=random.Random(11))
+        state.competition_history.insert(0, summary)
+        planned = next(r for r in summary.event_results if r.event_name == "1500m" and r.gender == "M")
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(db_path=Path(tmp) / "s.db")
+            db.save_game(state)
+            loaded = db.load_game()
+        got = {(r.event_name, r.gender): r.plan_style for r in loaded.competition_history[0].event_results}
+        self.assertEqual(got[("1500m", "M")], planned.plan_style)
+        self.assertIsNotNone(got[("1500m", "M")])
+        self.assertTrue(all(v is None for k, v in got.items() if k != ("1500m", "M")))
 
     def test_strategy_roundtrips_through_the_database(self) -> None:
         state = make_state(3)

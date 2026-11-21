@@ -456,3 +456,13 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | `NARRATIVE_TENSION_RELATION` | 30: relazione con l'agente sotto la quale c'è «tensione nello spogliatoio» | `entities.py` |
 | `NARRATIVE_COACH_REPUTATION` | +1 reputazione (tetto 100) per «Allenatore del Mese» (Q36c, cifra mia, 2026-11-21) | `entities.py` |
 | infortuni gravi | soglia = `RETIREMENT_INJURIES_PER_SEASON` (3) infortuni nella stagione; da `RETIREMENT_INJURY_MIN_AGE` (30) anni la riga cita il rischio di ritiro (Q36b) | `entities.py`, `narrative.py` |
+
+## Stile di passo dal piano gara (Q41b, 2026-11-21) — CIFRE MIE PROVVISORIE
+
+Solo messa in scena: non entra in nessun risultato. Stile in [−1, 1] (> 0 parte forte e cala, < 0 parte piano e chiude forte); vale solo per il tuo atleta in un 800m/1500m con piano non neutro.
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `PLAN_PACE_STYLE` | Lento −0,5 · Medio 0 · Veloce +0,8 | `entities.py` |
+| `PLAN_KICK_STYLE` | Nessuno 0 · Ultimi 200m −0,4 · Ultimo giro −0,7 | `entities.py` |
+| `PLAN_STYLE_JITTER` | 0,2: quota dello stile casuale di sempre che si somma a ritmo + scatto, poi limitato a [−1, 1] | `entities.py` |

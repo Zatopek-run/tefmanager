@@ -19,7 +19,7 @@ from typing import List, Optional
 from models.bibs import assign_bibs, bib_key
 from models.entities import CompetitionSummary, EventResult, EventStanding
 from models.generator import infer_gender
-from views.race_viewer import _rng, generate_attempts, pace_style, reaction_time
+from views.race_viewer import _rng, generate_attempts, reaction_time, runner_style
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
@@ -123,7 +123,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     reference_time if _stop_status(result, s) is not None else s.mark_value,
                     _stop_status(result, s) or "OK",
                     bibs[bib_key(s)],
-                    round(pace_style(seed, s.athlete_name), 4),  # stessa funzione e stesso seme delle viste PyQt: la stessa gara si vede uguale
+                    round(runner_style(result, s, seed), 4),  # stessa funzione e stesso seme delle viste PyQt: la stessa gara si vede uguale
                 )
                 for s in standings
             ],

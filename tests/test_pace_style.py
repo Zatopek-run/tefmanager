@@ -34,6 +34,7 @@ from views.race_viewer import (
     is_field_event,
     pace_amplitude,
     pace_style,
+    runner_style,
     position_fraction,
     warp_time,
 )
@@ -219,6 +220,52 @@ class TestOnRealRaces(unittest.TestCase):
                 self.assertLessEqual(a["s"].mark_value, b["s"].mark_value)
 
 
+class TestRunnerStyleFollowsThePlan(unittest.TestCase):
+    """Q41b: il tuo atleta con un piano non neutro corre nello stile del piano; tutti gli altri restano casuali."""
+
+    def standing(self, name: str, is_player: bool):
+        from models.entities import EventStanding
+
+        return EventStanding(athlete_name=name, team_name="Noi" if is_player else "Altri", is_player=is_player, mark_value=100.0, mark_display="1:40.00")
+
+    def result(self, plan):
+        from models.entities import EventResult
+
+        return EventResult(
+            event_name="1500m", player_athlete_name="Mario Rossi", placement=1, total_competitors=8, player_mark="3:40.00",
+            prize_money=0, prestige_gained=0, plan_style=plan,
+        )
+
+    def test_without_a_plan_everybody_is_random_as_before(self) -> None:
+        for is_player in (True, False):
+            s = self.standing("Mario Rossi", is_player)
+            self.assertEqual(runner_style(self.result(None), s, "4-Meet"), pace_style("4-Meet", "Mario Rossi"))
+
+    def test_rivals_ignore_the_plan(self) -> None:
+        rival = self.standing("Luigi Verdi", False)
+        self.assertEqual(runner_style(self.result(0.8), rival, "4-Meet"), pace_style("4-Meet", "Luigi Verdi"))
+
+    def test_the_player_follows_the_plan_with_a_little_randomness(self) -> None:
+        from models.entities import PLAN_STYLE_JITTER
+
+        s = self.standing("Mario Rossi", True)
+        base = pace_style("4-Meet", "Mario Rossi")
+        self.assertAlmostEqual(runner_style(self.result(0.5), s, "4-Meet"), 0.5 + PLAN_STYLE_JITTER * base)
+        # i due estremi del piano restano distinti da qualunque scostamento casuale
+        self.assertGreater(runner_style(self.result(0.8), s, "4-Meet"), runner_style(self.result(-0.7), s, "4-Meet"))
+
+    def test_the_style_is_clamped_to_the_staging_range(self) -> None:
+        s = self.standing("Mario Rossi", True)
+        for plan in (1.0, -1.0):
+            for seed in range(50):
+                self.assertTrue(-1.0 <= runner_style(self.result(plan), s, f"{seed}-Meet") <= 1.0)
+
+    def test_the_finish_stays_exact_with_the_plan_style(self) -> None:
+        for plan in (-1.0, -0.4, 0.8, 1.0):
+            self.assertAlmostEqual(curve_progress("1500m", 1.0, style=plan), 1.0, places=9)
+            self.assertAlmostEqual(curve_progress("1500m", 0.0, style=plan), 0.0, places=9)
+
+
 class TestExport(unittest.TestCase):
     def test_the_export_carries_the_same_style_and_upgrades_old_databases(self) -> None:
         tmp, history = played_meetings(seeds=(3,))[0]
@@ -232,7 +279,8 @@ class TestExport(unittest.TestCase):
             seed = f"{summ.week}-{summ.meet_name}"
             self.assertEqual(len(rows), len(res.standings))
             for name, style in rows:
-                self.assertAlmostEqual(style, pace_style(seed, name), places=4)
+                std = next(s for s in res.standings if s.athlete_name == name)
+                self.assertAlmostEqual(style, runner_style(res, std, seed), places=4)  # stessa funzione delle viste PyQt
                 self.assertTrue(-1.0 <= style <= 1.0)
             # un file di un'esportazione precedente (senza la colonna) riceve la colonna invece di far fallire l'inserimento
             old = Path(d) / "old.db"

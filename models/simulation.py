@@ -72,6 +72,8 @@ from models.entities import (
     STAFF_ATTR_REF,
     RaceAttitude,
     FieldRisk,
+    PLAN_KICK_STYLE,
+    PLAN_PACE_STYLE,
     RaceKick,
     RacePace,
     RelayChange,
@@ -778,6 +780,14 @@ def race_strategy_effect(
     return score, fatigue
 
 
+def plan_pace_style(pace: RacePace, kick: RaceKick) -> Optional[float]:
+    """Stile di passo in scena che il piano gara dà al tuo atleta (Q41b): ritmo + scatto, tra −1 e 1; None con il piano neutro
+    (Medio, Nessuno), che lascia lo stile casuale. Solo messa in scena: non entra in nessun risultato."""
+    if pace == RacePace.MEDIO and kick == RaceKick.NESSUNO:
+        return None
+    return max(-1.0, min(1.0, PLAN_PACE_STYLE[pace] + PLAN_KICK_STYLE[kick]))
+
+
 def strategy_label(pace: RacePace, kick: RaceKick) -> str:
     """Testo per i risultati; vuoto con il piano neutro (Medio, Nessuno)."""
     if pace == RacePace.MEDIO and kick == RaceKick.NESSUNO:
@@ -979,8 +989,10 @@ def simulate_competition(
             attitude = state.attitude_for(event_name)
             att = ATTITUDE_EFFECTS[attitude]
             strategy_score, strategy_fatigue, strategy_text = 0.0, 0, ""
+            plan_style: Optional[float] = None
             if event_name in STRATEGY_EVENTS:  # piano gara di 800m/1500m (B.1)
                 pace, kick = state.strategy_for(event_name)
+                plan_style = plan_pace_style(pace, kick)  # Q41b: la messa in scena segue il piano
                 strategy_score, strategy_fatigue = race_strategy_effect(player_athlete.stamina, state.tier, pace, kick)
                 strategy_text = strategy_label(pace, kick)
             risk = FieldRisk.SICURO
@@ -1188,6 +1200,7 @@ def simulate_competition(
                     attitude=f"{attitude.value} · {strategy_text}" if strategy_text else attitude.value,
                     withdrew_injured=withdrew,
                     gender=gender,
+                    plan_style=plan_style,
                 )
             )
             event_results.append(individual_result)

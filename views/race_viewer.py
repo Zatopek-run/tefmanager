@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from models.entities import (
     EVENTS,
+    PLAN_STYLE_JITTER,
     CompetitionSummary,
     CompetitionTier,
     EventResult,
@@ -111,6 +112,19 @@ def pace_amplitude(kind: str) -> float:
 def pace_style(seed: object, name: str) -> float:
     """Stile di passo di un corridore in [-1, 1] (uguale per le viste PyQt e per Godot, che lo legge dall'export)."""
     return _rng(seed, "style", name).uniform(-1.0, 1.0)
+
+
+def runner_style(result, standing, seed: object) -> float:
+    """Stile di passo in scena di un corridore (**unica fonte** per le viste PyQt e per l'export verso Godot).
+
+    Il tuo atleta con un piano gara non neutro (`EventResult.plan_style`, Q41b) corre nello stile del piano, più il
+    `PLAN_STYLE_JITTER` dello stile casuale; tutti gli altri hanno lo stile casuale di sempre. Resta in [-1, 1]. Non cambia i risultati.
+    """
+    base = pace_style(seed, standing.athlete_name)
+    plan = getattr(result, "plan_style", None)
+    if plan is None or not standing.is_player:
+        return base
+    return max(-1.0, min(1.0, plan + PLAN_STYLE_JITTER * base))
 
 
 def warp_time(kind: str, u: float, style: float) -> float:
@@ -275,7 +289,7 @@ class TrackRaceWidget(QWidget):
                     "dnf": is_dnf,
                     "phase": _rng(seed, s.athlete_name).uniform(0, 6.28),
                     "react": reaction_time(seed, s.athlete_name),
-                    "style": pace_style(seed, s.athlete_name),  # stile di passo: sorpassi in gara, arrivo invariato
+                    "style": runner_style(result, s, seed),  # stile di passo (piano gara per il tuo atleta): sorpassi in gara, arrivo invariato
                 }
             )
         self._winner_time = max(0.5, min(valid) if valid else 1.0)

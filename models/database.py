@@ -1313,6 +1313,7 @@ class DatabaseManager:
                                     "withdrew_injured": er.withdrew_injured,
                                     "disqualified": er.disqualified,
                                     "gender": er.gender,
+                                    "plan_style": er.plan_style,
                                     "standings": [
                                         {
                                             "athlete_name": s.athlete_name,
@@ -1465,6 +1466,7 @@ class DatabaseManager:
                             withdrew_injured=er.get("withdrew_injured", False),
                             disqualified=er.get("disqualified", False),
                             gender=er.get("gender", ""),
+                            plan_style=er.get("plan_style"),
                         )
                     )
                 history.append(

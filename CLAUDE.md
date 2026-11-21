@@ -229,7 +229,7 @@ Dettagli e valori di luce/camere in `godot_viewer/README.md`.
   reazione dalla stessa `reaction_time` della vista PyQt.
 - **`godot_viewer/models/RaceMotion.gd` è la copia GDScript** di `_velocity`/`curve_progress` di
   `race_viewer.py`: se cambi la curva dei 100m in Python, cambiala anche lì.
-- **Stile di passo e sorpassi (2026-11-21, Q41).** Ogni corridore ha `pace_style` in [-1, 1] (`views/race_viewer.pace_style`: stesso seme di `reaction_time`, **unica fonte**: Godot non lo
+- **Stile di passo e sorpassi (2026-11-21, Q41).** Ogni corridore ha `pace_style` in [-1, 1] (`views/race_viewer.runner_style`, che avvolge `pace_style` (stesso seme di `reaction_time`) ed è l'**unica fonte**; dal 2026-11-21 (Q41b) per il tuo atleta in un 800m/1500m con piano gara non neutro lo stile segue il piano (`EventResult.plan_style`, `simulation.plan_pace_style`): Godot non lo
   ricalcola, lo legge dalla colonna `race_results.pace_style` che esporta `race_export.py`). Il tempo normalizzato si deforma in u' = u + style·AMP·sin(π·u): via e **arrivo restano esatti**,
   in mezzo c'è chi parte forte e cala e chi chiude forte. `PACE_AMPLITUDE` (100m 0,008, 400m 0,012, 800m 0,016, 1500m 0,014; staffette 0) sta in `race_viewer.py` **e** in `RaceMotion.gd`:
   cifre provvisorie, misurate su 226 gare vere. Stile 0 = valori di sempre (test di regressione). Il seed demo (`demo_seed.sql`) porta stili veri, altrimenti i test Godot girerebbero a stile 0.

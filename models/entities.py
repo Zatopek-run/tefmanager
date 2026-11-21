@@ -184,6 +184,12 @@ class RaceKick(str, Enum):
 
 
 STRATEGY_EVENTS: Tuple[str, ...] = ("800m", "1500m")
+# Stile di passo in scena del TUO atleta (Q41b, 2026-11-21, scelta dell'utente; cifre mie): segue il piano gara. Solo messa in scena:
+# l'esito non cambia. Stile in [-1, 1]: > 0 parte forte e cala, < 0 parte piano e chiude forte. Il piano Medio/Nessuno non fissa nulla
+# (resta lo stile casuale di sempre); altrimenti stile = ritmo + scatto, più un po' di casualità per non far correre tutti uguali.
+PLAN_PACE_STYLE: Dict[RacePace, float] = {RacePace.LENTO: -0.5, RacePace.MEDIO: 0.0, RacePace.VELOCE: 0.8}
+PLAN_KICK_STYLE: Dict[RaceKick, float] = {RaceKick.NESSUNO: 0.0, RaceKick.ULTIMI_200: -0.4, RaceKick.ULTIMO_GIRO: -0.7}
+PLAN_STYLE_JITTER = 0.2  # quota dello stile casuale di sempre che si somma a quello del piano
 # punteggio (× fattore di resistenza) e fatica post-gara
 PACE_EFFECTS: Dict[RacePace, Tuple[float, int]] = {
     RacePace.LENTO: (-2.0, -4),
@@ -1443,6 +1449,8 @@ class EventResult:
     withdrew_injured: bool = False
     disqualified: bool = False
     gender: str = ""
+    # Stile di passo in scena dell'atleta del club dal piano gara (Q41b); None = nessun piano (stile casuale). Solo messa in scena.
+    plan_style: Optional[float] = None
 
     @property
     def display_event_name(self) -> str:

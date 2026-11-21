@@ -147,6 +147,7 @@ class TestLiveBoard(unittest.TestCase):
         res = mock.Mock(wraps=res)  # stesso risultato, ma con il giocatore ritirato
         res.standings = self.results[0].standings
         res.withdrew_injured = True
+        res.plan_style = self.results[0].plan_style  # il Mock copia solo ciò che gli si dà
         res.event_name = self.results[0].event_name
         w = TrackRaceWidget()
         w.set_race(res.event_name, res, "x")
