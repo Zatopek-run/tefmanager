@@ -338,6 +338,14 @@ PRESS_REPUTATION: Dict[str, Dict[str, int]] = {
     "bad": {"soddisfatto": -2, "cauto": 0, "critico": 1},
 }
 PRESS_RELATION: Dict[str, int] = {"punto": 3, "valuto": 0, "dubbio": -3}
+# Q37c (2026-11-21, scelta dell'utente; cifra mia): una risposta alla domanda sulla prestazione che CAMBIA la reputazione in meglio dà
+# anche questa forma in più a tutta la Prima Squadra (un «morale» minimo: non esiste un morale per atleta). Nessun malus.
+PRESS_FORM_BONUS = 1
+# Q37d (2026-11-21, scelta dell'utente; cifre mie): terza domanda, solo se nel meeting un atleta di Prima Squadra ha battuto un record
+# sociale individuale. La risposta sposta i fan di quell'atleta e la relazione con il suo agente: elogiarlo premia, liberarsene con un
+# «era previsto» offende l'agente.
+PRESS_RECORD_FANS: Dict[str, int] = {"campione": 10, "gruppo": 4, "normale": 0}
+PRESS_RECORD_RELATION: Dict[str, int] = {"campione": 2, "gruppo": 0, "normale": -2}
 
 # Relazioni tra atleti (PIANOLAVORO F.3). CIFRE PROVVISORIE (Q38). Ogni coppia della Prima Squadra ha, in modo deterministico
 # (crc32 degli id, nessun RNG), nessuna relazione, un'amicizia (valore +40..+90) o una rivalità (−40..−90); il valore sta in

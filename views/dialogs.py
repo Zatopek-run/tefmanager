@@ -132,7 +132,7 @@ class PressConferenceDialog(QDialog):
         self._groups: dict[str, dict[str, QRadioButton]] = {}
         self._button_groups: list[QButtonGroup] = []
         self.setWindowTitle(f"Conferenza stampa — {conference.meet_name}")
-        self.resize(560, 420)
+        self.resize(560, 560 if len(conference.questions) > 2 else 420)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -158,7 +158,8 @@ class PressConferenceDialog(QDialog):
             self._groups[question.key] = buttons
         layout.addStretch()
         hint = QLabel(
-            "Le risposte cambiano la reputazione (a seconda del risultato) e la relazione con l'agente dell'atleta citato. "
+            "Le risposte cambiano la reputazione (a seconda del risultato; se piace, anche un po' di forma alla squadra) e la relazione con "
+            "l'agente dell'atleta citato; sul record cambiano anche i suoi fan. "
             "Senza risposta non succede nulla."
         )
         hint.setObjectName("SubTitle")

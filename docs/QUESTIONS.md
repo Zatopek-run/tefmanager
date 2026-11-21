@@ -505,7 +505,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Deciso il 2026-11-21 (utente):** (a) cadenza mensile, una riga per tipo, soglia 30 e le tre cause della stampa critica confermate; (b) altri eventi: solo **infortuni gravi** (`narrative.injuries_news`, 3+ infortuni in stagione = soglia del ritiro anticipato C.3; da 30 anni «rischia di dover dire basta»; nessun'altra: né contratti in scadenza né altro); (c) **«Allenatore del Mese» dà +1 reputazione** (`NARRATIVE_COACH_REPUTATION`, cifra mia; `narrative.coach_award`, applicato in `simulation` subito dopo `monthly_news`, tetto 100; la riga dichiara «(+1 reputazione)»). Nessun RNG, nessuno schema nuovo. La notizia si ripete ogni mese finché la condizione dura (decisione di prima, non rimessa in discussione).
 
-## Q37 — Conferenza stampa (PIANOLAVORO F.2) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**
+## Q37 — Conferenza stampa (PIANOLAVORO F.2) — ✅ FATTA il 2026-11-21: cifre confermate, solo dopo la gara, +1 forma, terza domanda sul record
 
 **Proposta dell'utente accettata** («vai con la tua proposta»): conferenza **dopo la gara** con due domande; la risposta sulla prestazione sposta la **reputazione**, quella sul futuro del miglior atleta sposta la **relazione con il suo agente**; chiudere senza rispondere non ha effetti.
 
@@ -515,7 +515,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Scostamenti dal piano:** (1) niente conferenza **prima** della gara; (2) niente «morale»: non esiste un morale per atleta (vedi AUDIT R34); (3) effetti sulla relazione con l'**agente**, non con l'atleta direttamente.
 
-**Da decidere:** (a) la conferenza pre-gara (sulle attese)? (b) un effetto delle risposte sulla **forma** della squadra (un «morale» minimo)? (c) più domande a seconda degli eventi (record, infortuni, polemiche)? (d) cifre e soglie.
+**Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) solo dopo la gara, niente conferenza pre-gara; (c) **un piccolo effetto sulla forma**: la risposta alla prima domanda che alza la reputazione dà `PRESS_FORM_BONUS` = +1 di forma a tutta la Prima Squadra (cifra mia, nessun malus; resta nessun morale per atleta: è un'eccezione minima alla scelta 1 di F.3); (d) **terza domanda sul record**: `PRESS_RECORD_FANS` / `PRESS_RECORD_RELATION` (cifre mie: «campione» +10 fan e +2 relazione, «gruppo» +4 e 0, «normale» 0 e −2), posta solo se un atleta di Prima Squadra ha battuto un record sociale individuale (`press.record_athlete_of`; con più record, il nome alfabeticamente primo; le staffette non contano). Nessun RNG, nessuno schema nuovo: fan e forma sono già salvati con gli atleti.
 
 
 ## Q38 — Relazioni tra atleti (PIANOLAVORO F.3) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**

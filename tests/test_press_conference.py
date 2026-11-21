@@ -12,6 +12,9 @@ import unittest
 from models.agents import agent_of, ensure_agents
 from models.entities import (
     AGENT_RELATION_MAX,
+    PRESS_FORM_BONUS,
+    PRESS_RECORD_FANS,
+    PRESS_RECORD_RELATION,
     PRESS_RELATION,
     PRESS_REPUTATION,
     CompetitionSummary,
@@ -25,10 +28,13 @@ from models.press import (
     FUTURE_OPTIONS,
     PERFORMANCE,
     PERFORMANCE_OPTIONS,
+    RECORD,
+    RECORD_OPTIONS,
     apply_answers,
     best_athlete_of,
     build_conference,
     performance_tier,
+    record_athlete_of,
 )
 from tests.test_assignments import make_state
 
@@ -203,3 +209,112 @@ class TestApply(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestFormBonus(unittest.TestCase):
+    """Q37c: una risposta che alza la reputazione dà anche forma alla Prima Squadra."""
+
+    def conf(self, state):
+        star = state.main_squad[0]
+        return build_conference(state, summary(1, results=[result(star.name, 1)])), star  # tier «good»
+
+    def test_a_welcome_answer_adds_form_to_the_whole_main_squad(self) -> None:
+        state = prepared()
+        for a in state.athletes:
+            a.form = 60
+        conf, _ = self.conf(state)
+        lines = apply_answers(state, conf, {PERFORMANCE: "soddisfatto"})  # +2 reputazione dopo una vittoria
+        self.assertTrue(all(a.form == 60 + PRESS_FORM_BONUS for a in state.main_squad))
+        self.assertTrue(all(a.form == 60 for a in state.athletes if a not in state.main_squad))  # il vivaio no
+        self.assertIn(f"forma squadra +{PRESS_FORM_BONUS}", lines[0])
+
+    def test_a_neutral_or_bad_answer_changes_no_form(self) -> None:
+        for tier_answer in ({PERFORMANCE: "critico"}, {PERFORMANCE: "cauto"}):  # dopo una vittoria: −2 e +1
+            state = prepared()
+            for a in state.athletes:
+                a.form = 60
+            conf, _ = self.conf(state)
+            apply_answers(state, conf, tier_answer)
+            expect = 60 + (PRESS_FORM_BONUS if PRESS_REPUTATION["good"][tier_answer[PERFORMANCE]] > 0 else 0)
+            self.assertTrue(all(a.form == expect for a in state.main_squad), tier_answer)
+
+    def test_form_is_capped_at_100(self) -> None:
+        state = prepared()
+        for a in state.athletes:
+            a.form = 100
+        conf, _ = self.conf(state)
+        apply_answers(state, conf, {PERFORMANCE: "soddisfatto"})
+        self.assertTrue(all(a.form == 100 for a in state.main_squad))
+
+    def test_no_form_change_from_the_other_questions(self) -> None:
+        state = prepared()
+        for a in state.athletes:
+            a.form = 60
+        conf, _ = self.conf(state)
+        apply_answers(state, conf, {FUTURE: "punto"})
+        self.assertTrue(all(a.form == 60 for a in state.athletes))
+
+
+class TestRecordQuestion(unittest.TestCase):
+    """Q37d: terza domanda se un atleta di Prima Squadra batte un record sociale."""
+
+    def setup_state(self):
+        state = prepared()
+        a, b = state.main_squad[0], state.main_squad[1]
+        return state, a, b
+
+    def test_it_exists_only_with_a_club_record_by_a_main_squad_athlete(self) -> None:
+        state, a, _ = self.setup_state()
+        none = build_conference(state, summary(1, results=[result(a.name, 1)]))
+        self.assertEqual([q.key for q in none.questions], [PERFORMANCE, FUTURE])
+        rec = build_conference(state, summary(1, results=[result(a.name, 1, is_club_record=True)]))
+        self.assertEqual([q.key for q in rec.questions], [PERFORMANCE, FUTURE, RECORD])
+        self.assertEqual(rec.questions[2].athlete_name, a.name)
+        self.assertIn(a.name, rec.questions[2].text)
+        self.assertEqual(set(rec.questions[2].options), set(RECORD_OPTIONS))
+        stranger = build_conference(state, summary(1, results=[result("Sconosciuto", 1, is_club_record=True)]))
+        self.assertNotIn(RECORD, [q.key for q in stranger.questions])
+
+    def test_ties_go_to_the_first_name(self) -> None:
+        state, a, b = self.setup_state()
+        s = summary(1, results=[result(b.name, 2, is_club_record=True), result(a.name, 1, is_club_record=True)])
+        self.assertEqual(record_athlete_of(state, s).name, min(a.name, b.name))
+
+    def test_every_answer_defines_fans_and_relation(self) -> None:
+        self.assertEqual(set(PRESS_RECORD_FANS), set(RECORD_OPTIONS))
+        self.assertEqual(set(PRESS_RECORD_RELATION), set(RECORD_OPTIONS))
+        self.assertGreater(PRESS_RECORD_FANS["campione"], PRESS_RECORD_FANS["gruppo"])
+        self.assertGreater(PRESS_RECORD_FANS["gruppo"], PRESS_RECORD_FANS["normale"])
+        self.assertLess(PRESS_RECORD_RELATION["normale"], 0)
+
+    def test_the_answer_moves_the_fans_and_the_agent_of_the_record_holder_only(self) -> None:
+        for answer in RECORD_OPTIONS:
+            state, a, b = self.setup_state()
+            a.fans = b.fans = 100
+            conf = build_conference(state, summary(1, results=[result(a.name, 1, is_club_record=True)]))
+            before = agent_of(state, a).relation
+            others = {g.id: g.relation for g in state.agents if g.id != a.agent_id}
+            lines = apply_answers(state, conf, {RECORD: answer})
+            self.assertEqual(a.fans, 100 + PRESS_RECORD_FANS[answer], answer)
+            self.assertEqual(b.fans, 100)
+            self.assertEqual(
+                agent_of(state, a).relation, max(0, min(AGENT_RELATION_MAX, before + PRESS_RECORD_RELATION[answer])), answer
+            )
+            self.assertEqual({g.id: g.relation for g in state.agents if g.id != a.agent_id}, others)
+            self.assertEqual(state.reputation, 50)
+            self.assertEqual(len(lines), 1)
+            self.assertIn(a.name, lines[0])
+
+    def test_an_unknown_answer_does_nothing(self) -> None:
+        state, a, _ = self.setup_state()
+        a.fans = 100
+        conf = build_conference(state, summary(1, results=[result(a.name, 1, is_club_record=True)]))
+        self.assertEqual(apply_answers(state, conf, {RECORD: "boh"}), [])
+        self.assertEqual(a.fans, 100)
+
+    def test_without_the_record_question_a_record_answer_is_ignored(self) -> None:
+        state, a, _ = self.setup_state()
+        a.fans = 100
+        conf = build_conference(state, summary(1, results=[result(a.name, 1)]))
+        self.assertEqual(apply_answers(state, conf, {RECORD: "campione"}), [])
+        self.assertEqual(a.fans, 100)
+

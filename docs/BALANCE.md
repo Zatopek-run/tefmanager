@@ -390,6 +390,8 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | Reputazione · media | soddisfatto 0, cauto +1, critico 0 | `PRESS_REPUTATION["average"]` |
 | Reputazione · brutta | soddisfatto −2, cauto 0, critico +1 | `PRESS_REPUTATION["bad"]` |
 | Relazione con l'agente del miglior atleta | punto fermo +3, valuteremo 0, posto non garantito −3 | `PRESS_RELATION` |
+| Forma alla squadra (Q37c, 2026-11-21, cifra mia) | +1 a tutta la Prima Squadra se la risposta sulla prestazione alza la reputazione; nessun malus | `PRESS_FORM_BONUS` |
+| Domanda sul record (Q37d, cifre mie) | solo con un record sociale individuale di un atleta di Prima Squadra: «campione» +10 fan e +2 relazione con l'agente, «gruppo» +4 fan e 0, «normale» 0 fan e −2 | `PRESS_RECORD_FANS`, `PRESS_RECORD_RELATION` |
 
 Ordine di grandezza: al massimo +2 di reputazione per meeting (9-10 meeting a stagione); la reputazione pesa sugli sponsor (`0,65 + rep/100 × 0,55`) e sulla domanda di pubblico (`0,6 + rep/250`), quindi ±2 vale circa ±1% dello sponsor. Il +3 / −3 sulla relazione è di poco più di una stagione di «resta fermo» (−2 per atleta).
 

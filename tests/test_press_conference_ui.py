@@ -22,7 +22,7 @@ from controllers.game_controller import GameController
 from models.agents import agent_of
 from models.database import DatabaseManager
 from models.entities import PRESS_RELATION, PRESS_REPUTATION
-from models.press import FUTURE, PERFORMANCE, build_conference
+from models.press import FUTURE, PERFORMANCE, RECORD, build_conference
 from tests.support import start_game
 from tests.test_press_conference import result, summary
 from views.dialogs import PressConferenceDialog
@@ -97,6 +97,16 @@ class TestDialog(_Base):
         self.assertEqual(set(dlg._groups), {PERFORMANCE, FUTURE})
         for group in dlg._groups.values():
             self.assertEqual(len(group), 3)
+
+    def test_a_club_record_adds_a_third_question_and_a_taller_window(self) -> None:
+        self.summary.event_results[0].is_club_record = True
+        dlg = self.make()
+        self.assertEqual(set(dlg._groups), {PERFORMANCE, FUTURE, RECORD})
+        self.assertEqual(len(dlg._groups[RECORD]), 3)
+        dlg._groups[RECORD]["campione"].setChecked(True)
+        dlg._answer()
+        self.assertEqual(dlg.answers, {RECORD: "campione"})
+        self.assertGreaterEqual(dlg.height(), 560)  # più alta della finestra a due domande (420)
 
     def test_the_two_questions_are_answered_independently(self) -> None:
         dlg = self.make()
