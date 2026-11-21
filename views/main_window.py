@@ -42,10 +42,10 @@ from views.dialogs import (
 )
 from views.race_viewer import RaceViewerDialog
 from views.start_screen import StartScreen
+from views.dashboard_qml import DashboardTab
 from views.styles import DARK_STYLESHEET
 from views.tabs import (
     CalendarTab,
-    DashboardTab,
     FinancesTab,
     RankingTab,
     RecordsTab,

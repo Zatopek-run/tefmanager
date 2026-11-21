@@ -27,6 +27,7 @@ from models.simulation import advance_week
 from tests.support import start_game
 from views import theme
 from views.main_window import MainWindow
+from views.tabs import WidgetDashboardTab
 from views.widgets import (
     BADGE_LEVEL_ROLE,
     HeatMapWidget,
@@ -139,14 +140,17 @@ class TestWidgets(unittest.TestCase):
         self.assertFalse(widget.grab().toImage().isNull())
 
 
-class TestDashboard(unittest.TestCase):
+class TestWidgetDashboard(unittest.TestCase):
+    """La Dashboard QWidget, ora **ripiego** di quella QML (`WidgetDashboardTab`): resta provata perché è ciò che si vede senza GPU."""
+
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.ctrl = _career(Path(tmp.name) / "s.db")
         self.win = MainWindow(controller=self.ctrl)
         self.addCleanup(self.win.close)
-        self.dash = self.win.dashboard_tab
+        self.dash = WidgetDashboardTab(self.ctrl)
+        self.addCleanup(self.dash.close)
 
     def refresh(self) -> None:
         self.dash.refresh(self.ctrl.state)

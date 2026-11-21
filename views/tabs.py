@@ -191,10 +191,7 @@ def _make_stat_card(
     return card, value_lbl, sub_lbl
 
 
-EMPTY_SQUAD_TEXT = (
-    "Nessun atleta in rosa. Vai a «Vivaio && Osservatori» per lo scouting dei giovani, oppure a «Rosa && Allenamenti» "
-    "→ «Mercato Svincolati» per tesserare i primi atleti."
-)
+from models.dashboard import EMPTY_SQUAD_TEXT, weekly_action_items as _weekly_action_items  # noqa: E402 - spostati nel modello (G.1 in QML)
 
 
 def _empty_hint(text: str) -> QLabel:
@@ -207,87 +204,8 @@ def _empty_hint(text: str) -> QLabel:
     return label
 
 
-def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = None) -> list[tuple[str, str, int]]:
-    """Return actionable alerts `(text, severity, target_tab_index)` for the current week."""
-    items: list[tuple[str, str, int]] = []
-    by_id = {a.id: a for a in state.main_squad}
-
-    if not state.main_squad:  # società senza atleti: il primo passo è tesserarli, non coprire 12 gare
-        items.append(("Nessun atleta in rosa: apri lo scouting e tessera i primi atleti", "warn", 2))
-
-    missing_lineups = 0
-    injured_lineups = 0
-    lineup_ids: set[int] = set()
-    for gender in ("M", "F") if state.main_squad else ():
-        lineup = state.lineup_for(gender)
-        for ev in state.active_events:
-            aid = lineup.get(ev)
-            ath = by_id.get(aid) if aid is not None else None
-            if ath is None:
-                missing_lineups += 1
-            else:
-                lineup_ids.add(aid)
-                if ath.is_injured:
-                    injured_lineups += 1
-
-    if missing_lineups or injured_lineups:
-        parts = []
-        if missing_lineups:
-            parts.append(f"{missing_lineups} gare scoperte")
-        if injured_lineups:
-            parts.append(f"{injured_lineups} infortunati")
-        sev = "danger" if state.is_competition_week else "warn"
-        items.append((f"Convocazioni: {', '.join(parts)}", sev, 3))
-
-    injured_bench = sum(
-        1 for a in state.main_squad if a.is_injured and a.id not in lineup_ids
-    )
-    if injured_bench:
-        items.append((f"{injured_bench} infortunati non convocati in formazione", "warn", 1))
-
-    if not state.bankrupt and state.budget < 0:
-        sev = "danger" if state.budget <= BANKRUPTCY_THRESHOLD // 2 else "warn"
-        items.append((f"Bilancio in rosso: €{state.budget:,}", sev, 7))
-
-    if free_agent_pool is not None and not free_agent_pool:
-        items.append(("Mercato: nuovi svincolati da valutare questa settimana", "ok", 1))
-
-    incomplete_relays = 0
-    for gender in ("M", "F") if state.main_squad else ():
-        relays = state.relays_for(gender)
-        for name in state.active_relays:
-            r = relays.get(name)
-            if r is None or not r.is_complete:
-                incomplete_relays += 1
-    if incomplete_relays:
-        items.append((f"Staffette: {incomplete_relays} formazioni incomplete", "warn", 4))
-
-    tired = sum(1 for a in state.main_squad if not a.is_injured and a.fatigue >= 75)
-    if tired:
-        msg = (
-            f"Gara vicina: {tired} atleti stanchi (valuta Scarico)"
-            if state.is_competition_week
-            else f"{tired} atleti con fatica ≥ 75%"
-        )
-        items.append((msg, "danger" if state.is_competition_week else "warn", 1))
-
-    overloaded = sum(1 for c in state.coaches if state.coach_load(c) > COACH_COMFORT_LOAD)
-    if overloaded:
-        items.append((f"{overloaded} allenatori oltre {COACH_COMFORT_LOAD} atleti", "warn", 6))
-
-    if state.track_condition < 60:
-        items.append((f"Pista usurata al {state.track_condition}% (manutenzione)", "warn", 6))
-
-    if state.scouting_points_left >= 2 and len(state.youth_squad) < YOUTH_SQUAD_MAX:
-        items.append((f"Osservatori: {state.scouting_points_left} punti scouting", "ok", 2))
-
-    if not items:
-        items.append(("Tutto pronto per avanzare la settimana.", "ok", 0))
-    return items
-
-
-class DashboardTab(QWidget):
-    """Panoramica (G.1): indicatori, andamento di forma e fatica, stagione, heat map atleti × gare, priorità e cronaca."""
+class WidgetDashboardTab(QWidget):
+    """Panoramica (G.1) in QWidget: **ripiego** della Dashboard QML (`views/dashboard_qml.py`) se QML non parte o con `TEF_NO_QML=1`."""
 
     navigate_requested = pyqtSignal(int)
     TOP_ATHLETES = 8  # righe della tabella dei migliori atleti

@@ -143,24 +143,26 @@ class TestViews(_Case):
             self.win.tabs.widget(i).grab()  # disegna davvero la scheda
 
     def test_the_dashboard_tells_what_to_do(self) -> None:
+        # Dal G.1 in QML la Dashboard disegna `dashboard_tab.snapshot`: le asserzioni di prima (che leggevano i widget) leggono lo snapshot.
         self._refresh()
-        dash = self.win.dashboard_tab
-        self.assertIn("Nessun atleta", dash.squad_val.text())
-        self.assertIn("Vivaio", dash.squad_sub.text())
-        self.assertEqual(dash.top_table.rowCount(), 1)
-        self.assertIn("Nessun atleta in rosa", dash.top_table.item(0, 0).text())
-        buttons = [dash.actions_box.itemAt(i).widget().text() for i in range(dash.actions_box.count())]
+        snap = self.win.dashboard_tab.snapshot
+        kpi = {k["key"]: k for k in snap["kpis"]}
+        self.assertIn("Nessun atleta", kpi["squad"]["value"])
+        self.assertIn("Vivaio", kpi["squad"]["sub"])
+        self.assertEqual(snap["top"]["rows"], [])
+        self.assertIn("Nessun atleta in rosa", snap["top"]["emptyText"])
+        buttons = [a["text"] for a in snap["actions"]]
         self.assertTrue(any("Nessun atleta in rosa" in b for b in buttons))
         self.assertFalse(any("gare scoperte" in b for b in buttons))  # non 12 gare scoperte per una rosa che non c'è
-        objectives = [dash.objectives_list.item(i).text() for i in range(dash.objectives_list.count())]
+        objectives = [o["text"] for o in snap["objectives"]]
         self.assertTrue(any("0/6" in o for o in objectives))
 
     def test_the_dashboard_shows_the_preparation_and_the_season_length(self) -> None:
         self._refresh()
-        dash = self.win.dashboard_tab
-        self.assertEqual(dash.tier_progress.maximum(), 44)
-        self.assertIn("44", dash.tier_progress.format().replace("mancano 44", "44"))
-        self.assertIn("Tra 11 sett.", dash.comp_val.text())
+        snap = self.win.dashboard_tab.snapshot
+        self.assertEqual(snap["season"]["progress"]["max"], 44)
+        self.assertIn("44", snap["season"]["progress"]["text"].replace("mancano 44", "44"))
+        self.assertIn("Tra 11 sett.", {k["key"]: k for k in snap["kpis"]}["race"]["value"])
         self.assertIn("Preparazione", self.win.date_label.text())
 
     def test_the_empty_tabs_explain_how_to_start(self) -> None:

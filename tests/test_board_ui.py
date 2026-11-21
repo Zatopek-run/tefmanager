@@ -95,8 +95,7 @@ class TestViews(unittest.TestCase):
         self.addCleanup(self.win.close)
 
     def dashboard_lines(self) -> list:
-        lst = self.win.dashboard_tab.objectives_list
-        return [lst.item(i).text() for i in range(lst.count())]
+        return [o["text"] for o in self.win.dashboard_tab.snapshot["objectives"]]  # G.1 in QML: la Dashboard disegna lo snapshot
 
     def test_the_dashboard_shows_the_objectives_with_their_progress(self) -> None:
         lines = self.dashboard_lines()
