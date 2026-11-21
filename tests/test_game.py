@@ -1477,9 +1477,11 @@ class TestPyQtViewsV2(unittest.TestCase):
             from models.entities import NATIONALITIES
             from views.athlete_dialog import AthleteDetailDialog, stat_colors
 
-            self.assertEqual(stat_colors(85)[0], "#16a34a")
-            self.assertEqual(stat_colors(30)[0], "#ef4444")
-            self.assertEqual(stat_colors(80, invert=True)[0], "#ef4444")  # molta fatica = rosso
+            from views import theme
+
+            self.assertEqual(stat_colors(85)[0], theme.GOOD)
+            self.assertEqual(stat_colors(30)[0], theme.BAD)
+            self.assertEqual(stat_colors(80, invert=True)[0], theme.BAD)  # molta fatica = rosso
             first = ctrl.state.athletes[0]
             self.assertTrue(150 <= first.height_cm <= 205 and 45 <= first.weight_kg <= 140)
             self.assertIn(first.nationality, NATIONALITIES)

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -29,23 +28,29 @@ from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, Pe
 from models.ranking import athlete_rankings
 from models.relationships import is_friend, is_rival, relation_label, relations_of
 from models.simulation import body_fit_score
+from views import theme
 from views.athlete_stats_qml import AthleteStatsView
 from views.dialogs import release_question_text
 
 SPECIALTY_COLORS = {
-    Specialty.SPRINTS: "#ef4444",
-    Specialty.MIDDLE_DISTANCE: "#38bdf8",
-    Specialty.JUMPS: "#a78bfa",
-    Specialty.THROWS: "#f59e0b",
+    Specialty.SPRINTS: theme.BAD,
+    Specialty.MIDDLE_DISTANCE: theme.INFO,
+    Specialty.JUMPS: theme.VIOLET,
+    Specialty.THROWS: theme.WARN,
 }
 
-# Soglie dei badge: (valore minimo, sfondo, testo)
+# Soglie dei badge: (valore minimo, sfondo, testo). Gli stessi colori dei livelli del design system (ottimo/buono/medio/scarso).
 _BADGE_SCALE: List[Tuple[int, str, str]] = [
-    (80, "#16a34a", "#ffffff"),
-    (65, "#facc15", "#111827"),
-    (45, "#fb923c", "#111827"),
-    (0, "#ef4444", "#ffffff"),
+    (80, theme.GOOD, theme.BG),
+    (65, theme.WARN, theme.BG),
+    (45, theme.ORANGE, theme.BG),
+    (0, theme.BAD, theme.BG),
 ]
+
+
+def _tint(color: str, amount: float = 0.30) -> str:
+    """Sfondo scuro che richiama `color`: la superficie del tema con un velo del colore."""
+    return theme.mix(theme.SURFACE, color, amount).name()
 
 
 def stat_colors(value: int, invert: bool = False) -> Tuple[str, str]:
@@ -82,15 +87,15 @@ class _StatColumn(QFrame):
         box.setContentsMargins(16, 14, 16, 14)
         box.setSpacing(0)
         head = QLabel(title.upper())
-        head.setStyleSheet("color: #19d3c0; font-weight: 800; font-size: 12px; letter-spacing: 0.7px; padding-bottom: 8px;")
+        head.setStyleSheet(f"color: {theme.ACCENT}; font-weight: 800; font-size: 12px; letter-spacing: 0.7px; padding-bottom: 8px;")
         box.addWidget(head)
         for name, value, invert in rows:
             row = QFrame()
-            row.setStyleSheet("QFrame { border-bottom: 1px solid #26354d; }")
+            row.setStyleSheet(f"QFrame {{ border-bottom: 1px solid {theme.BORDER}; }}")
             hl = QHBoxLayout(row)
             hl.setContentsMargins(0, 6, 0, 6)
             label = QLabel(name)
-            label.setStyleSheet("color: #cbd5e1; border: none;")
+            label.setStyleSheet(f"color: {theme.TEXT}; border: none;")
             hl.addWidget(label)
             hl.addStretch()
             hl.addWidget(_badge(value, invert))
@@ -144,9 +149,6 @@ class AthleteDetailDialog(QDialog):
         )
         self.btn_no_renew.clicked.connect(self._toggle_no_renew)
         btn_recover = QPushButton("RECUPERO (€250)")
-        btn_recover.setStyleSheet(
-            "background-color: #0e7490; color: #e9eefc; border: 1px solid #19d3c0; font-weight: 700;"
-        )
         btn_recover.clicked.connect(self._recover)
         btn_close = QPushButton("✓ CHIUDI")
         btn_close.setObjectName("PrimaryButton")
@@ -224,18 +226,18 @@ class AthleteDetailDialog(QDialog):
         return "".join(p[0] for p in parts[:2]).upper() or "?"
 
     def _avatar(self, athlete: Athlete, size: int) -> QLabel:
-        color = SPECIALTY_COLORS.get(athlete.specialty, "#38bdf8")
+        color = SPECIALTY_COLORS.get(athlete.specialty, theme.INFO)
         lbl = QLabel(self._initials(athlete.name))
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl.setFixedSize(size, size)
         lbl.setStyleSheet(
-            f"background-color: #1e3a8a; color: #e9eefc; border: 3px solid {color};"
+            f"background-color: {_tint(color, 0.22)}; color: {theme.TEXT}; border: 3px solid {color};"
             f"border-radius: {size // 2}px; font-weight: 800; font-size: {size // 3}px;"
         )
         return lbl
 
     @staticmethod
-    def _pill(text: str, bg: str, fg: str = "#e9eefc") -> QLabel:
+    def _pill(text: str, bg: str, fg: str = theme.TEXT) -> QLabel:
         pill = QLabel(text)
         pill.setStyleSheet(
             f"background-color: {bg}; color: {fg}; border-radius: 10px; padding: 3px 10px;"
@@ -252,18 +254,19 @@ class AthleteDetailDialog(QDialog):
         lay.addWidget(self._avatar(athlete, 52))
         names = QVBoxLayout()
         title = QLabel(f"{athlete.name} {athlete.flag}" + (" *" if athlete.is_youth_prospect else ""))
-        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #e9eefc;")
+        title.setStyleSheet(f"font-size: 20px; font-weight: 800; color: {theme.TEXT};")
         team = QLabel(f"{self.controller.state.team_name}  ·  {athlete.flag} {athlete.nationality}")
         team.setObjectName("SubTitle")
         names.addWidget(title)
         names.addWidget(team)
         lay.addLayout(names)
-        gender_bg = "#831843" if athlete.gender == "F" else "#1e40af"
+        gender_bg = _tint(theme.PINK if athlete.gender == "F" else theme.INFO)
+        spec_bg = _tint(SPECIALTY_COLORS.get(athlete.specialty, theme.INFO))
         lay.addWidget(self._pill(athlete.gender_label, gender_bg), alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay.addWidget(self._pill(athlete.specialty.value, "#7f1d4a"), alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay.addWidget(self._pill(athlete.status_label, "#4b3f1d", "#fcd34d"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(self._pill(athlete.specialty.value, spec_bg), alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(self._pill(athlete.status_label, _tint(theme.WARN, 0.22), theme.WARN), alignment=Qt.AlignmentFlag.AlignVCenter)
         lay.addStretch()
-        lay.addWidget(self._pill(f"Settimana {self.controller.state.week}", "#1e293b", "#cbd5e1"), alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(self._pill(f"Settimana {self.controller.state.week}", theme.SURFACE_2, theme.TEXT_MUTED), alignment=Qt.AlignmentFlag.AlignVCenter)
 
     # ------------------------------------------------------------------ panoramica
     def _build_overview(self, a: Athlete) -> QWidget:
@@ -272,8 +275,8 @@ class AthleteDetailDialog(QDialog):
         outer.setContentsMargins(0, 0, 0, 0)
         title = QLabel("CARATTERISTICHE")
         title.setStyleSheet(
-            "font-size: 15px; font-weight: 800; color: #e9eefc; padding-bottom: 6px;"
-            "border-bottom: 2px solid #19d3c0;"
+            f"font-size: 15px; font-weight: 800; color: {theme.TEXT}; padding-bottom: 6px;"
+            f"border-bottom: 2px solid {theme.ACCENT};"
         )
         outer.addWidget(title)
 
@@ -289,11 +292,11 @@ class AthleteDetailDialog(QDialog):
         badges.addStretch()
         ovr = QLabel(str(a.overall))
         ovr.setStyleSheet(
-            "background-color: #19d3c0; color: #060e26; border-radius: 4px; padding: 3px 10px;"
+            f"background-color: {theme.ACCENT}; color: {theme.BG}; border-radius: 4px; padding: 3px 10px;"
             "font-weight: 800; font-size: 15px;"
         )
         stars = QLabel(f"★ {potential_stars(a.potential)}")
-        stars.setStyleSheet("color: #f59e0b; font-weight: 800; font-size: 18px;")
+        stars.setStyleSheet(f"color: {theme.WARN}; font-weight: 800; font-size: 18px;")
         stars.setToolTip(f"Potenziale: {a.potential}")
         badges.addWidget(ovr)
         badges.addWidget(stars)
@@ -327,9 +330,9 @@ class AthleteDetailDialog(QDialog):
         form.setHorizontalSpacing(18)
         for k, v in info_rows:
             key = QLabel(k)
-            key.setStyleSheet("color: #93a0c6;")
+            key.setStyleSheet(f"color: {theme.TEXT_MUTED};")
             val = QLabel(v)
-            val.setStyleSheet("font-weight: 700; color: #e9eefc;")
+            val.setStyleSheet(f"font-weight: 700; color: {theme.TEXT};")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             form.addRow(key, val)
         left.addWidget(info)
@@ -426,7 +429,7 @@ class AthleteDetailDialog(QDialog):
 
         if a.is_injured:
             note = QLabel(f"Infortunato per altre {a.injured_weeks} settimane: allenamento bloccato.")
-            note.setStyleSheet("color: #f87171;")
+            note.setStyleSheet(f"color: {theme.BAD};")
             form.addRow(note)
         return page
 
@@ -470,9 +473,9 @@ class AthleteDetailDialog(QDialog):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if is_friend(value):
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(theme.qcolor(theme.GOOD))
                 elif is_rival(value):
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(theme.qcolor(theme.BAD))
                 self.relations_table.setItem(row, col, item)
         lay.addWidget(self.relations_table, stretch=1)
         if not rows:
