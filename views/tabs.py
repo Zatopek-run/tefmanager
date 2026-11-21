@@ -2966,8 +2966,8 @@ class RankingTab(QWidget):
             [([f"{i}°", name, self._pts(points)], is_club) for i, (name, points, is_club) in enumerate(clubs, start=1)],
         )
         mine = next((i for i, (_n, _p, is_club) in enumerate(clubs, start=1) if is_club), 0)
-        self.club_title.setText(f"Società della lega — {state.tier.display_name}")
-        self.summary_label.setText(f"Punti del club: {self._pts(club_points(state))} · {mine}° tra le società della lega")
+        self.club_title.setText(f"Società della lega — {state.tier.display_name} (punti della stagione in corso)")
+        self.summary_label.setText(f"Punti del club in stagione: {self._pts(club_points(state))} · {mine}° tra le società della lega")
 
     def refresh(self, state: GameState) -> None:
         events = list(state.active_events)

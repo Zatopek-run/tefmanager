@@ -70,9 +70,20 @@ def _add(holder: "Athlete | RivalAthlete", event: str, points: float) -> None:
     holder.ranking_points[event] = round(holder.ranking_points.get(event, 0.0) + points, 2)
 
 
-def award_place(holder: "Athlete | RivalAthlete", event: str, tier: CompetitionTier, placement: int) -> None:
-    """Assegna i punti di un piazzamento a un atleta del club o a un rivale."""
-    _add(holder, event, place_points(tier, placement))
+def award_place(
+    holder: "Athlete | RivalAthlete",
+    event: str,
+    tier: CompetitionTier,
+    placement: int,
+    season_points: Optional[Dict[str, float]] = None,
+    team: str = "",
+) -> None:
+    """Assegna i punti di un piazzamento a un atleta del club o a un rivale. Con `season_points` e `team` li somma anche al
+    contatore stagionale della società (la classifica delle società, Q26: ricomincia da zero a ogni stagione)."""
+    points = place_points(tier, placement)
+    _add(holder, event, points)
+    if season_points is not None and team and points > 0:
+        season_points[team] = round(season_points.get(team, 0.0) + points, 2)
 
 
 def award_event_points(
@@ -80,13 +91,14 @@ def award_event_points(
     event: str,
     standings: Iterable[EventStanding],
     holders: Dict[Tuple[str, str], "Athlete | RivalAthlete"],
+    season_points: Optional[Dict[str, float]] = None,
 ) -> None:
     """Punti per i piazzamenti di una gara. `holders` mappa (squadra, nome) all'atleta: chi non c'è non ne riceve
     (per esempio il ritirato del club, che non è stato classificato)."""
     for standing in standings:
         holder = holders.get((standing.team_name, standing.athlete_name))
         if holder is not None:
-            award_place(holder, event, tier, standing.placement)
+            award_place(holder, event, tier, standing.placement, season_points, standing.team_name)
 
 
 def _decay_dict(points: Dict[str, float]) -> None:
@@ -287,17 +299,19 @@ def _total(pool: Iterable["Athlete | RivalAthlete"]) -> float:
 
 
 def club_ranking(state: GameState) -> List[Tuple[str, float, bool]]:
-    """Società della lega attuale (club compreso) per somma dei punti dei loro atleti: (nome, punti, è il club)."""
-    rows: List[Tuple[str, float, bool]] = [(state.team_name, _total(state.main_squad), True)]
+    """Società della lega attuale (club compreso) per punti ranking **guadagnati nella stagione in corso**: (nome, punti, è il club).
+    Ricomincia da zero a ogni stagione per tutti (Q26), quindi dopo una promozione o una retrocessione nessuno parte avanti."""
+    season = state.club_season_points
+    rows: List[Tuple[str, float, bool]] = [(state.team_name, round(season.get(state.team_name, 0.0), 2), True)]
     for club in state.rivals_in():
-        rows.append((club.name, _total([*club.athletes.values(), *club.female_athletes.values()]), False))
+        rows.append((club.name, round(season.get(club.name, 0.0), 2), False))
     rows.sort(key=lambda r: (-r[1], not r[2], r[0]))
     return rows
 
 
 def club_points(state: GameState) -> float:
-    """Punti ranking del club (somma dei suoi atleti in rosa)."""
-    return _total(state.main_squad)
+    """Punti ranking del club guadagnati nella stagione in corso (la base della classifica delle società)."""
+    return round(state.club_season_points.get(state.team_name, 0.0), 2)
 
 
 __all__ = [

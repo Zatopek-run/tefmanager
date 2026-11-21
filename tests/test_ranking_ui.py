@@ -88,7 +88,7 @@ class TestRankingTab(unittest.TestCase):
     def test_club_points_are_in_the_summary_after_a_meeting(self) -> None:
         _play_first_meeting(self.ctrl)
         self.tab.refresh(self.ctrl.state)
-        self.assertNotIn("Punti del club: 0 ", self.tab.summary_label.text())
+        self.assertNotIn("Punti del club in stagione: 0 ", self.tab.summary_label.text())
 
 
 class TestAthleteDialogRanking(unittest.TestCase):

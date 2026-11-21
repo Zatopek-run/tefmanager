@@ -212,7 +212,7 @@ STRATEGY_FACTOR_FLOOR = -0.5
 # quindi il «rischio» è una scelta per evento: un bonus di tecnica (punti di tecnica × peso della tecnica nell'evento)
 # contro una probabilità di tentativo nullo. Un nullo fa perdere il tentativo migliore: la misura scende di una quota
 # fissa (si ripiega sul successivo). Una sola estrazione RNG, e solo se il rischio non è «Sicuro».
-# CIFRE PROVVISORIE: il bonus e le probabilità sono del piano; FIELD_FOUL_LOSS è mia, da misurare e confermare (Q24).
+# Il bonus e le probabilità sono del piano; FIELD_FOUL_LOSS è del 6%, misurata e confermata dall'utente il 2026-11-21 (Q24).
 class FieldRisk(str, Enum):
     SICURO = "Sicuro"
     BILANCIATO = "Bilanciato"
@@ -226,7 +226,7 @@ FIELD_RISK_EFFECTS: Dict[FieldRisk, Tuple[int, float]] = {
     FieldRisk.BILANCIATO: (1, 0.05),
     FieldRisk.AGGRESSIVO: (3, 0.15),
 }
-FIELD_FOUL_LOSS = 0.03  # quota della misura persa con un nullo (migliore → secondo tentativo)
+FIELD_FOUL_LOSS = 0.06  # quota della misura persa con un nullo (migliore → secondo tentativo)
 
 # Bonus al bersaglio di forma per la fase «Gara (Picco)», solo nel tick che precede una settimana di gara
 # (la forma usata in gara è quella calcolata nel tick precedente). Minore del +9 dello Scarico: il picco
@@ -1472,6 +1472,9 @@ class GameState:
     # salvataggi esistenti e nel Prototipo (calendario invariato). Tutta l'aritmetica del ciclo passa da qui sotto.
     prep_weeks: int = 0
     league_table: Dict[str, int] = field(default_factory=dict)
+    # Punti ranking guadagnati nella stagione in corso per società (nome → punti): è la base della classifica delle società (Q26),
+    # azzerata per tutti a ogni cambio di stagione, quindi senza decadimento e senza memoria dei livelli precedenti.
+    club_season_points: Dict[str, float] = field(default_factory=dict)
     # Per club: quanti 1°, 2°, ... posti (indice 0 = 1°) ha ottenuto in stagione; serve allo spareggio (A.2).
     league_places: Dict[str, List[int]] = field(default_factory=dict)
     # Stato completo dell'RNG della partita (`random.Random.getstate()` come lista JSON); vuoto = salvataggio vecchio (A.3).

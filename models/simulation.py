@@ -815,10 +815,12 @@ def _rival_only_points(
     rng: random.Random,
     gender: str = "M",
     ranking_tier: Optional[CompetitionTier] = None,
+    season_points: Optional[Dict[str, float]] = None,
 ) -> None:
     """When the club enters nobody in an event, the rivals still score among themselves.
 
-    Con `ranking_tier` (gare individuali) i piazzamenti danno anche punti ranking ai rivali (C.1)."""
+    Con `ranking_tier` (gare individuali) i piazzamenti danno anche punti ranking ai rivali (C.1), che contano anche per la
+    classifica stagionale delle società (`season_points`, Q26)."""
     def day_score(club: RivalClub) -> float:
         athlete = club.athlete_for(event, gender)
         return rng.gauss(athlete.skill if athlete else 0.0, RIVAL_RACE_SIGMA)
@@ -828,7 +830,7 @@ def _rival_only_points(
         _score_place(team_points, meet_places, club.name, place)
         holder = club.athlete_for(event, gender) if ranking_tier is not None else None
         if holder is not None and ranking_tier is not None:
-            award_place(holder, event, ranking_tier, place)
+            award_place(holder, event, ranking_tier, place, season_points, club.name)
 
 
 # ---------------------------------------------------------------- rival development
@@ -965,7 +967,8 @@ def simulate_competition(
 
             if player_athlete is None or player_athlete.is_injured:
                 _rival_only_points(
-                    clubs, event_name, team_points, meet_places, r, gender=gender, ranking_tier=state.tier
+                    clubs, event_name, team_points, meet_places, r, gender=gender, ranking_tier=state.tier,
+                    season_points=state.club_season_points,
                 )
                 continue
 
@@ -1088,7 +1091,7 @@ def simulate_competition(
                     player_place = idx
                 if not (standing.is_player and withdrew):
                     _score_place(team_points, meet_places, standing.team_name, idx)
-            award_event_points(state.tier, event_name, standings, ranking_holders)
+            award_event_points(state.tier, event_name, standings, ranking_holders, state.club_season_points)
 
             # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
             is_pb = False
@@ -1958,6 +1961,7 @@ def advance_week(
             state.season_number += 1
             state.league_table = {}
             state.league_places = {}
+            state.club_season_points = {}  # Q26: la classifica delle società riparte da zero a ogni stagione, per tutti
             for a in state.athletes:
                 a.age += 1
             drift_relations(state)  # D.1: le relazioni con gli agenti si raffreddano verso il neutro (nessun RNG)

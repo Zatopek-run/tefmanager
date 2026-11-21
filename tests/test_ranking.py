@@ -29,6 +29,7 @@ from models.entities import (
 from models.ranking import (
     athlete_rankings,
     award_event_points,
+    club_points,
     club_ranking,
     decay_ranking,
     ensure_ranking_pool,
@@ -303,16 +304,14 @@ class TestRankings(unittest.TestCase):
         self.assertEqual(world, RANKING_WORLD_SIZE + 1)  # sotto tutti i sintetici: fuori dalla Top 100
         self.assertGreater(national, 1)
 
-    def test_club_ranking_sums_the_points_of_the_athletes(self) -> None:
+    def test_club_ranking_is_the_points_earned_in_the_season(self) -> None:
         state = self.state
-        for a in state.main_squad[:2]:
-            a.ranking_points = {"100m": 10.0, "400m": 5.0}
         club = state.rivals_in()[0]
-        for rival in club.athletes.values():
-            rival.ranking_points = {rival.event: 1.0}
+        state.club_season_points = {state.team_name: 30.0, club.name: 7.0}
         rows = {name: pts for name, pts, _me in club_ranking(state)}
         self.assertEqual(rows[state.team_name], 30.0)
-        self.assertEqual(rows[club.name], float(len(club.athletes)))
+        self.assertEqual(rows[club.name], 7.0)
+        self.assertTrue(all(pts == 0.0 for name, pts, _me in club_ranking(state) if name not in (state.team_name, club.name)))
         self.assertEqual([me for _n, _p, me in club_ranking(state)].count(True), 1)
         self.assertEqual({n for n, _p, _m in club_ranking(state)}, {state.team_name, *(c.name for c in state.rivals_in())})
 
@@ -327,7 +326,79 @@ class TestRankings(unittest.TestCase):
         self.assertLessEqual(rank(steady(CompetitionTier.INTERNAZIONALE)), 5)
 
 
+class TestSeasonClubRanking(unittest.TestCase):
+    """Classifica delle società stagionale (Q26, 2026-11-21): conta i punti guadagnati nella stagione in corso e riparte da zero per tutti."""
+
+    def setUp(self) -> None:
+        self.state = make_state(3)
+        self.state.week = 4
+
+    def test_a_meeting_adds_the_points_earned_to_each_club(self) -> None:
+        state = self.state
+        simulate_competition(state, rng=random.Random(5))
+        self.assertGreater(club_points(state), 0.0)
+        # dopo un solo meeting (punti di partenza zero) il contatore di ogni società è la somma dei punti guadagnati dai suoi atleti
+        self.assertAlmostEqual(club_points(state), sum(sum(a.ranking_points.values()) for a in state.main_squad), places=1)
+        for club in state.rivals_in():
+            earned = sum(sum(r.ranking_points.values()) for r in [*club.athletes.values(), *club.female_athletes.values()])
+            self.assertAlmostEqual(state.club_season_points.get(club.name, 0.0), earned, places=1, msg=club.name)
+
+    def test_the_season_counter_does_not_decay(self) -> None:
+        """I punti degli atleti decadono a ogni meeting (×0,9), la classifica stagionale no: dopo due meeting somma entrambi."""
+        state = self.state
+        simulate_competition(state, rng=random.Random(5))
+        first = club_points(state)
+        state.week = 8
+        simulate_competition(state, rng=random.Random(6))
+        self.assertGreater(club_points(state), first)
+        self.assertGreater(club_points(state), sum(sum(a.ranking_points.values()) for a in state.main_squad))
+
+    def test_it_restarts_from_zero_for_everyone_at_the_season_change(self) -> None:
+        state = self.state
+        rng = random.Random(7)
+        simulate_competition(state, rng=rng)
+        self.assertTrue(state.club_season_points)
+        from models.simulation import advance_week
+
+        start = state.season_number
+        for _ in range(60):
+            advance_week(state, rng=rng)
+            if state.season_number > start:
+                break
+        self.assertEqual(state.season_number, start + 1)
+        self.assertEqual(state.club_season_points, {})
+        self.assertTrue(all(points == 0.0 for _name, points, _me in club_ranking(state)))
+
+    def test_nobody_has_a_head_start_after_a_promotion(self) -> None:
+        """Il difetto di prima: il club saliva di livello tenendo i suoi punti e risultava 1° contro rivali a zero.
+        Ora si azzera la classifica delle società, ma non il ranking individuale degli atleti (Top 100, Top 50)."""
+        from models.simulation import advance_week
+
+        state = self.state
+        rng = random.Random(7)
+        start_tier, start_season = state.tier, state.season_number
+        for _ in range(60):
+            if state.week == 30:  # il club chiude primo la lega: sarà promosso
+                state.league_table = {state.team_name: 9999, **{c.name: 0 for c in state.rivals_in()}}
+            advance_week(state, rng=rng)
+            if state.season_number > start_season:
+                break
+        self.assertEqual(state.season_number, start_season + 1)
+        self.assertNotEqual(state.tier, start_tier)  # promosso: nuovo livello, nuovi rivali
+        self.assertTrue(all(points == 0.0 for _n, points, _m in club_ranking(state)))
+        self.assertTrue(any(a.ranking_points for a in state.athletes))  # il ranking individuale resta
+
+
 class TestPersistence(unittest.TestCase):
+    def test_save_and_load_keep_the_season_club_points(self) -> None:
+        state = make_state(3)
+        state.club_season_points = {state.team_name: 123.5, state.rival_clubs[0].name: 7.25}
+        with tempfile.TemporaryDirectory() as tmp:
+            db = DatabaseManager(db_path=Path(tmp) / "slot.db")
+            db.save_game(state)
+            loaded = db.load_game()
+        self.assertEqual(loaded.club_season_points, state.club_season_points)
+
     def test_save_and_load_keep_points_and_the_synthetic_field(self) -> None:
         state = make_state(3)
         ensure_ranking_pool(state, random.Random(1))

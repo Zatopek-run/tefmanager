@@ -37,8 +37,8 @@ def invited_state(seed: int = 3, week: int = 8) -> GameState:
     state = make_state(seed, tier=INTL)
     state.week = week
     state.season_phase = SeasonPhase.OUTDOOR
+    state.club_season_points = {state.team_name: 500.0}  # punti guadagnati nella stagione (Q26): la base della classifica delle società
     for a in state.main_squad:
-        a.ranking_points = {"100m": 500.0}
         a.speed = a.stamina = a.strength = a.technique = a.resilience = 100  # vincono premi anche contro il livello Internazionale
         a.form, a.fatigue, a.injured_weeks = 100, 0, 0
     return state
@@ -89,11 +89,9 @@ class TestInvitation(unittest.TestCase):
 
     def test_not_without_enough_points(self) -> None:
         state = invited_state()
-        for a in state.main_squad:
-            a.ranking_points = {}
-        state.main_squad[0].ranking_points = {"100m": DIAMOND_INVITE_MIN_POINTS - 1}
+        state.club_season_points = {state.team_name: DIAMOND_INVITE_MIN_POINTS - 1}
         self.assertFalse(is_club_invited(state))
-        state.main_squad[0].ranking_points = {"100m": DIAMOND_INVITE_MIN_POINTS}
+        state.club_season_points = {state.team_name: DIAMOND_INVITE_MIN_POINTS}
         self.assertTrue(is_club_invited(state))
 
     def test_not_outside_the_top_places_of_the_club_ranking(self) -> None:
@@ -101,11 +99,11 @@ class TestInvitation(unittest.TestCase):
         clubs = state.rivals_in(INTL)
         self.assertGreater(len(clubs), DIAMOND_INVITE_MAX_RANK)
         for club in clubs[:DIAMOND_INVITE_MAX_RANK]:
-            club.athletes[next(iter(club.athletes))].ranking_points = {"100m": 1e6}
+            state.club_season_points[club.name] = 1e6
         self.assertEqual(club_rank(state), DIAMOND_INVITE_MAX_RANK + 1)
         self.assertFalse(is_club_invited(state))
         for club in clubs[:1]:  # un solo rivale in meno davanti: di nuovo tra i primi
-            club.athletes[next(iter(club.athletes))].ranking_points = {}
+            del state.club_season_points[club.name]
         self.assertEqual(club_rank(state), DIAMOND_INVITE_MAX_RANK)
         self.assertTrue(is_club_invited(state))
 
@@ -126,8 +124,7 @@ class TestTheInvitationalMeet(unittest.TestCase):
     def setUp(self) -> None:
         self.invited = invited_state()
         self.regular = copy.deepcopy(self.invited)
-        for a in self.regular.main_squad:  # stesso stato, ma senza i punti per l'invito
-            a.ranking_points = {}
+        self.regular.club_season_points = {}  # stesso stato, ma senza i punti per l'invito
         self.assertTrue(is_diamond_meet(self.invited))
         self.assertFalse(is_diamond_meet(self.regular))
         self.r_inv, self.r_reg = random.Random(11), random.Random(11)
@@ -167,10 +164,9 @@ class TestTheInvitationalMeet(unittest.TestCase):
         self.assertEqual(self.invited.league_places, {})
         self.assertTrue(self.regular.league_table)  # il meeting normale li scrive: il confronto ha senso
 
-    def test_the_ranking_points_still_count_and_decay(self) -> None:
-        # I punti ranking del club sono quelli del livello Internazionale (moltiplicatore 1,0): il meeting a invito li dà come gli altri
-        before = sum(sum(a.ranking_points.values()) for a in self.invited.main_squad)
-        self.assertGreater(before, 0)
+    def test_the_ranking_points_still_count_for_the_season(self) -> None:
+        # I punti ranking di questo meeting sono quelli del livello Internazionale (moltiplicatore 1,0), come in un meeting di lega
+        self.assertGreater(self.invited.club_season_points[self.invited.team_name], 500.0)
 
 
 class TestAnnouncement(unittest.TestCase):
@@ -183,8 +179,7 @@ class TestAnnouncement(unittest.TestCase):
 
     def test_no_announcement_when_not_invited(self) -> None:
         state = invited_state(week=7)
-        for a in state.main_squad:
-            a.ranking_points = {}
+        state.club_season_points = {}
         advance_week(state, rng=random.Random(5))
         self.assertFalse(any("INVITO alla Diamond League" in line for line in state.news_log))
 

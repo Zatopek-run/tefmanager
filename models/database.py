@@ -53,7 +53,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -199,6 +199,11 @@ V26_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V27_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("pb_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
+# Columns added in v28 (Q26: punti ranking guadagnati nella stagione in corso per società, base della classifica delle società;
+# `{}` = nessuno, si riempie giocando).
+V28_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [("club_season_points_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -225,6 +230,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     24: V25_COLUMNS,
     25: V26_COLUMNS,
     26: V27_COLUMNS,
+    27: V28_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -872,7 +878,8 @@ CREATE TABLE IF NOT EXISTS game_state (
     prep_weeks INTEGER NOT NULL DEFAULT 0,
     facilities_json TEXT NOT NULL DEFAULT '{}',
     academy_level INTEGER NOT NULL DEFAULT 0,
-    scout_json TEXT NOT NULL DEFAULT '{}'
+    scout_json TEXT NOT NULL DEFAULT '{}',
+    club_season_points_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -1116,8 +1123,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json, prep_weeks, facilities_json, academy_level, scout_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json, prep_weeks, facilities_json, academy_level, scout_json, club_season_points_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -1165,6 +1172,7 @@ class DatabaseManager:
                     facilities_to_json(state.facilities),
                     state.academy_level,
                     scout_to_json(state.scout),
+                    json.dumps(state.club_season_points),
                 ),
             )
 
@@ -1565,6 +1573,7 @@ class DatabaseManager:
                 facilities=facilities_from_json(row["facilities_json"]),
                 academy_level=max(0, min(ACADEMY_MAX_LEVEL, int(row["academy_level"]))),
                 scout=scout_from_json(row["scout_json"]),
+                club_season_points={str(k): float(v) for k, v in json.loads(row["club_season_points_json"]).items()},
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),

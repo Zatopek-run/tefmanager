@@ -81,7 +81,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | `KICK_EFFECTS` (B.1, Q23) | Nessuno 0 / 0; Ultimi 200m +2,0 / +8; Ultimo giro +4,0 / +15 | pt, fatica | `entities.py` | Scatto finale 800m/1500m |
 | `STRATEGY_STAMINA_REF` / `_SPAN` / `_FACTOR_FLOOR` | rif. resistenza 47 / 59 / 72 / 84 (Prov./Reg./Naz./Int.); ampiezza 30; minimo −0,5 | resistenza, fattore | `entities.py` | Fattore f = clamp((resistenza − (rif − span/2)) / span; minimo; 1): 0,5 per la media della categoria. Moltiplica i punti di ritmo e scatto, **non** la fatica |
 | `FIELD_RISK_EFFECTS` (B.2, Q24) | Sicuro 0 pt tecnica / 0%; Bilanciato +1 / 5%; Aggressivo +3 / 15% | punti di tecnica (× peso tecnica 0,35 = pt), prob. nullo | `entities.py` (blocco «Rischio nei concorsi») | Lungo e peso; cifre del piano |
-| `FIELD_FOUL_LOSS` (B.2, Q24) | 3% — **PROVVISORIA, cifra mia** | quota della misura | `entities.py` | Perdita con un nullo (ripiego sul secondo tentativo). Misure in Q24 |
+| `FIELD_FOUL_LOSS` (B.2, Q24) | 6% — **confermata dall'utente, 2026-11-21** (era 3%) | quota della misura | `entities.py` | Perdita con un nullo (ripiego sul secondo tentativo). Misure in Q24 |
 
 ## D. Staffette
 
@@ -194,7 +194,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | `SCHEMA_VERSION` | 15 | `database.py` |
 | `RELAY_DQ_MARK`, `DNF_MARK` | stringhe | `entities.py:258,172` |
 
-## K. Ranking (PIANOLAVORO C.1, 2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q26)
+## K. Ranking (PIANOLAVORO C.1, 2026-11-20) — tabella punti, moltiplicatori e decadimento CONFERMATI il 2026-11-21 (QUESTIONS Q26); campo sintetico ancora provvisorio
 
 | Nome | Valore | File |
 | --- | --- | --- |
