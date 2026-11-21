@@ -24,8 +24,9 @@ const EXIT_MIN: float = 0.9
 const PUSH_HALF: int = 3
 const AVG_HALF: int = 3
 const LEAVE_SECONDS: float = 5.0
-## (inizio, fine) del rientro alla corda in metri dalla partenza. 800m: fine della prima curva = PI * R1 = 115,6 m.
-const BREAK_WINDOWS: Dictionary = {"800m": Vector2(115.6, 145.0), "1500m": Vector2(10.0, 90.0)}
+## (inizio, fine) del rientro alla corda in metri dalla partenza. 800m: fine della prima curva = PI * R1 = 115,6 m. 4x400m: fino ai 400 m si corre in corsia sfalsata,
+## poi la seconda frazione resta in corsia fino alla fine della prima curva (400 + 115,6 = 515,6 m).
+const BREAK_WINDOWS: Dictionary = {"800m": Vector2(115.6, 145.0), "1500m": Vector2(10.0, 90.0), "4x400m": Vector2(515.6, 545.0)}
 
 var kind: String = ""
 var n: int = 0

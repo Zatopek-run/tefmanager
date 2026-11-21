@@ -35,7 +35,7 @@ from PyQt6.QtGui import (
 )
 
 from models.entities import CompetitionTier, SeasonPhase, WeatherCondition
-from models.pack_formation import PackFormation
+from models.pack_formation import PackFormation, applies_to as pack_applies_to
 from views.race_viewer import GUN_AT, TrackRaceWidget, _short, format_race_time
 
 Vec = Tuple[float, float, float]
@@ -782,7 +782,7 @@ class Track3DWidget(TrackRaceWidget):
         self._cam_label = "BROADCAST"
         self._replay_active = False
         self._replay_target_t = 0.0
-        self._pack: Optional[PackFormation] = None  # formazione del gruppo (800m, 1500m), ricreata a ogni gara
+        self._pack: Optional[PackFormation] = None  # formazione del gruppo (800m, 1500m, 4x400m), ricreata a ogni gara
         self._pack_for: Optional[list] = None
 
     # ---- formazione del gruppo: chi sta dove, di lato (models/pack_formation.py, lo stesso riferimento di Godot)
@@ -938,26 +938,12 @@ class Track3DWidget(TrackRaceWidget):
 
         # gare sull'ovale da 400 m (400m, 4x100m, 1500m, 4x400m)
         lat_zs = [self._lane_z(i) for i in range(n)]
-        if self._event in ("800m", "1500m"):
-            # Rientro alla corda con la formazione del gruppo: nella propria corsia fino alla linea di rientro (800m: fine della prima curva), poi tutti verso
-            # il lato stretto; chi sorpassa passa all'esterno e rientra senza spingere fuori l'altro. Semplificazione visiva dei 800m: partenza allineata.
+        if pack_applies_to(self._event):
+            # Rientro alla corda con la formazione del gruppo: nella propria corsia fino alla linea di rientro (800m: fine della prima curva; 4x400m: fine della prima curva
+            # della seconda frazione, 400 m + 115,6 m; fino ai 400 m la corsia di partenza e' esatta), poi tutti verso il lato stretto; chi sorpassa passa all'esterno
+            # e rientra senza spingere fuori l'altro. Semplificazione visiva dei 800m: partenza allineata.
             cap = self._track_width() - 0.4
             lat_zs = [min(cap, self.RAIL_Z + x) for x in self._pack_lateral()]
-        elif self._event == "4x400m":
-            # prima frazione (fino a 500 m) in corsia, poi rientro graduale alla corda
-            order = sorted(range(n), key=lambda i: -meters[i])
-            placed = []
-            for idx in order:
-                m = meters[idx]
-                if m <= 400.0:
-                    lat_zs[idx] = self._lane_z(idx)
-                else:
-                    merge = _clamp((m - 400.0) / 80.0, 0.0, 1.0)
-                    target_z = _lerp(self._lane_z(idx), 0.55, merge)
-                    while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
-                        target_z += 0.58
-                    lat_zs[idx] = min(self._track_width() - 0.4, target_z)
-                placed.append((m, lat_zs[idx]))
 
         poses = []
         ref_lat = 0.52 if self._event in ("800m", "1500m") else None

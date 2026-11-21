@@ -55,13 +55,18 @@ def simulate(kind, speeds, seconds=60.0, dt=0.1, stops=None, starts=None):
 
 
 class TestBasics(unittest.TestCase):
-    def test_only_800_and_1500_have_a_break(self) -> None:
-        self.assertTrue(applies_to("800m") and applies_to("1500m"))
-        self.assertFalse(any(applies_to(k) for k in ("100m", "400m", "4x100m", "4x400m")))
+    def test_only_800_1500_and_4x400_have_a_break(self) -> None:
+        self.assertTrue(applies_to("800m") and applies_to("1500m") and applies_to("4x400m"))
+        self.assertFalse(any(applies_to(k) for k in ("100m", "400m", "4x100m")))
         self.assertEqual(PackFormation("400m", lanes(4), constant_speed([7] * 4)).lateral_offsets(20.0), lanes(4))
 
     def test_the_800m_break_is_the_end_of_the_first_bend(self) -> None:
         self.assertAlmostEqual(BREAK_WINDOWS["800m"][0], math.pi * 36.8, places=1)
+
+    def test_the_4x400m_break_is_the_end_of_the_first_bend_of_the_second_leg(self) -> None:
+        # 400 m di prima frazione in corsia sfalsata + la prima curva della seconda (come l'800m)
+        self.assertAlmostEqual(BREAK_WINDOWS["4x400m"][0], 400.0 + BREAK_WINDOWS["800m"][0], places=6)
+        self.assertAlmostEqual(BREAK_WINDOWS["4x400m"][1] - BREAK_WINDOWS["4x400m"][0], BREAK_WINDOWS["800m"][1] - BREAK_WINDOWS["800m"][0], places=6)
 
     def test_smoothstep(self) -> None:
         self.assertEqual((smoothstep(1, 3, 0), smoothstep(1, 3, 5), smoothstep(1, 3, 2)), (0.0, 1.0, 0.5))
@@ -91,6 +96,20 @@ class TestInTheLane(unittest.TestCase):
             for i, d in enumerate(dists):
                 if d <= a:
                     self.assertEqual(lat[i], lanes(8)[i], f"t={t:.1f} corridore {i} a {d:.1f} m")
+
+    def test_the_4x400m_stays_in_lane_for_the_first_leg_and_the_first_bend_of_the_second(self) -> None:
+        a = BREAK_WINDOWS["4x400m"][0]
+        rows = simulate("4x400m", [6.5, 6.6, 6.7, 6.4, 6.55, 6.45, 6.62, 6.3], seconds=110)
+        seen_after = False
+        for t, dists, lat in rows:
+            for i, d in enumerate(dists):
+                if d <= a:
+                    self.assertEqual(lat[i], lanes(8)[i], f"t={t:.1f} squadra {i} a {d:.1f} m")
+                elif d > BREAK_WINDOWS["4x400m"][1] + 5:
+                    seen_after = True
+        self.assertTrue(seen_after)
+        final = rows[-1][2]
+        self.assertAlmostEqual(min(final), 0.0, places=6)  # dopo la linea di rientro qualcuno e' sulla corda
 
     def test_the_1500_converges_to_the_rail_from_the_start(self) -> None:
         rows = simulate("1500m", [6.4, 6.5, 6.6, 6.55], seconds=40)

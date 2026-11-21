@@ -1,4 +1,4 @@
-"""Gruppo nei 800m e 1500m nella vista 3D Python (PIANOLAVORO G): usa il riferimento `models/pack_formation.py`, come Godot. Qt offscreen.
+"""Gruppo nei 800m, 1500m e 4x400m nella vista 3D Python (PIANOLAVORO G): usa il riferimento `models/pack_formation.py`, come Godot. Qt offscreen.
 
 Garanzie: (1) `meters_at(r, race_time)` coincide con `meters(r)` (la formazione legge la stessa posizione che si disegna); (2) fino alla linea di rientro ognuno sta
 nella propria corsia; (3) sulle gare vere nessuno si compenetra e nessuno scatta di lato; (4) chi sorpassa passa fuori e ci sono sorpassi; (5) l'esito non cambia.
@@ -35,7 +35,7 @@ def played_pack_races():
     for _ in range(24):
         ctrl.dismiss_dilemma()
         ctrl.advance_week()
-    races = [(s, r) for s in ctrl.state.competition_history for r in s.event_results if r.event_name in ("800m", "1500m")]
+    races = [(s, r) for s in ctrl.state.competition_history for r in s.event_results if r.event_name in ("800m", "1500m", "4x400m")]
     return tmp, races
 
 
@@ -44,6 +44,7 @@ class TestPack3D(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._tmp, cls.races = played_pack_races()
         assert len(cls.races) >= 4
+        assert any(r.event_name == "4x400m" for _, r in cls.races), "serve almeno una 4x400m"
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -133,6 +134,25 @@ class TestPack3D(unittest.TestCase):
                 self.assertTrue(all(math.isfinite(v) for v in (x, z, yaw, curv)))
         self.assertEqual(before, [(s.athlete_name, s.mark_value, s.placement) for s in res.standings])
         w.grab()  # si disegna davvero
+
+    def test_the_4x400m_stays_in_lane_for_the_whole_first_leg_and_the_first_bend_of_the_second(self) -> None:
+        relays = [(s, r) for s, r in self.races if r.event_name == "4x400m"]
+        for summ, res in relays:
+            w = self.widget(summ, res)
+            self.assertAlmostEqual(BREAK_WINDOWS["4x400m"][0], 400.0 + BREAK_WINDOWS["800m"][0], places=6)
+            for k in range(0, 80):
+                self.at(w, w.winner_time * k / 80)
+                lat = w._pack_lateral()
+                for i, r in enumerate(w.runners):
+                    if w.meters_at(r, w.race_time) <= BREAK_WINDOWS["4x400m"][0]:
+                        self.assertAlmostEqual(lat[i], w._lane_z(i) - w.RAIL_Z, places=9, msg=f"{res.event_name} t={w.race_time:.1f} squadra {i}")
+            # a fine gara le squadre che corrono ancora sono tutte verso la corda (nessuna e' rimasta in corsia)
+            self.at(w, w.winner_time * 0.9)
+            lat = w._pack_lateral()
+            running = [lat[i] for i, r in enumerate(w.runners) if w.meters_at(r, w.race_time) > BREAK_WINDOWS["4x400m"][1] and not r["dnf"]]
+            if running:
+                self.assertLess(min(running), 0.2)
+                self.assertLess(max(running), 7 * 0.95 + 0.01 + 4.0)
 
     def test_the_formation_is_rebuilt_for_a_new_race(self) -> None:
         summ, res = self.races[0]

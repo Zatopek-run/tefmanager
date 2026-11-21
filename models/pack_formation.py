@@ -1,8 +1,8 @@
-"""Formazione del gruppo nelle gare con rientro alla corda (800m, 1500m): chi sta dove, di lato, in ogni istante. Senza Qt e senza RNG.
+"""Formazione del gruppo nelle gare con rientro alla corda (800m, 1500m, 4x400m): chi sta dove, di lato, in ogni istante. Senza Qt e senza RNG.
 
 **Solo messa in scena** (PIANOLAVORO G): non tocca tempi, ordine né misure; decide soltanto la posizione laterale di ogni corridore sulla pista.
 Regole (come in gara vera):
-- fino alla **linea di rientro** (800m: fine della prima curva, π·R1 ≈ 115,6 m; 1500m: subito) si resta nella propria corsia;
+- fino alla **linea di rientro** (800m: fine della prima curva, π·R1 ≈ 115,6 m; 1500m: subito; 4x400m: 400 m + 115,6 m, cioe' la fine della prima curva della seconda frazione) si resta nella propria corsia;
 - dopo, tutti puntano alla **corda** (lato stretto della curva). A passi di `STEP` secondi ognuno prende la fila più interna in cui nessuno gli sta troppo vicino
   (davanti entro `GAP_AHEAD`, dietro entro `GAP_BEHIND`). Si va in ordine di fila attuale (chi è già dentro ha la precedenza: **isteresi**), poi dal più avanzato:
   chi sta superando passa all'esterno e rientra solo quando ha lasciato `GAP_BEHIND` metri, **senza spingere fuori chi viene superato**;
@@ -40,7 +40,9 @@ EXIT_MIN = 0.9  # m: la fila più interna in cui ci si ferma
 LEAVE_SECONDS = 5.0  # s per spostarsi all'esterno dopo l'arresto (picco ~2,3 m/s per 7,6 m)
 
 # (inizio, fine) del rientro alla corda, in metri dalla partenza. 800m: fine della prima curva = π·R1 (R1 = 36,8 m) = 115,6 m.
-BREAK_WINDOWS: Dict[str, Tuple[float, float]] = {"800m": (115.6, 145.0), "1500m": (10.0, 90.0)}
+# 4x400m: fino ai 400 m (prima frazione) si corre in corsia sfalsata; dopo il cambio la seconda frazione resta in corsia fino alla fine della prima curva (come l'800m),
+# cioe' 400 + 115,6 = 515,6 m: da li' le squadre si dispongono come in un gruppo (terza e quarta frazione senza corsie).
+BREAK_WINDOWS: Dict[str, Tuple[float, float]] = {"800m": (115.6, 145.0), "1500m": (10.0, 90.0), "4x400m": (515.6, 545.0)}
 
 DistFn = Callable[[int, float], float]  # (corridore, tempo di gara) → metri dalla sua partenza
 

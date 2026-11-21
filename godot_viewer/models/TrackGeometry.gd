@@ -132,9 +132,14 @@ static func pose_800m(lane: int, distance_run: float) -> Dictionary:
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
 
 
-## Posa 3D in un gruppo (800m, 1500m) con lo scostamento laterale `lat` dalla corda deciso dalla formazione (PackFormation): vedi runner_pose().
+## Posa 3D in un gruppo (800m, 1500m, 4x400m dopo i 400 m) con lo scostamento laterale `lat` dalla corda deciso dalla formazione (PackFormation): vedi runner_pose().
+## Nella 4x400m la coordinata riparte dalla linea d'arrivo a ogni giro: dopo i 400 m si e' a `distance_run - 400` dal traguardo (come pose_4x400m).
 static func pose_pack(kind: String, distance_run: float, lat: float) -> Dictionary:
-	var c: float = (start_offset_800m() if kind == "800m" else start_offset_1500m()) + distance_run
+	var c: float
+	if kind == "4x400m":
+		c = distance_run - 400.0
+	else:
+		c = (start_offset_800m() if kind == "800m" else start_offset_1500m()) + distance_run
 	var p: Vector2 = position_at_radial(c, maxf(0.0, lat))
 	var h: Vector2 = heading_at(1, c)
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
@@ -164,9 +169,10 @@ const START_100M_X: float = -100.0
 ## - 800m: partenza sulla linea d'arrivo, prima curva in corsia, poi rientro alla corda.
 ## - 4x400m: primo giro in corsia sfalsata, poi rientro alla corda.
 ## - 400m / 4x100m: partenza sfalsata per corsia (vedi pose()).
-## `lat_override` >= 0 (solo 800m e 1500m): scostamento laterale dalla corda deciso dalla formazione del gruppo invece della regola per corsia.
+## `lat_override` >= 0 (solo 800m, 1500m e 4x400m oltre i 400 m): scostamento laterale dalla corda deciso dalla formazione del gruppo invece della regola per corsia.
+## Nella 4x400m i primi 400 m restano in corsia sfalsata (pose()): la formazione vale dal secondo giro.
 static func runner_pose(kind: String, lane: int, distance_run: float, lat_override: float = -1.0) -> Dictionary:
-	if lat_override >= 0.0 and (kind == "1500m" or kind == "800m"):
+	if lat_override >= 0.0 and (kind == "1500m" or kind == "800m" or (kind == "4x400m" and distance_run > 400.0)):
 		return pose_pack(kind, distance_run, lat_override)
 	if kind == "1500m":
 		return pose_1500m(lane, distance_run)

@@ -124,6 +124,10 @@ const PACK_FIXTURE: Array = [
 	["1500m", 9.0, [0.0, 1.024717, 0.998298, 2.031585, 2.477271, 3.117521, 3.930049, 4.488211]],
 	["1500m", 21.0, [0.0, 0.95, 0.0, 1.698479, 0.95, 0.0, 1.425, 0.95]],
 	["1500m", 33.0, [0.0, 0.95, 0.905834, 1.7, 1.729949, 0.0, 0.95, 0.054551]],
+	["4x400m", 60.0, [0.0, 1.22, 2.44, 3.66, 4.88, 6.1, 7.32, 8.54]],
+	["4x400m", 80.0, [0.0, 0.174775, 2.44, 1.329682, 4.88, 5.129309, 7.32, 8.534319]],
+	["4x400m", 86.0, [0.0, 0.0, 0.976223, 0.0, 3.809953, 0.0, 0.233371, 0.0]],
+	["4x400m", 92.0, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
 ]
 ## Come sopra, con il corridore 0 ritirato che si ferma a 22 s (la sua distanza non cresce piu').
 const PACK_DNF_FIXTURE: Array = [
@@ -145,7 +149,7 @@ func _lanes() -> PackedFloat64Array:
 func _pack_parity() -> void:
 	var dist_fn: Callable = func(i: int, t: float) -> float: return float(STARTS[i]) + maxf(0.0, t - 0.15) * float(SPEEDS[i])
 	var ok: bool = true
-	for kind: String in ["800m", "1500m"]:
+	for kind: String in ["800m", "1500m", "4x400m"]:
 		var pack: PackFormation = PackFormation.new(kind, _lanes(), dist_fn)
 		for row: Array in PACK_FIXTURE:
 			if str(row[0]) != kind:
@@ -155,7 +159,7 @@ func _pack_parity() -> void:
 				if absf(lat[i] - float((row[2] as Array)[i])) > 1e-4:
 					ok = false
 					print("      %s t=%.1f corridore %d: Godot %.6f, Python %.6f" % [kind, row[1], i, lat[i], (row[2] as Array)[i]])
-	_check(ok, "formazione del gruppo identica a Python (%d istanti, 800m e 1500m)" % PACK_FIXTURE.size())
+	_check(ok, "formazione del gruppo identica a Python (%d istanti, 800m, 1500m e 4x400m)" % PACK_FIXTURE.size())
 	var dist_stop: Callable = func(i: int, t: float) -> float:
 		var tt: float = minf(t, 22.0) if i == 0 else t
 		return float(STARTS[i]) + maxf(0.0, tt - 0.15) * float(SPEEDS[i])
@@ -192,6 +196,15 @@ func _geometry() -> void:
 		_check(rail.distance_to(legacy) < 1e-6, "%s: scostamento 0 = la corda (corsia 1)" % kind)
 		var keep: Vector3 = TrackGeometry.runner_pose(kind, 5, 50.0)["position"]
 		_check(keep.distance_to(TrackGeometry.runner_pose(kind, 5, 50.0, -1.0)["position"]) < 1e-9, "%s: senza scostamento vale la regola di sempre" % kind)
+	# 4x400m: i primi 400 m restano in corsia sfalsata (lo scostamento non conta), poi vale la formazione
+	var first_leg: Vector3 = TrackGeometry.runner_pose("4x400m", 5, 300.0, 3.3)["position"]
+	_check(first_leg.distance_to(TrackGeometry.runner_pose("4x400m", 5, 300.0)["position"]) < 1e-9, "4x400m: nei primi 400 m lo scostamento non ha effetto (corsia sfalsata)")
+	var at_line: Vector3 = TrackGeometry.runner_pose("4x400m", 5, 400.0, 4.88)["position"]
+	var before_line: Vector3 = TrackGeometry.runner_pose("4x400m", 5, 399.999, 4.88)["position"]
+	_check(at_line.distance_to(before_line) < 0.05, "4x400m: nessun salto al passaggio dai primi 400 m alla formazione (%.3f m)" % at_line.distance_to(before_line))
+	var relay_end: Vector3 = TrackGeometry.runner_pose("4x400m", 3, RaceMotion.race_distance("4x400m"), 1.9)["position"]
+	_check(absf(relay_end.x - TrackGeometry.FINISH_X) < 0.15 and absf(relay_end.z - 1.9) < 0.01, "4x400m: con scostamento 1,9 m arriva sul traguardo a z = 1,9 (%.3f, %.3f)" % [relay_end.x, relay_end.z])
+	_check(is_equal_approx(PackFormation.BREAK_WINDOWS["4x400m"].x, 400.0 + TrackGeometry.BREAK_800M_START), "4x400m: la linea di rientro e' 400 m + la fine della prima curva")
 	_check(TrackGeometry.runner_pose("400m", 4, 100.0, 5.0)["position"] == TrackGeometry.runner_pose("400m", 4, 100.0)["position"], "400m: lo scostamento non ha effetto")
 	_check(is_equal_approx(TrackGeometry.BREAK_800M_START, PackFormation.BREAK_WINDOWS["800m"].x), "800m: la linea di rientro e' la stessa in geometria e in formazione")
 	_check(absf(TrackGeometry.BREAK_800M_START - PI * TrackGeometry.R1) < 0.1, "800m: la linea di rientro e' la fine della prima curva (PI * R1)")
@@ -218,7 +231,7 @@ func _demo_races() -> void:
 	var rc: Node = root.get_node("RaceController")
 	rc.set_process(false)
 	var total_cross: int = 0
-	for id: int in [13, 14, 5, 6]:
+	for id: int in [13, 14, 5, 6, 8]:
 		total_cross += _one_race(rc, id)
 	_check(total_cross >= 4, "gare demo 800m e 1500m: almeno 4 sorpassi veri in tutto (%d)" % total_cross)
 	# gara senza rientro: nessuna formazione

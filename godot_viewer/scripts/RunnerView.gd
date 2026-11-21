@@ -46,6 +46,8 @@ var _player_marker: MeshInstance3D = null
 var _head_bone_idx: int = -1
 var _relay_leg: int = -1               # -1 = gara individuale; 0..3 = frazione della staffetta
 var _relay_leg_len: float = 100.0
+var _wait_lat: float = -2.0            # staffetta: scostamento a cui aspetta il cambio (calcolato una volta, vedi _lateral_for)
+var _done_lat: float = -2.0            # staffetta: scostamento a cui si ferma dopo aver passato il testimone
 var _visual_key: String = ""
 var _height_m: float = StrideModel.REF_HEIGHT   # altezza visiva del modello: regola la cadenza (StrideModel)
 var set_amount_override: float = -1.0  # solo per prove: forza pronti(0)..set(1); -1 = la decide RaceController
@@ -222,9 +224,29 @@ func _leg_state() -> Vector2:
 ## Posizione e orientamento in pista: rettilineo dei 100m, oppure anello da 400 m con partenza sfalsata.
 func _apply_transform(leg_dist: float = -1.0) -> void:
 	var d: float = data.distance if leg_dist < 0.0 else leg_dist
-	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, d, data.lateral if leg_dist < 0.0 else -1.0)
+	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, d, _lateral_for())
 	position = pose["position"]
 	rotation.y = pose["yaw"]
+
+
+## Scostamento laterale dalla corda (-1 = nessuna formazione). Una frazione di staffetta che NON corre (aspetta il cambio, o ha gia' passato il testimone) sta ferma:
+## lo scostamento della squadra continua a cambiare (sorpassi, rientro), quindi la si ferma a quello che la squadra ha nell'istante in cui il portatore arriva a lei
+## (aspetta) o in cui lascia la sua zona (ha passato). E' una funzione pura del tempo (si calcola una volta) e coincide con quello della squadra nel momento in cui parte.
+func _lateral_for() -> float:
+	if _relay_leg < 0 or data.lateral < 0.0:
+		return data.lateral
+	var leg_start: float = float(_relay_leg) * _relay_leg_len
+	var leg_end: float = leg_start + _relay_leg_len
+	var td: float = data.distance
+	if _relay_leg > 0 and td < leg_start - minf(8.0, _relay_leg_len * 0.08):
+		if _wait_lat < -1.0:
+			_wait_lat = RaceController.lateral_when_reaching(data, leg_start - minf(8.0, _relay_leg_len * 0.08))
+		return _wait_lat
+	if _relay_leg < 3 and td > leg_end + 8.0:
+		if _done_lat < -1.0:
+			_done_lat = RaceController.lateral_when_reaching(data, leg_end + 8.0)
+		return _done_lat
+	return data.lateral
 
 
 # --- animazione ---------------------------------------------------------------------------------

@@ -75,7 +75,7 @@ var info: Dictionary = {}
 var gun_at: float = GUN_AT            # secondi di preparazione prima dello sparo per l'evento caricato
 var event_kind: String = "100m"       # nome dell'evento: sceglie curva, distanza e geometria della pista
 var runners: Array[RunnerData] = []
-var _pack: PackFormation = null   # formazione del gruppo (800m, 1500m): posizione laterale di ognuno, vedi models/PackFormation.gd
+var _pack: PackFormation = null   # formazione del gruppo (800m, 1500m, 4x400m): posizione laterale di ognuno, vedi models/PackFormation.gd
 var live_order: Array[RunnerData] = []  # ordine di classifica aggiornato a ogni fotogramma
 var clock: float = 0.0
 var race_time: float = 0.0
@@ -268,7 +268,7 @@ func _apply_motion() -> void:
 		var s: Vector2 = _state_of(r, race_time)
 		r.distance = s.x
 		r.speed = s.y
-	if _pack != null:  # 800m/1500m: chi sta dove, di lato (solo messa in scena, funzione pura del tempo: vale anche nel ralenti)
+	if _pack != null:  # 800m/1500m/4x400m: chi sta dove, di lato (solo messa in scena, funzione pura del tempo: vale anche nel ralenti)
 		var lats: PackedFloat64Array = _pack.lateral_offsets(race_time)
 		for i in range(runners.size()):
 			runners[i].lateral = lats[i]
@@ -281,7 +281,7 @@ func _state_of(r: RunnerData, t: float) -> Vector2:
 	return RaceMotion.state_at(t, r.reaction_time, r.final_time, event_kind, r.pace_style)
 
 
-## Prepara la formazione del gruppo per la gara caricata (solo 800m e 1500m; altrimenti nessuna: `lateral` resta -1).
+## Prepara la formazione del gruppo per la gara caricata (solo 800m, 1500m e 4x400m; altrimenti nessuna: `lateral` resta -1).
 func _build_pack() -> void:
 	_pack = null
 	for r: RunnerData in runners:
@@ -295,6 +295,18 @@ func _build_pack() -> void:
 		# chi si ferma lascia la corda: il ritirato dove si arresta, chi arriva dal traguardo (final_time). Senza, l'ultimo attraversava il gruppo gia' rallentato.
 		stops.append(RaceMotion.time_at_distance(RaceMotion.dnf_stop_distance(event_kind), r.reaction_time, r.final_time, event_kind, r.pace_style) if r.dnf else r.final_time)
 	_pack = PackFormation.new(event_kind, starts, func(i: int, t: float) -> float: return _state_of(runners[i], t).x, stops)
+
+
+## Scostamento laterale (m dalla corda) che la squadra/il corridore `r` avra' quando raggiunge `distance` (-1 senza formazione). Funzione pura del tempo (stessa
+## formazione di _apply_motion, letta in un altro istante): serve alle frazioni di staffetta ferme, che non devono scivolare di lato con la squadra.
+func lateral_when_reaching(r: RunnerData, distance: float) -> float:
+	if _pack == null:
+		return -1.0
+	var i: int = runners.find(r)
+	if i < 0:
+		return -1.0
+	var t: float = RaceMotion.time_at_distance(distance, r.reaction_time, r.final_time, event_kind, r.pace_style)
+	return (_pack.lateral_offsets(t) as PackedFloat64Array)[i]
 
 
 func _update_runners() -> void:
