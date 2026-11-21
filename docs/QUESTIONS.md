@@ -601,3 +601,17 @@ scena non contraddice il piano ma non lo riflette); (b) le **staffette** non han
 
 **Da decidere:** (a) legare lo stile al carattere dell'atleta o al piano gara B.1; (b) ampiezze diverse per categoria; (c) staffette con sorpassi ai cambi; (d) la 4x400m con sorpassi (oggi tutte le squadre seguono la stessa curva).
 
+## Q42 — Inviti alla Diamond League (PIANOLAVORO C.1b) — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
+
+**Decisione dell'utente (2026-11-21):** invito **per società**, come proposto in Q26: una società con un buon posto nella classifica di società è invitata a **un meeting a invito a stagione**, con solo premio e prestigio e senza punti di lega.
+
+**Cosa c'è** (`models/diamond.py`, senza Qt e senza RNG; nessuna modifica allo schema: l'invito è una funzione pura dello stato e non si salva): nel **secondo meeting della fase Outdoor** (settimana 8 di ogni stagione, 16 con la Preparazione) una società del livello **Internazionale**, tra i **primi 3** della classifica di società e con almeno **100 punti ranking**, gareggia nel meeting «Diamond League — …» **al posto** di quello di lega: stesse gare, stessi avversari del livello, **premio e prestigio doppi** per ogni gara, **nessun punto di lega** (né bonus squadra 1°-3°, né spareggio). Nel tick precedente una notizia «INVITO alla Diamond League!» lo annuncia; dopo la gara compare un popup celebrativo (F.4, tipo `diamond`). Test: `test_diamond.py` (24, senza Qt), che controlla anche che il meeting a invito dia gli **stessi piazzamenti e lo stesso stato finale dell'RNG** di uno normale. Ordine del tick: `TICK.md` passo C-0b (nessuna estrazione in più).
+
+**Cifre PROVVISORIE (mie, da confermare — `BALANCE.md` §L):** posizione 7 dall'inizio dell'Outdoor, primi 3, 100 punti, ×2 premio, ×2 prestigio.
+
+**Scostamenti dal piano e mie scelte, da confermare:** (a) il piano diceva solo «influenza inviti Diamond League»: ho fatto un **meeting che sostituisce quello di lega** e non uno in più (un meeting extra avrebbe sfasato la cadenza di 4 settimane, la fase di forma prima della gara e la fatica); (b) **solo nel livello Internazionale**: la Diamond League è l'élite e in un livello più basso gli avversari non sarebbero all'altezza del nome; ne segue che **una partita comincia a vederla solo dopo due promozioni**; (c) il criterio è **«primi 3 della classifica di società» più una soglia minima di punti**, non la soglia assoluta del solo punteggio, così non dipende dalla scala dei punti; (d) il meeting a invito **non dà punti di lega e non conta per lo spareggio**: tutta la lega salta quel turno, quindi la classifica finale si calcola su un meeting in meno; (e) i punti ranking di questo meeting valgono come quelli di un meeting Internazionale (moltiplicatore 1,0); (f) il popup di F.4 arriva **dopo** il meeting, non all'invito (i momenti si calcolano dopo il tick).
+
+**Da decidere:** (a) le cifre (soglie, moltiplicatori, in quale meeting cadere); (b) se il meeting debba **aggiungersi** a quello di lega invece di sostituirlo; (c) se serve anche negli altri livelli, con avversari più forti; (d) se l'invito debba arrivare **prima**, per esempio con una scelta del giocatore («accetto/rifiuto»); (e) **la convocazione in nazionale** (C.1b la citava insieme): non fatta, dipende da un'altra meccanica.
+
+**Priorità:** 🟢 BASSA  
+**Dipendenze:** C.1 (ranking), F.4 (popup)

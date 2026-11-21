@@ -400,6 +400,18 @@ RANKING_SYNTH_SKILL_TOP = 94.0  # livello (scala del punteggio di gara) del 1° 
 RANKING_SYNTH_SKILL_BOTTOM = 58.0  # e del 100°
 RANKING_SYNTH_SKILL_JITTER = 2.0  # scarto iniziale casuale attorno alla retta fra i due estremi
 RANKING_SYNTH_DRIFT = 0.3  # passeggiata casuale del livello a ogni meeting (σ)
+
+# Inviti alla Diamond League (PIANOLAVORO C.1b, 2026-11-21). CIFRE PROVVISORIE: vedi docs/BALANCE.md e QUESTIONS Q42.
+# Una volta a stagione, nel secondo meeting della fase Outdoor, la società **invitata** gareggia nel meeting «Diamond
+# League» al posto di quello di lega: stesse gare e stessi avversari del livello Internazionale, ma con premi e prestigio
+# moltiplicati e senza punti di lega (né bonus squadra, né spareggio). Si è invitati solo nel livello Internazionale,
+# stando nei primi `DIAMOND_INVITE_MAX_RANK` posti della classifica di società e con almeno `DIAMOND_INVITE_MIN_POINTS`.
+DIAMOND_MEET_PHASE_OFFSET = 7  # posizione (da 0) del meeting nella stagione, a partire dall'inizio della fase Outdoor (settimana 8, o 16 con la Preparazione)
+DIAMOND_INVITE_MAX_RANK = 3
+DIAMOND_INVITE_MIN_POINTS = 100.0  # almeno una vittoria in Finale Oro (100 punti × 1,00) non ancora decaduta
+DIAMOND_PRIZE_MULT = 2.0
+DIAMOND_PRESTIGE_MULT = 2.0
+DIAMOND_MEET_LABEL = "Diamond League"
 RANKING_SYNTH_FIELD = 8  # partecipanti del campo virtuale con cui si simula il piazzamento di un sintetico
 DNF_MARK = "Ritirato"
 
@@ -1391,6 +1403,8 @@ class CompetitionSummary:
     player_team: str = ""
     # La società non aveva atleti e non si è iscritta (Q32). Transitorio, NON salvato: serve solo ai dialoghi del tick.
     club_absent: bool = False
+    # Meeting a invito (Diamond League, C.1b). Transitorio, NON salvato: il nome del meeting ne conserva la traccia.
+    is_diamond: bool = False
 
     @property
     def team_placement(self) -> int:

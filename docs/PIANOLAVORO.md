@@ -456,7 +456,7 @@ Pre/post gara, il giornalista fa domande:
 Popup celebrativi per:
 - Record del mondo
 - Convocazione in nazionale
-- Invito Diamond League
+- Invito Diamond League ✅ fatto 2026-11-21 (C.1b, per società, Q42)
 - Atleta dell'anno
 
 **File da modificare:**

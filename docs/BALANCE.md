@@ -424,3 +424,12 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 
 | `STAT_LEVEL_GREAT` / `STAT_LEVEL_GOOD` / `STAT_LEVEL_MID` | 80 / 65 / 45 | scheda atleta (G.2): soglie dei livelli di una caratteristica (verde / giallo / arancione / rosso), le stesse del badge di prima; la fatica si legge al contrario |
 
+## L. Inviti alla Diamond League (PIANOLAVORO C.1b, 2026-11-21) — CIFRE PROVVISORIE (QUESTIONS Q42)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `DIAMOND_MEET_PHASE_OFFSET` | 7 — posizione (da 0) del meeting nella stagione, contata dall'inizio della fase Outdoor: settimana 8, o 16 con la Preparazione (il secondo dei tre meeting Outdoor) | `entities.py` |
+| `DIAMOND_INVITE_MAX_RANK` | 3 — primi posti della classifica di società del livello attuale | `entities.py` |
+| `DIAMOND_INVITE_MIN_POINTS` | 100 — punti ranking minimi del club: una vittoria in Finale Oro (100 × 1,00) non ancora decaduta | `entities.py` |
+| `DIAMOND_PRIZE_MULT` / `DIAMOND_PRESTIGE_MULT` | 2,0 / 2,0 — moltiplicatori di premio e prestigio di ogni gara del meeting a invito (nessun bonus squadra) | `entities.py` |
+| `DIAMOND_MEET_LABEL` | «Diamond League» — prefisso del nome del meeting | `entities.py` |

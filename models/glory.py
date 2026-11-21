@@ -3,8 +3,8 @@
 Dopo ogni settimana il controller chiede qui quali eventi meritano un popup celebrativo: un **record del mondo**, un **momento
 storico** (muro abbattuto), la **promozione** o il **titolo** a fine stagione e l'**atleta dell'anno**. Sono messe in scena, non
 cambiano nulla del gioco: i momenti non sono salvati (come i risultati di una gara); i due che non lasciavano già traccia
-(record del mondo, atleta dell'anno) ne lasciano una riga nel registro notizie e nei traguardi. Convocazione in nazionale e
-invito alla Diamond League non esistono ancora (C.1b) e restano fuori.
+(record del mondo, atleta dell'anno) ne lasciano una riga nel registro notizie e nei traguardi. Il meeting a invito della
+**Diamond League** (C.1b, `models/diamond.py`) è un momento a parte; la convocazione in nazionale non esiste ancora.
 """
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ HISTORIC = "historic"
 PROMOTION = "promotion"
 CHAMPION = "champion"
 ATHLETE_OF_THE_YEAR = "athlete_of_the_year"
+DIAMOND = "diamond"
 HISTORIC_MARK = "MOMENTO STORICO!"
 
 
@@ -63,6 +64,14 @@ def meeting_moments(state: GameState, summary: CompetitionSummary, new_milestone
     moments: List[GloryMoment] = []
     if summary.club_absent:
         return moments
+    if summary.is_diamond:  # C.1b: il meeting a invito è già un momento (premi e prestigio doppi)
+        moments.append(
+            GloryMoment(
+                DIAMOND, "DIAMOND LEAGUE!",
+                f"{state.team_name} ha gareggiato su invito a {summary.meet_name}: +€{summary.total_prize_money:,} di premi "
+                f"e +{summary.total_prestige_gained} prestigio.",
+            )
+        )
     for result in summary.event_results:
         if result.event_name in RELAYS or result.withdrew_injured or result.disqualified or result.wind_illegal:
             continue

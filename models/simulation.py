@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
+    DIAMOND_PRESTIGE_MULT,
+    DIAMOND_PRIZE_MULT,
     MONTH_WEEKS,
     SPONSOR_MISS_PENALTY,
     SPONSOR_TOP_N,
@@ -120,6 +122,7 @@ from models.finances import (
 )
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.career import make_retired, retirement_chance
+from models.diamond import diamond_meet_name, is_diamond_meet
 from models.ranking import (
     award_event_points,
     award_place,
@@ -935,6 +938,8 @@ def simulate_competition(
     }
     fan_mult = {0: 3, 1: 6, 2: 12, 3: 25}[state.tier.order]
 
+    # C.1b: il meeting a invito (Diamond League) si decide **prima** del decadimento, sui punti con cui il club è stato invitato.
+    diamond = is_diamond_meet(state)
     decay_ranking(state)  # C.1: i punti ranking decadono una volta per meeting, prima dei nuovi (per tutti)
 
     event_results: List[EventResult] = []
@@ -1149,6 +1154,9 @@ def simulate_competition(
             else:
                 prize = int(tier_cfg["prize_base"] * prize_multipliers.get(player_place, 0.0))
                 prestige_gain = prestige_table.get(player_place, 1) + (5 if is_club_rec else 0)
+                if diamond:  # C.1b: premi e prestigio del meeting a invito
+                    prize = int(prize * DIAMOND_PRIZE_MULT)
+                    prestige_gain = round(prestige_gain * DIAMOND_PRESTIGE_MULT)
                 # Fans follow athletes who place well, set PBs and break records
                 fan_gain = max(0, 9 - player_place) * fan_mult + (5 if is_pb else 0) + (10 if is_club_rec else 0)
                 player_athlete.fans += fan_gain
@@ -1272,6 +1280,9 @@ def simulate_competition(
                     )
                 prize = int(tier_cfg["prize_base"] * {1: 1.0, 2: 0.60, 3: 0.35, 4: 0.15}.get(player_place, 0.0))
                 prestige_gain = {1: 35, 2: 22, 3: 14, 4: 7, 5: 3}.get(player_place, 1) + (5 if is_club_rec else 0)
+                if diamond:  # C.1b
+                    prize = int(prize * DIAMOND_PRIZE_MULT)
+                    prestige_gain = round(prestige_gain * DIAMOND_PRESTIGE_MULT)
             total_prize += prize
             total_prestige += prestige_gain
             event_results.append(
@@ -1301,14 +1312,15 @@ def simulate_competition(
         (i for i, (t, _p) in enumerate(team_standings, start=1) if t == state.team_name),
         len(team_standings),
     )
-    team_bonus = 0 if club_absent else {1: 10, 2: 6, 3: 3}.get(team_place, 0)
+    team_bonus = 0 if (club_absent or diamond) else {1: 10, 2: 6, 3: 3}.get(team_place, 0)  # C.1b: nessun bonus di lega
     total_prestige += team_bonus
-    for team, pts in team_points.items():
-        state.league_table[team] = state.league_table.get(team, 0) + pts
-    for team, counts in meet_places.items():
-        total = state.league_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
-        for i, n in enumerate(counts):
-            total[i] += n
+    if not diamond:  # C.1b: il meeting a invito non dà punti di lega (né spareggio)
+        for team, pts in team_points.items():
+            state.league_table[team] = state.league_table.get(team, 0) + pts
+        for team, counts in meet_places.items():
+            total = state.league_places.setdefault(team, [0] * LEAGUE_PLACE_SLOTS)
+            for i, n in enumerate(counts):
+                total[i] += n
     update_synthetic_field(state, r)  # C.1: i sintetici gareggiano (prima degli incassi: TICK.md, passo C-13b)
 
     # Home meets: no bus trip, but the gate brings ticket income and wears the track
@@ -1327,6 +1339,8 @@ def simulate_competition(
     state.prestige += total_prestige
 
     meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
+    if diamond:
+        meet_name = diamond_meet_name(meet_name)
     if total_prize > 0:
         state.transactions.insert(
             0,
@@ -1409,6 +1423,7 @@ def simulate_competition(
         team_standings=team_standings,
         player_team=state.team_name,
         club_absent=club_absent,
+        is_diamond=diamond,
     )
     state.competition_history.insert(0, summary)
     if club_absent:
@@ -1419,10 +1434,11 @@ def simulate_competition(
         )
     else:
         venue = f"in casa, {spectators:,} spettatori" if is_home else "in trasferta"
+        standing = "fuori dalla classifica di lega" if diamond else f"società {team_place}ª con {team_points[state.team_name]} pt"
         state.news_log.insert(
             0,
             f"Sett. {state.week}: Completato {summary.meet_name} ({weather.value}, {venue}) — "
-            f"società {team_place}ª con {team_points[state.team_name]} pt, "
+            f"{standing}, "
             f"+€{total_prize:,} premi, +{total_prestige} prestigio.",
         )
     _evaluate_objectives(state, summary)
@@ -1983,6 +1999,12 @@ def advance_week(
             0,
             f"Sett. {state.week}: Settimana di Gara ({venue})! Verifica formazione, atteggiamento e Scarico.",
         )
+        if is_diamond_meet(state):  # C.1b: l'invito si annuncia nella settimana del meeting, prima della gara
+            state.news_log.insert(
+                0,
+                f"Sett. {state.week}: INVITO alla Diamond League! Questo meeting a invito prende il posto di quello di lega: "
+                "premi e prestigio doppi, nessun punto di lega.",
+            )
 
     _evaluate_objectives(state, comp_summary)
     dilemma = maybe_generate_dilemma(state, rng=r)
