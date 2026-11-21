@@ -326,7 +326,7 @@ estrazione dell'RNG della partita: nome e personalità di un agente nuovo deriva
 1. L'agente **apre** con la sua richiesta (§5.17: ingaggio standard × personalità × relazione).
 2. Puoi **accettare**, **rifiutare** o **offrire** una cifra più bassa. Se l'offerta arriva alla **soglia** dell'agente (la sua richiesta meno la **flessibilità**) è accettata subito (si paga l'offerta, mai più della richiesta).
    La flessibilità è **5%** per un Aggressivo, **15%** per un Ragionevole, **25%** per un Leale, ±10 punti secondo la relazione (a 100 +10, a 0 −10; tra 0 e 50%).
-3. Sotto la soglia l'agente **controffre una volta**, a metà strada tra la tua offerta e la sua richiesta ma mai sotto la soglia; puoi solo accettare o rifiutare (non si rilancia). Rifiutare non costa nulla e non cambia la relazione.
+3. Un'offerta **sotto il 70% della soglia** è un'offesa: l'agente **rompe la trattativa** (nessuna controfferta, la finestra si chiude con un avviso) e la **relazione cala di 3**; la soglia di rottura non è mostrata. Sotto la soglia ma sopra la rottura l'agente **controffre una volta**, a metà strada tra la tua offerta e la sua richiesta ma mai sotto la soglia; puoi solo accettare o rifiutare (non si rilancia). Rifiutare non costa nulla e non cambia la relazione.
 L'ingaggio minimo trattabile è €100. Il controller (`recruit_athlete(prospect, terms)`) ricontrolla che le condizioni siano ottenibili da quell'agente (ingaggio tra soglia e richiesta, bonus ammesso): una finestra «falsificata» non paga meno.
 
 **Bonus per risultati.** Nella trattativa si può scegliere un bonus (€300, €600 o €1.000) pagato a **ogni record sociale individuale** dell'atleta finché dura il contratto (le staffette non contano): l'agente abbassa l'ingaggio **dello stesso importo**.

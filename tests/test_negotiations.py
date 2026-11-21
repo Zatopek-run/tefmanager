@@ -15,8 +15,10 @@ from pathlib import Path
 from models.agents import ensure_agents, negotiated_fee
 from models.database import DatabaseManager
 from models.entities import (
+    AGENT_BREAK_FRACTION,
     AGENT_FLEXIBILITY,
     AGENT_FLEXIBILITY_MAX,
+    AGENT_RELATION_BROKEN,
     MIN_NEGOTIATED_FEE,
     RECORD_BONUS_OPTIONS,
     RELEASE_CLAUSE_WEEKS,
@@ -30,6 +32,7 @@ from models.market import (
     Terms,
     agent_flexibility,
     bonus_options,
+    break_fee,
     floor_fee,
     is_valid_terms,
     opening_terms,
@@ -139,7 +142,7 @@ class TestNegotiationFlow(unittest.TestCase):
 
     def test_a_lowball_offer_gets_one_counter_halfway_but_not_below_the_floor(self) -> None:
         ask, floor = self.neg.ask.fee, self.neg.floor
-        offer = MIN_NEGOTIATED_FEE
+        offer = self.neg.break_below  # la più bassa che non rompe la trattativa (Q30b)
         self.assertEqual(self.neg.offer(offer), NegotiationState.COUNTERED)
         assert self.neg.counter is not None
         self.assertEqual(self.neg.counter.fee, max(floor, math.ceil((offer + ask) / 2)))
@@ -154,13 +157,13 @@ class TestNegotiationFlow(unittest.TestCase):
         self.assertGreaterEqual(self.neg.counter.fee, self.neg.floor)
 
     def test_accepting_the_counter_closes_the_deal(self) -> None:
-        self.neg.offer(MIN_NEGOTIATED_FEE)
+        self.neg.offer(self.neg.break_below)
         counter = self.neg.counter
         self.assertEqual(self.neg.accept_counter(), counter)
         self.assertEqual(self.neg.state, NegotiationState.ACCEPTED)
 
     def test_there_is_only_one_round_of_counteroffers(self) -> None:
-        self.neg.offer(MIN_NEGOTIATED_FEE)
+        self.neg.offer(self.neg.break_below)
         with self.assertRaises(ValueError):
             self.neg.offer(self.neg.floor)
         with self.assertRaises(ValueError):
@@ -170,7 +173,7 @@ class TestNegotiationFlow(unittest.TestCase):
         self.neg.refuse()
         self.assertEqual((self.neg.state, self.neg.terms), (NegotiationState.REFUSED, None))
         other = Negotiation(self.athlete, self.agent)
-        other.offer(MIN_NEGOTIATED_FEE)
+        other.offer(other.break_below)
         other.refuse()
         self.assertEqual((other.state, other.terms), (NegotiationState.REFUSED, None))
 
@@ -200,19 +203,73 @@ class TestNegotiationFlow(unittest.TestCase):
 
     def test_an_aggressive_agent_counters_higher_than_a_loyal_one_to_the_same_lowball(self) -> None:
         results = {}
+        lowball = Negotiation(self.athlete, agent(AGG)).break_below  # la più bassa che non rompe con nessuno dei due
         for personality in (AGG, LOY):
             n = Negotiation(self.athlete, agent(personality))
-            n.offer(MIN_NEGOTIATED_FEE)
+            n.offer(lowball)
             results[personality] = n.counter.fee if n.counter else n.terms.fee
         self.assertGreater(results[AGG], results[LOY])
 
     def test_a_generous_offer_beats_a_stingy_one_for_the_same_agent(self) -> None:
         for personality in (AGG, REA, LOY):
             cheap, fair = Negotiation(self.athlete, agent(personality)), Negotiation(self.athlete, agent(personality))
-            cheap.offer(MIN_NEGOTIATED_FEE)
+            cheap.offer(cheap.break_below)
             fair.offer(fair.floor)
             self.assertEqual(fair.state, NegotiationState.ACCEPTED)
             self.assertNotEqual(cheap.state, NegotiationState.ACCEPTED, personality.value)  # un'offerta da 100 € non passa
+
+
+class TestBrokenNegotiation(unittest.TestCase):
+    """Q30b: un'offerta troppo bassa rompe la trattativa e costa relazione."""
+
+    def setUp(self) -> None:
+        self.athlete = candidate()
+        self.agent = agent(REA)
+        self.neg = Negotiation(self.athlete, self.agent)
+
+    def test_the_break_threshold_is_a_fraction_of_the_floor(self) -> None:
+        self.assertEqual(self.neg.break_below, round(self.neg.floor * AGENT_BREAK_FRACTION))
+        self.assertLess(self.neg.break_below, self.neg.floor)
+
+    def test_an_offer_below_it_breaks_the_negotiation_without_a_counter(self) -> None:
+        relation = self.agent.relation
+        self.assertEqual(self.neg.offer(self.neg.break_below - 1), NegotiationState.BROKEN)
+        self.assertIsNone(self.neg.counter)
+        self.assertIsNone(self.neg.terms)
+        self.assertTrue(self.neg.is_closed)
+        self.assertEqual(self.agent.relation, relation + AGENT_RELATION_BROKEN)
+
+    def test_an_offer_exactly_at_it_is_only_countered_and_costs_nothing(self) -> None:
+        relation = self.agent.relation
+        self.assertEqual(self.neg.offer(self.neg.break_below), NegotiationState.COUNTERED)
+        self.assertEqual(self.agent.relation, relation)
+
+    def test_no_more_moves_after_the_break(self) -> None:
+        self.neg.offer(self.neg.break_below - 1)
+        for move in (self.neg.accept_ask, self.neg.accept_counter, lambda: self.neg.offer(self.neg.ask.fee)):
+            with self.assertRaises(ValueError):
+                move()
+        with self.assertRaises(ValueError):
+            self.neg.refuse()
+
+    def test_the_relation_never_goes_below_zero(self) -> None:
+        ag = agent(REA, 1)
+        n = Negotiation(self.athlete, ag)
+        n.offer(n.break_below - 1)
+        self.assertEqual(ag.relation, 0)
+
+    def test_the_cheapest_offer_that_survives_still_pays_the_floor(self) -> None:
+        """Limite noto (R27): chi indovina la soglia di rottura (il giocatore non la vede) paga comunque la soglia."""
+        n = Negotiation(self.athlete, self.agent)
+        n.offer(n.break_below)
+        self.assertEqual(n.counter.fee, n.floor)
+
+    def test_a_better_relation_moves_the_threshold_down(self) -> None:
+        low, high = Negotiation(self.athlete, agent(REA, 10)), Negotiation(self.athlete, agent(REA, 90))
+        self.assertGreater(low.break_below, high.break_below)
+
+    def test_an_aggressive_agent_breaks_earlier_than_a_loyal_one(self) -> None:
+        self.assertGreater(Negotiation(self.athlete, agent(AGG)).break_below, Negotiation(self.athlete, agent(LOY)).break_below)
 
 
 class TestEveryOutcomeIsValid(unittest.TestCase):
@@ -222,10 +279,13 @@ class TestEveryOutcomeIsValid(unittest.TestCase):
                 ag = agent(personality, relation)
                 for bonus in bonus_options(a, ag):
                     ask = opening_terms(a, ag, bonus).fee
-                    for offer in (MIN_NEGOTIATED_FEE, ask // 2, floor_fee(a, ag, bonus), ask, ask * 2):
+                    for offer in (MIN_NEGOTIATED_FEE, ask // 2, break_fee(a, ag, bonus), floor_fee(a, ag, bonus), ask, ask * 2):
                         n = Negotiation(a, ag)
                         n.set_bonus(bonus)
                         n.offer(max(MIN_NEGOTIATED_FEE, offer))
+                        if n.state is NegotiationState.BROKEN:  # Q30b: nessuna condizione, da qui non si tessera
+                            self.assertIsNone(n.terms)
+                            continue
                         terms = n.terms if n.state is NegotiationState.ACCEPTED else n.accept_counter()
                         self.assertTrue(is_valid_terms(a, ag, terms), (a.name, personality, relation, bonus, offer))
 

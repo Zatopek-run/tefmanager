@@ -24,6 +24,7 @@ from models.agents import agent_by_id
 from models.database import DatabaseManager
 from models.entities import (
     AGENT_REFUSE_BELOW,
+    AGENT_RELATION_BROKEN,
     AGENT_RELATION_RELEASED,
     AGENT_RELATION_START,
     MIN_NEGOTIATED_FEE,
@@ -195,7 +196,7 @@ class TestNegotiationDialog(_Base):
 
     def test_a_low_offer_gets_a_counter_and_then_only_accept_or_refuse(self) -> None:
         dlg, athlete, agent = self.dialog()
-        dlg.offer_spin.setValue(MIN_NEGOTIATED_FEE)
+        dlg.offer_spin.setValue(dlg.negotiation.break_below)
         dlg._propose()
         self.assertEqual(dlg.negotiation.state, NegotiationState.COUNTERED)
         self.assertIsNone(dlg.selected_terms)
@@ -206,6 +207,18 @@ class TestNegotiationDialog(_Base):
         self.assertEqual(dlg.selected_terms, dlg.negotiation.counter)
         self.assertEqual(dlg.result(), QDialog.DialogCode.Accepted)
 
+    def test_an_insulting_offer_breaks_the_negotiation_and_closes_the_window(self) -> None:
+        dlg, athlete, agent = self.dialog()
+        relation = agent.relation
+        dlg.offer_spin.setValue(max(MIN_NEGOTIATED_FEE, dlg.negotiation.break_below - 1))
+        with mock.patch.object(QMessageBox, "warning") as warning:
+            dlg._propose()
+        warning.assert_called_once()
+        self.assertEqual(dlg.negotiation.state, NegotiationState.BROKEN)
+        self.assertIsNone(dlg.selected_terms)
+        self.assertEqual(dlg.result(), QDialog.DialogCode.Rejected)
+        self.assertEqual(agent.relation, relation + AGENT_RELATION_BROKEN)
+
     def test_refusing_closes_without_terms(self) -> None:
         dlg, *_ = self.dialog()
         dlg._refuse()
@@ -215,7 +228,7 @@ class TestNegotiationDialog(_Base):
 
     def test_refusing_the_counter_closes_without_terms(self) -> None:
         dlg, *_ = self.dialog()
-        dlg.offer_spin.setValue(MIN_NEGOTIATED_FEE)
+        dlg.offer_spin.setValue(dlg.negotiation.break_below)
         dlg._propose()
         dlg._refuse()
         self.assertIsNone(dlg.selected_terms)
@@ -247,7 +260,7 @@ class TestNegotiationDialog(_Base):
         athlete, agent = self.prospect()
         dlg = NegotiationDialog(athlete, agent, opening_terms(athlete, agent).fee)
         self.addCleanup(dlg.close)
-        dlg.offer_spin.setValue(MIN_NEGOTIATED_FEE)
+        dlg.offer_spin.setValue(dlg.negotiation.break_below)
         dlg._propose()
         dlg.budget = MIN_NEGOTIATED_FEE  # i soldi finiscono mentre si pensa
         dlg._refresh()

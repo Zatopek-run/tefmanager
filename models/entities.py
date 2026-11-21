@@ -488,6 +488,11 @@ AGENT_REFUSE_BELOW = 15
 # controfferta, nessuna estrazione casuale.
 AGENT_FLEXIBILITY_RELATION_SPAN = 0.10  # a relazione 100 la flessibilità sale di 10 punti percentuali, a 0 scende di 10
 AGENT_FLEXIBILITY_MAX = 0.50
+# Q30b (2026-11-21): un'offerta sotto `AGENT_BREAK_FRACTION` della SOGLIA dell'agente (non della richiesta: scala con personalità
+# e relazione) è un'offesa: la trattativa si rompe, senza controfferta, e la relazione cala di `AGENT_RELATION_BROKEN`.
+# CIFRE PROVVISORIE mie. Toglie la «mossa vincente» di offrire il minimo e accettare sempre la controfferta alla soglia.
+AGENT_BREAK_FRACTION = 0.7
+AGENT_RELATION_BROKEN = -3
 MIN_NEGOTIATED_FEE = 100  # ingaggio minimo trattabile (€), anche con un bonus alto
 # Bonus per risultati: €X pagati a ogni record sociale individuale dell'atleta finché dura il contratto; l'agente abbassa la
 # richiesta sull'ingaggio dello stesso importo (si paga dopo, e solo se il record arriva).

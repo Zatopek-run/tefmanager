@@ -391,7 +391,7 @@ atleti (può capitare un omonimo); (4b) nome e personalità di un agente dipendo
 **Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) l'agente pesa solo sull'ingaggio al tesseramento, non su rimborso spese né rinnovo; (c) **rifiuto sotto soglia**: con relazione < `AGENT_REFUSE_BELOW` = 15 (cifra mia, provvisoria) l'agente non tratta e il tesseramento dal mercato è negato (`Agent.refuses_to_deal`, guardia in `GameController.recruit_athlete` e nella finestra del mercato). Non copre il vivaio e lo scouting (gratuiti) né i rinnovi. Nessun RNG, nessuno schema nuovo.
 
 
-## Q30 — Trattative, clausola rescissoria e bonus (PIANOLAVORO D.2) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+## Q30 — Trattative, clausola rescissoria e bonus (PIANOLAVORO D.2) — ✅ FATTA il 2026-11-21: cifre confermate, (b) l'agente rompe la trattativa, (c) bonus come oggi, (d) rinnovo automatico
 
 **Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) **un giro di controfferta, senza RNG** (richiesta → offerta → controfferta → accetto/rifiuto); (2) la clausola rescissoria è una **penale in scala per lo svincolo anticipato**
 (20 settimane di rimborso spese, non i 50.000 € fissi del piano: irraggiungibili con 18.000 € di budget iniziale); (3) il **bonus per risultati è facoltativo in trattativa**, con importi in scala (€300 / €600 / €1.000) e uno sconto sull'ingaggio uguale al bonus.
@@ -408,7 +408,7 @@ e che «conviene se pensi che il record arrivi»: con lo sconto **uguale** al bo
 **Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen sui metodi collegati ai pulsanti e screenshot); (2) non si tratta il **rinnovo** (resta automatico, Q22) né la clausola (uguale per tutti, non negoziabile); (3) rifiutare non ha costo e la trattativa ha una mossa vincente senza rischio: AUDIT R27; (4) la clausola rende lo svincolo
 molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus vale solo per i record **individuali**.
 
-**Da decidere:** (a) confermare le cifre; (b) **la trattativa ha una mossa vincente senza rischio** (offrire €100 e accettare la controfferta paga sempre la soglia, AUDIT R27): opzioni: l'agente rompe sotto una percentuale della richiesta con un costo in relazione; la controfferta cade tra soglia e richiesta; un'offerta troppo bassa costa relazione; (c) se il bonus debba avere uno sconto **maggiore** del bonus o pagarsi solo battendo un record già esistente (oggi i primi record sono quasi regalati, R22); (d) se il rinnovo del contratto debba passare da una trattativa.
+**Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) **l'agente rompe la trattativa** sotto una soglia: `AGENT_BREAK_FRACTION` = 0,7 della soglia dell'agente (non della richiesta: scala con personalità e relazione) e `AGENT_RELATION_BROKEN` = −3, cifre mie provvisorie; nuovo stato `NegotiationState.BROKEN`, nessuna controfferta, la finestra si chiude con un avviso; l'agente è l'oggetto condiviso con `GameState` e la sua relazione cala nel modello (`Negotiation.offer`), quindi si salva al prossimo `_persist`. **Resta:** chi offre appena sopra la rottura (non mostrata) paga comunque la soglia (R27); ripetute rotture portano sotto relazione 15 e al rifiuto di Q29c. (c) il bonus resta con lo sconto uguale e i record individuali di oggi; (d) il rinnovo resta automatico (Q22).
 
 
 ## Q31 — Finanze dettagliate (PIANOLAVORO D.3) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**

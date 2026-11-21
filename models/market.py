@@ -7,7 +7,8 @@ Flusso (un solo giro di controfferta):
    ridotto dell'eventuale **bonus per risultati** scelto (`RECORD_BONUS_OPTIONS`: lo si paga a ogni record sociale
    individuale finché dura il contratto; lo sconto sull'ingaggio è uguale al bonus).
 2. Il giocatore può **accettare** la richiesta, **rifiutare** o **offrire** una cifra più bassa.
-3. Se l'offerta arriva alla **soglia** dell'agente (`floor_fee`: la sua richiesta meno la flessibilità della personalità,
+3. Se l'offerta è sotto `AGENT_BREAK_FRACTION` della soglia l'agente **rompe la trattativa** (Q30b: stato «Rotta», relazione −3,
+   nessuna controfferta). Se l'offerta arriva alla **soglia** dell'agente (`floor_fee`: la sua richiesta meno la flessibilità della personalità,
    più alta con buona relazione) è accettata. Altrimenti l'agente **controffre** una volta, a metà strada tra offerta e
    richiesta (ma non sotto la soglia); il giocatore accetta o rifiuta, non si rilancia.
 
@@ -25,7 +26,9 @@ from models.agents import negotiated_fee
 from models.entities import (
     AGENT_FLEXIBILITY,
     AGENT_FLEXIBILITY_MAX,
+    AGENT_BREAK_FRACTION,
     AGENT_FLEXIBILITY_RELATION_SPAN,
+    AGENT_RELATION_BROKEN,
     AGENT_RELATION_START,
     MIN_NEGOTIATED_FEE,
     RECORD_BONUS_OPTIONS,
@@ -47,6 +50,7 @@ class NegotiationState(Enum):
     COUNTERED = "Controfferta"  # l'agente ha rilanciato: resta solo accettare o rifiutare
     ACCEPTED = "Accettata"
     REFUSED = "Rifiutata"
+    BROKEN = "Rotta"  # offerta troppo bassa: l'agente chiude la trattativa e la relazione cala (Q30b)
 
 
 def agent_flexibility(agent: Agent) -> float:
@@ -75,6 +79,11 @@ def floor_fee(athlete: Athlete, agent: Agent, bonus: int = 0) -> int:
     """Ingaggio minimo che l'agente accetta (con quel bonus): la sua richiesta meno la flessibilità, mai sotto il minimo."""
     ask = opening_terms(athlete, agent, bonus).fee
     return max(MIN_NEGOTIATED_FEE, round(ask * (1 - agent_flexibility(agent))))
+
+
+def break_fee(athlete: Athlete, agent: Agent, bonus: int = 0) -> int:
+    """Ingaggio sotto il quale l'agente rompe la trattativa (Q30b): `AGENT_BREAK_FRACTION` della sua soglia."""
+    return round(floor_fee(athlete, agent, bonus) * AGENT_BREAK_FRACTION)
 
 
 def is_valid_terms(athlete: Athlete, agent: Agent, terms: Terms) -> bool:
@@ -106,12 +115,16 @@ class Negotiation:
         return floor_fee(self.athlete, self.agent, self.bonus)
 
     @property
+    def break_below(self) -> int:
+        return break_fee(self.athlete, self.agent, self.bonus)
+
+    @property
     def bonus_choices(self) -> List[int]:
         return bonus_options(self.athlete, self.agent)
 
     @property
     def is_closed(self) -> bool:
-        return self.state in (NegotiationState.ACCEPTED, NegotiationState.REFUSED)
+        return self.state in (NegotiationState.ACCEPTED, NegotiationState.REFUSED, NegotiationState.BROKEN)
 
     # ---------------------------------------------------------------- mosse
     def set_bonus(self, bonus: int) -> None:
@@ -129,13 +142,17 @@ class Negotiation:
 
     def offer(self, fee: int) -> NegotiationState:
         """Offre un ingaggio più basso. Sopra la soglia è accettato (non si paga più della richiesta); sotto, l'agente
-        controffre una volta a metà strada, senza scendere sotto la soglia."""
+        controffre una volta a metà strada, senza scendere sotto la soglia; sotto `break_below` rompe la trattativa
+        (Q30b) e la relazione scende di `AGENT_RELATION_BROKEN`."""
         self._require(NegotiationState.OPEN)
         if fee < MIN_NEGOTIATED_FEE:
             raise ValueError(f"offerta sotto il minimo di €{MIN_NEGOTIATED_FEE}")
         self.offered = fee
         ask = self.ask
-        if fee >= self.floor:
+        if fee < self.break_below:  # Q30b: offesa, la trattativa si rompe e l'agente ricorda
+            self.agent.relation = max(0, self.agent.relation + AGENT_RELATION_BROKEN)
+            self.state = NegotiationState.BROKEN
+        elif fee >= self.floor:
             self._close(Terms(fee=min(fee, ask.fee), bonus=self.bonus))
         else:
             midpoint = math.ceil((fee + ask.fee) / 2)

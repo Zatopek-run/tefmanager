@@ -273,6 +273,8 @@ raramente (Q29). La penalità `AGENT_RELATION_IDLE` non cambia la misura in auto
 | `AGENT_FLEXIBILITY_RELATION_SPAN` | ±10 punti percentuali di flessibilità secondo la relazione (100 → +10, 0 → −10) | `entities.py` |
 | `AGENT_FLEXIBILITY_MAX` | 0,50: tetto della flessibilità | `entities.py` |
 | `MIN_NEGOTIATED_FEE` | €100: ingaggio minimo trattabile | `entities.py` |
+| `AGENT_BREAK_FRACTION` | 0,7: un'offerta sotto il 70% della **soglia** dell'agente rompe la trattativa (Q30b, cifra mia; scala con personalità e relazione) | `entities.py` |
+| `AGENT_RELATION_BROKEN` | −3: relazione persa quando la trattativa si rompe (Q30b, cifra mia) | `entities.py` |
 | `RECORD_BONUS_OPTIONS` | bonus per record sociale individuale: €300 · €600 · €1.000 (sconto sull'ingaggio uguale al bonus) | `entities.py` |
 | `RELEASE_CLAUSE_WEEKS` | 20 settimane di rimborso spese per svincolare un atleta di Prima Squadra (≈ €1.000-10.400) | `entities.py` |
 

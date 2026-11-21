@@ -715,7 +715,7 @@ class NegotiationDialog(QDialog):
         self.btn_accept_ask.setEnabled(self._afford(ask.fee))
         self.status_label.setText(
             f"Budget disponibile: €{self.budget:,}. Un'offerta bassa può essere accettata subito, rilanciata una volta "
-            "o respinta: dipende dall'agente."
+            "o respinta: dipende dall'agente. Un'offerta troppo bassa rompe la trattativa e costa relazione."
             + ("" if self._afford(ask.fee) else "\nLa richiesta supera il budget: prova con un'offerta più bassa.")
         )
 
@@ -744,6 +744,15 @@ class NegotiationDialog(QDialog):
             self.status_label.setText(f"Fondi insufficienti per un'offerta di €{fee:,} (hai €{self.budget:,}).")
             return
         state = self.negotiation.offer(fee)
+        if state is NegotiationState.BROKEN:  # Q30b: offerta troppo bassa, l'agente se ne va e la relazione cala
+            QMessageBox.warning(
+                self,
+                "Trattativa rotta",
+                f"{self.agent.name} giudica l'offerta di €{fee:,} un'offesa e chiude la trattativa. "
+                f"Relazione ora {self.agent.relation}/100.",
+            )
+            self.reject()
+            return
         if state is NegotiationState.ACCEPTED:
             assert self.negotiation.terms is not None
             self._conclude(self.negotiation.terms)
