@@ -369,6 +369,11 @@ La **Dashboard** («Panoramica») si ridisegna con il design system del Lotto G 
 
 La tab «Panoramica» della **Scheda Atleta** ha una parte grafica in QML: **radar** delle cinque caratteristiche (con la media dei compagni di disciplina tratteggiata), **barra verso il potenziale** («mancano N punti»), **condizione** (forma, fatica, sonno, alimentazione) e **caratteristiche** a barre colorate per livello (verde da 80, giallo da 65, arancione da 45, rosso sotto; la fatica si legge al contrario), **ultime 10 gare** come linea del piazzamento (vittorie, primati e ritiri segnati) e **confronto** con gli atleti della stessa disciplina in rosa. L'anagrafica a sinistra e le azioni in basso sono QWidget come prima. Solo presentazione: nessun effetto sul gioco. `models/athlete_view.py`.
 
+
+### 5.26 Tabellone live della gara (G.3, 2026-11-21; `QUESTIONS.md` Q40)
+
+Durante le **corse in pista** (vista interna 2D o 3D) a destra compare un **tabellone live**: tempo di gara, fase di partenza, passo del primo, distacco 1°-2° e, per ogni corridore, posto (la classifica si riordina scorrendo), pettorale, squadra, velocità in km/h, distacco e avanzamento. All'arrivo mostra i tempi ufficiali e i distacchi in secondi. È solo una lettura di ciò che la vista sta già mostrando: **non cambia tempi, ordine o misure**. Pulsante «📊 Tabellone» per nasconderlo. `views/race_live.py`, `views/qml/RaceBoard.qml`.
+
 ---
 
 ## 6. Categorie: parametri principali

@@ -280,6 +280,23 @@ class TrackRaceWidget(QWidget):
     def _last_finish(self) -> float:
         return max((r["s"].mark_value for r in self._runners if not r["dnf"]), default=0.0)
 
+    # Sola lettura, per il tabellone live (`views/race_live.py`): non cambiano né disegno né tempi.
+    @property
+    def runners(self) -> List[dict]:
+        return self._runners
+
+    @property
+    def distance(self) -> int:
+        return self._distance
+
+    @property
+    def winner_time(self) -> float:
+        return self._winner_time
+
+    @property
+    def event_name(self) -> str:
+        return self._event
+
     def advance(self, dt: float) -> None:
         if self._done:
             return
@@ -1105,7 +1122,7 @@ class RaceViewerDialog(QDialog):
         self.summary = summary
         self._bibs = assign_bibs(summary)  # numeri di pettorale del meeting: gli stessi mostrati in Godot
         self.setWindowTitle(f"Gare in diretta — {summary.meet_name}")
-        self.resize(1160, 740)
+        self.resize(1480, 780)  # più larga di prima (1160): a destra c'è il tabellone live (G.3)
         self._index = -1
         self._speed_idx = 0
         self._paused = False
@@ -1153,7 +1170,16 @@ class RaceViewerDialog(QDialog):
         self._embed_timer = QTimer(self)
         self._embed_timer.setInterval(40)
         self._embed_timer.timeout.connect(self._poll_godot_window)
-        root.addWidget(self.stack, stretch=1)
+        from views.race_board_qml import RaceBoardPanel  # import tardivo: race_live usa questo modulo
+
+        self.board_panel = RaceBoardPanel()  # G.3: tabellone live in QML, solo per le corse in pista
+        self.board_panel.hide()
+        self._board_clock = QElapsedTimer()
+        stage = QHBoxLayout()
+        stage.setSpacing(10)
+        stage.addWidget(self.stack, stretch=1)
+        stage.addWidget(self.board_panel)
+        root.addLayout(stage, stretch=1)
 
         self.clock = QLabel("")
         self.clock.setStyleSheet("font-size: 18px; font-weight: 800; color: #f8fafc;")
@@ -1171,6 +1197,11 @@ class RaceViewerDialog(QDialog):
         self.btn_view = QPushButton("Vista 2D")
         self.btn_view.setToolTip("Passa dalla vista 3D alla vista 2D (più leggera)")
         self.btn_view.clicked.connect(self._toggle_view)
+        self.btn_board = QPushButton("📊 Tabellone")
+        self.btn_board.setCheckable(True)
+        self.btn_board.setChecked(True)
+        self.btn_board.setToolTip("Mostra o nasconde il tabellone live (posizioni, velocità e distacchi) accanto alle corse in pista")
+        self.btn_board.clicked.connect(lambda _c=False: self._update_board(force=True))
         self.btn_skip = QPushButton("⏩ Salta alla fine")
         self.btn_skip.clicked.connect(self._skip_race)
         self.btn_replay = QPushButton("🔁 Replay Arrivo")
@@ -1185,7 +1216,7 @@ class RaceViewerDialog(QDialog):
         self.btn_next.clicked.connect(self._next)
         self.btn_close = QPushButton("Vai ai risultati")
         self.btn_close.clicked.connect(self.accept)
-        for b in (self.btn_pause, self.btn_speed, self.btn_view, self.btn_skip, self.btn_replay):
+        for b in (self.btn_pause, self.btn_speed, self.btn_view, self.btn_board, self.btn_skip, self.btn_replay):
             bar.addWidget(b)
         bar.addStretch()
         bar.addWidget(self.btn_close)
@@ -1238,6 +1269,7 @@ class RaceViewerDialog(QDialog):
         self.btn_skip.setEnabled(True)
         self._clock.start()
         self._timer.start()
+        self._update_board(force=True)
 
     def _show_internal_field(self, res: EventResult) -> None:
         self.field.set_environment(self.summary.weather, self.summary.track_surface, self.summary.tier)
@@ -1360,6 +1392,7 @@ class RaceViewerDialog(QDialog):
         if self._replay_active:
             self.track3d.advance(dt * self.REPLAY_SPEED)
             self.clock.setText(f"⏱ {format_race_time(self.track3d.race_clock)}  ·  REPLAY")
+            self._update_board()
             if self.track3d._t >= self.track3d._replay_target_t:
                 self._end_replay()
             return
@@ -1369,6 +1402,30 @@ class RaceViewerDialog(QDialog):
         w.advance(dt * self.SPEEDS[self._speed_idx])
         if w is self.track:
             self.clock.setText(f"⏱ {format_race_time(self.track.race_clock)}")
+        self._update_board()
+
+    def _update_board(self, force: bool = False) -> None:
+        """Tabellone live (G.3): visibile solo per le corse in pista della vista interna; si aggiorna ~10 volte al secondo (subito se `force`)."""
+        show = (
+            not self.board_panel.failed
+            and self.btn_board.isChecked()
+            and self.stack.currentWidget() in (self.track2d, self.track3d)
+            and self._godot is None
+            and 0 <= self._index < len(self.summary.event_results)
+        )
+        self.board_panel.setVisible(show)
+        if not show:
+            return
+        if not force and self._board_clock.isValid() and self._board_clock.elapsed() < 100:
+            return
+        self._board_clock.start()
+        from views.race_live import live_board  # import tardivo
+
+        w = self.stack.currentWidget()
+        self.board_panel.set_board(live_board(
+            w.runners, w.event_name, w.distance, w.race_time, w.winner_time, self._bibs,
+            phase=w.start_phase, replay=self._replay_active, race_id=f"{self._seed()}#{self._index}",
+        ))
 
     def _start_replay(self) -> None:
         if not self._race_done or self.stack.currentWidget() is not self.track3d:
@@ -1382,6 +1439,7 @@ class RaceViewerDialog(QDialog):
         self._replay_active = False
         self.track3d.end_replay()
         self.clock.setText(f"⏱ {format_race_time(self.track3d.race_clock)}")
+        self._update_board(force=True)
         for b in (self.btn_replay, self.btn_pause, self.btn_speed, self.btn_view):
             b.setEnabled(True)
         last = self._index >= len(self.summary.event_results) - 1
@@ -1404,6 +1462,7 @@ class RaceViewerDialog(QDialog):
         self.track = new
         self.btn_view.setText("Vista 3D" if new is self.track2d else "Vista 2D")
         self.btn_replay.setEnabled(self._race_done and new is self.track3d)
+        self._update_board(force=True)
 
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
@@ -1433,6 +1492,7 @@ class RaceViewerDialog(QDialog):
         self.podium.setText("   ".join(f"{s.placement}° {s.athlete_name} {s.mark_display}" for s in top))
         if self.stack.currentWidget() is self.track:
             self.clock.setText(f"⏱ {format_race_time(self.track.race_clock)}")
+        self._update_board(force=True)
         note = []
         if res.withdrew_injured:
             note.append(f"{res.player_athlete_name} si è ritirato per infortunio")
