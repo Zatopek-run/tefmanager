@@ -28,6 +28,7 @@ from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, Pe
 from models.ranking import athlete_rankings
 from models.relationships import is_friend, is_rival, relation_label, relations_of
 from models.simulation import body_fit_score
+from models.personal_bests import best_entry, events_with_best
 from views import theme
 from views.athlete_stats_qml import AthleteStatsView
 from views.dialogs import release_question_text
@@ -269,6 +270,15 @@ class AthleteDetailDialog(QDialog):
         lay.addWidget(self._pill(f"Settimana {self.controller.state.week}", theme.SURFACE_2, theme.TEXT_MUTED), alignment=Qt.AlignmentFlag.AlignVCenter)
 
     # ------------------------------------------------------------------ panoramica
+    @staticmethod
+    def _pb_rows(a: Athlete) -> list:
+        """Un primato per ogni gara in cui l'atleta ne ha uno («Primato · 100m: 10.91s»), con la data dell'ultimo miglioramento."""
+        rows = []
+        for event in events_with_best(a):
+            last = best_entry(a, event)
+            rows.append((f"Primato · {event}", f"{last['display']}  (S{last['season']}·{last['week']})"))
+        return rows or [("Primato", "—")]
+
     def _build_overview(self, a: Athlete) -> QWidget:
         page = QWidget()
         outer = QVBoxLayout(page)
@@ -320,7 +330,7 @@ class AthleteDetailDialog(QDialog):
             ("Rapporto", self._relation_text(a)),
             ("Clausola", self._clause_text(a)),
             ("Fan", f"{a.fans:,}"),
-            ("Primato", a.personal_best_display or "—"),
+            *self._pb_rows(a),
             ("Allenatore", coach.name if coach else "Nessuno"),
         ]
         info = QFrame()

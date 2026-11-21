@@ -123,6 +123,7 @@ from models.finances import (
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
 from models.career import make_retired, retirement_chance
 from models.diamond import diamond_meet_name, is_diamond_meet
+from models.personal_bests import best_value, is_improvement, record_best
 from models.ranking import (
     award_event_points,
     award_place,
@@ -940,6 +941,9 @@ def simulate_competition(
 
     # C.1b: il meeting a invito (Diamond League) si decide **prima** del decadimento, sui punti con cui il club è stato invitato.
     diamond = is_diamond_meet(state)
+    meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
+    if diamond:
+        meet_name = diamond_meet_name(meet_name)
     decay_ranking(state)  # C.1: i punti ranking decadono una volta per meeting, prima dei nuovi (per tutti)
 
     event_results: List[EventResult] = []
@@ -1089,13 +1093,10 @@ def simulate_competition(
             # Check PB, Club Record, and Historic Milestone (only when wind <= 2.0 m/s!)
             is_pb = False
             is_club_rec = False
-            had_previous_pb = player_athlete.personal_best is not None
+            had_previous_pb = best_value(player_athlete, event_name) is not None  # Q43: il primato è PER GARA
             if not wind_illegal and not withdrew:
-                if player_athlete.personal_best is None or _is_better(
-                    event_def, p_val, player_athlete.personal_best
-                ):
-                    player_athlete.personal_best = p_val
-                    player_athlete.personal_best_display = p_disp
+                if is_improvement(event_name, p_val, player_athlete):
+                    record_best(player_athlete, event_name, p_val, p_disp, state.season_number, state.week, meet_name)
                     is_pb = True
 
                 existing_rec = records.get(event_name)
@@ -1135,10 +1136,7 @@ def simulate_competition(
                     )
                     if milestone_msg not in state.milestones:
                         state.milestones.insert(0, milestone_msg)
-            elif not withdrew and (
-                player_athlete.personal_best is None
-                or _is_better(event_def, p_val, player_athlete.personal_best)
-            ):
+            elif not withdrew and is_improvement(event_name, p_val, player_athlete):
                 state.news_log.insert(
                     0,
                     f"Sett. {state.week}: {player_athlete.name} ha corso/saltato {p_disp} nei {event_name} ({gender}), "
@@ -1338,9 +1336,6 @@ def simulate_competition(
     state.budget += total_prize + ticket_income + tv_income - travel_cost - bonus_total
     state.prestige += total_prestige
 
-    meet_name = get_meet_name(state.week, state.tier, state.season_phase.value)
-    if diamond:
-        meet_name = diamond_meet_name(meet_name)
     if total_prize > 0:
         state.transactions.insert(
             0,

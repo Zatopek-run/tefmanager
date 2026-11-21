@@ -106,6 +106,7 @@ from models.entities import (
 )
 from controllers.game_controller import scouting_search_cost
 from models.facilities import FACILITY_EFFECTS, facility_cost, owns
+from models.personal_bests import best_display, events_with_best, sort_value, summary_text
 from models.scouting import (
     academy_growth_multiplier,
     academy_upgrade_cost,
@@ -752,8 +753,12 @@ class RosterTab(QWidget):
         )
         self.refresh(self.controller.state)
 
-    @staticmethod
-    def _sort_key(a: Athlete, col: int):
+    def _entered_events(self, a: Athlete) -> list:
+        """Le gare in cui l'atleta è iscritto (formazione del suo sesso), nell'ordine del calendario."""
+        lineup = self.controller.state.lineup_for(a.gender)
+        return [e for e in self.controller.state.active_events if lineup.get(e) == a.id]
+
+    def _sort_key(self, a: Athlete, col: int):
         keys = {
             0: a.name.lower(),
             1: a.age,
@@ -767,7 +772,7 @@ class RosterTab(QWidget):
             9: a.form,
             10: a.fatigue,
             11: a.status_label,
-            12: a.personal_best or 0.0,
+            12: sort_value(a, self._entered_events(a)),
             13: a.fans,
         }
         return keys.get(col, a.name.lower())
@@ -823,7 +828,7 @@ class RosterTab(QWidget):
                 str(a.form),
                 str(a.fatigue),
                 a.status_label,
-                a.personal_best_display or "—",
+                summary_text(a, self._entered_events(a)),
                 f"{a.fans:,}",
             ]
             for col, text in enumerate(cells):
@@ -842,6 +847,11 @@ class RosterTab(QWidget):
                 elif col == 11:
                     item.setForeground(
                         QColor(theme.BAD if a.is_injured else (theme.WARN if a.fatigue >= 75 else theme.GOOD))
+                    )
+                elif col == 12:
+                    item.setToolTip(
+                        "\n".join(f"{e}: {best_display(a, e)}" for e in events_with_best(a))
+                        or "Nessun primato ancora: il primo risultato valido di ogni gara lo fissa."
                     )
                 self.table.setItem(row, col, item)
 

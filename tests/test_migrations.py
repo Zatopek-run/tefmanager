@@ -1015,6 +1015,7 @@ class TestMigrationV22StaffAttributes(_TmpCase):
             conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")  # v24, successiva
             conn.execute("ALTER TABLE athletes DROP COLUMN relationships_json")  # v25, successiva
             conn.execute("ALTER TABLE athletes DROP COLUMN history_json")  # v26, successiva
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")  # v27, successiva
             conn.execute("PRAGMA user_version = 21")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v21 → v22
@@ -1070,6 +1071,60 @@ class TestMigrationV22StaffAttributes(_TmpCase):
         self.assertEqual(user_version(path), 21)
 
 
+class TestMigrationV27PersonalBests(_TmpCase):
+    """v26 → v27 (Q43): `athletes.pb_json` (default `'{}'` = nessun primato per gara). Le colonne `personal_best*` restano, inutilizzate."""
+
+    def test_v26_save_gets_the_column_with_default_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 27)
+        self.assertIn(26, MIGRATIONS)
+        path = make_save(self.slot("v26"), 26)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("pb_json", column_names(conn, "athletes"))  # la fixture è davvero v26
+            self.assertIn("history_json", column_names(conn, "athletes"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertIn(("pb_json", "TEXT", 1, "'{}'", 0), columns(conn, "athletes"))
+            self.assertIn("personal_best", column_names(conn, "athletes"))  # nessun DROP di dati
+        sentinel_ok(self, path, 26)
+        backup = self.backups("v26")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 26)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("pb_json", column_names(conn, "athletes"))
+        sentinel_ok(self, backup, 26)
+
+    def test_old_save_loads_without_personal_bests_and_they_roundtrip(self) -> None:
+        from models.personal_bests import record_best
+        from tests.test_assignments import make_state
+
+        path = self.slot("v26")
+        state = make_state(2)
+        DatabaseManager(db_path=path).save_game(state)
+        with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v26: senza la colonna
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")
+            conn.execute("PRAGMA user_version = 26")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()  # migra v26 → v27
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        self.assertTrue(all(a.pb_log == {} for a in loaded.athletes))  # nessun primato inventato: si fissano con le prime gare
+        record_best(loaded.athletes[0], "100m", 11.2, "11.20s", 1, 4, "Meeting A")
+        record_best(loaded.athletes[0], "100m", 11.0, "11.00s", 1, 8, "Meeting B")
+        DatabaseManager(db_path=path).save_game(loaded)
+        again = DatabaseManager(db_path=path).load_game()
+        self.assertEqual(again.athletes[0].pb_log, loaded.athletes[0].pb_log)
+        self.assertEqual(again.athletes[1].pb_log, {})
+
+    def test_failed_v26_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v26"), 26)
+        before = sha(path)
+        broken = {"athletes": [("pb_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {26: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -1109,6 +1164,7 @@ class TestMigrationV23Facilities(_TmpCase):
             conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")  # v24, successiva
             conn.execute("ALTER TABLE athletes DROP COLUMN relationships_json")  # v25, successiva
             conn.execute("ALTER TABLE athletes DROP COLUMN history_json")  # v26, successiva
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")  # v27, successiva
             conn.execute("PRAGMA user_version = 22")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v22 → v23
@@ -1177,6 +1233,7 @@ class TestMigrationV24Giovanili(_TmpCase):
             conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")
             conn.execute("ALTER TABLE athletes DROP COLUMN relationships_json")  # v25, successiva
             conn.execute("ALTER TABLE athletes DROP COLUMN history_json")  # v26, successiva
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")  # v27, successiva
             conn.execute("PRAGMA user_version = 23")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v23 → v24
@@ -1242,6 +1299,7 @@ class TestMigrationV25Relationships(_TmpCase):
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v24: senza la colonna
             conn.execute("ALTER TABLE athletes DROP COLUMN relationships_json")
             conn.execute("ALTER TABLE athletes DROP COLUMN history_json")  # v26, successiva
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")  # v27, successiva
             conn.execute("PRAGMA user_version = 24")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v24 → v25
@@ -1310,6 +1368,7 @@ class TestMigrationV26History(_TmpCase):
         DatabaseManager(db_path=path).save_game(state)
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v25: senza la colonna
             conn.execute("ALTER TABLE athletes DROP COLUMN history_json")
+            conn.execute("ALTER TABLE athletes DROP COLUMN pb_json")  # v27, successiva
             conn.execute("PRAGMA user_version = 25")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v25 → v26

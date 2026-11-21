@@ -38,6 +38,7 @@ from models.entities import (
     Specialty,
 )
 from models.generator import SPECIALTY_COACH_FOCUS, generate_initial_roster
+from models.personal_bests import record_best
 from models.simulation import advance_week, apply_weekly_training, retire_veterans
 from tests.test_assignments import make_state
 
@@ -146,13 +147,13 @@ class TestRetireVeterans(unittest.TestCase):
         for x in state.athletes:
             x.age = 25
         a = veteran(state, 35, injuries=1)
-        a.personal_best_display = "10.42"
+        record_best(a, "100m", 10.42, "10.42s", 2, 8, "Meeting")
         state.season_number = 4  # già incrementato: la stagione chiusa è la 3
         retire_veterans(state, FakeRng(0.0, 0.5))
         ex = state.retired[0]
         self.assertEqual(
             (ex.name, ex.gender, ex.specialty, ex.age, ex.season, ex.reason, ex.personal_best_display),
-            (a.name, a.gender, a.specialty, 35, 3, REASON_AGE, "10.42"),
+            (a.name, a.gender, a.specialty, 35, 3, REASON_AGE, "10.42s"),
         )
         self.assertNotIn(a, state.athletes)
 

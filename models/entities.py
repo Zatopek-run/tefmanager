@@ -401,6 +401,9 @@ RANKING_SYNTH_SKILL_BOTTOM = 58.0  # e del 100°
 RANKING_SYNTH_SKILL_JITTER = 2.0  # scarto iniziale casuale attorno alla retta fra i due estremi
 RANKING_SYNTH_DRIFT = 0.3  # passeggiata casuale del livello a ogni meeting (σ)
 
+# Primati personali per gara (Q43, 2026-11-21): quanti miglioramenti si ricordano per gara e per atleta (i più recenti; l'ultimo è il primato).
+PB_LOG_MAX = 20
+
 # Inviti alla Diamond League (PIANOLAVORO C.1b, 2026-11-21). CIFRE PROVVISORIE: vedi docs/BALANCE.md e QUESTIONS Q42.
 # Una volta a stagione, nel secondo meeting della fase Outdoor, la società **invitata** gareggia nel meeting «Diamond
 # League» al posto di quello di lega: stesse gare e stessi avversari del livello Internazionale, ma con premi e prestigio
@@ -844,8 +847,6 @@ class Athlete:
     weekly_wage: int = 200
     injured_weeks: int = 0
     is_youth_prospect: bool = False
-    personal_best: Optional[float] = None
-    personal_best_display: Optional[str] = None
     doping_boost_weeks: int = 0
     in_youth_squad: bool = False
     fans: int = 0
@@ -864,6 +865,9 @@ class Athlete:
     record_bonus: int = 0  # € pagati a ogni record sociale individuale finché dura il contratto (D.2); 0 = nessun bonus
     # Storico per i grafici (G.1/G.2): {"weekly": [[forma, fatica, infortunato], ...], "results": [{...}, ...]}, dal più vecchio al più recente.
     history: Dict[str, list] = field(default_factory=dict)
+    # Primati personali PER GARA e loro progressione (Q43): `{evento: [{"season", "week", "value", "display", "meet"}, ...]}`,
+    # dal più vecchio al più recente; ogni voce è un miglioramento, quindi l'ultima è il primato attuale. Vedi `models/personal_bests.py`.
+    pb_log: Dict[str, list] = field(default_factory=dict)
 
     @property
     def release_clause_cost(self) -> int:

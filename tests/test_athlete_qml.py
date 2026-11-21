@@ -98,6 +98,21 @@ class TestDialogWithQml(AthleteQmlCase):
         QTest.qWait(150)
         self.assertEqual(dlg._stats_view.qml.warnings, [])
 
+    def test_the_records_card_shows_the_progression_without_warnings(self) -> None:
+        from models.personal_bests import record_best
+
+        for i, v in enumerate((11.6, 11.4, 11.0)):
+            record_best(self.athlete, "100m", v, f"{v:.2f}s", 1, 4 * (i + 1), f"Meeting {i}")
+        record_best(self.athlete, "Salto in Lungo", 6.2, "6.20m", 1, 8, "Meeting 1")
+        dlg = self.open_dialog()
+        items = dlg._stats_view.snapshot["records"]["items"]
+        self.assertEqual([i["event"] for i in items], ["100m", "Salto in Lungo"])
+        QTest.qWait(300)  # il Canvas carica la texture in modo asincrono
+        img = dlg._stats_view.qml.grab().toImage()
+        self.assertFalse(img.isNull())
+        self.assertEqual(dlg._stats_view.qml.warnings, [])
+        self.assertEqual(self.messages, [])
+
     def test_every_athlete_opens_clean(self) -> None:
         for a in self.ctrl.state.athletes[:6]:
             self.athlete = a

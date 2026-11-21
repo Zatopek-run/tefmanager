@@ -96,7 +96,28 @@ Rectangle {
 
             Card {
                 Layout.fillWidth: true
-                title: d.comparison.title; hint: d.comparison.text; order: 5
+                title: "Primati personali"; hint: d.records.items.length > 0 ? "un primato per gara, con la sua progressione" : ""; order: 5
+                Txt { Layout.fillWidth: true; visible: d.records.items.length === 0; text: d.records.emptyText; color: Theme.textMuted; font.pixelSize: Theme.fsSm; wrapMode: Text.WordWrap }
+                Repeater {
+                    model: d.records.items
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: Theme.sp3
+                            Txt { text: modelData.event; font.weight: Font.DemiBold }
+                            Txt { text: modelData.best; color: Theme.warn; font.weight: Font.Bold }
+                            Txt { text: modelData.since; color: Theme.textFaint; font.pixelSize: Theme.fsXs }
+                            Item { Layout.fillWidth: true }
+                            Txt { text: modelData.gain; color: Theme.good; font.pixelSize: Theme.fsXs }
+                        }
+                        PbChart { Layout.fillWidth: true; Layout.preferredHeight: 96; points: modelData.points }
+                    }
+                }
+            }
+
+            Card {
+                Layout.fillWidth: true
+                title: d.comparison.title; hint: d.comparison.text; order: 6
                 ComparisonList { Layout.fillWidth: true; comparison: d.comparison }
             }
         }

@@ -433,3 +433,9 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | `DIAMOND_INVITE_MIN_POINTS` | 100 — punti ranking minimi del club: una vittoria in Finale Oro (100 × 1,00) non ancora decaduta | `entities.py` |
 | `DIAMOND_PRIZE_MULT` / `DIAMOND_PRESTIGE_MULT` | 2,0 / 2,0 — moltiplicatori di premio e prestigio di ogni gara del meeting a invito (nessun bonus squadra) | `entities.py` |
 | `DIAMOND_MEET_LABEL` | «Diamond League» — prefisso del nome del meeting | `entities.py` |
+
+## M. Primati personali per gara (Q43, 2026-11-21)
+
+| Nome | Valore | File |
+| --- | --- | --- |
+| `PB_LOG_MAX` | 20 — quanti miglioramenti del primato si ricordano per gara e per atleta (i più recenti; l'ultimo è il primato attuale, quindi tagliare i vecchi non lo cambia) | `entities.py` |

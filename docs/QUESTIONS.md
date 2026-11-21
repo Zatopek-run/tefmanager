@@ -615,3 +615,18 @@ scena non contraddice il piano ma non lo riflette); (b) le **staffette** non han
 
 **Priorità:** 🟢 BASSA  
 **Dipendenze:** C.1 (ranking), F.4 (popup)
+
+## Q43 — Primati personali per gara e progressione nel tempo — 🟡 FATTO 2026-11-21, **scelte da confermare**
+
+**Richiesta dell'utente (2026-11-21):** «i singoli atleti dovrebbero avere un PR e una progressione dei PR nel tempo».
+
+**Cosa c'è** (`models/personal_bests.py`, senza Qt e senza RNG; schema **v27**, colonna `athletes.pb_json`): ogni atleta ha un primato **per gara** e l'elenco dei suoi miglioramenti (`Athlete.pb_log`, voce = stagione, settimana, valore, testo, meeting; ultime `PB_LOG_MAX` = 20 per gara). Scheda atleta: una riga «Primato · gara» per ogni gara nel modulo a sinistra (resta anche con il ripiego senza QML) e una scheda «Primati personali» in QML (`PbChart.qml`) con un grafico per gara; elenco della rosa con i primati delle gare in cui l'atleta è iscritto. Test: `test_personal_bests.py` (16, senza Qt), `test_athlete_view` (+6), `test_athlete_qml` (+1), `test_migrations` (+3).
+
+**Difetto trovato e corretto** (AUDIT R44): prima c'era **un solo** `personal_best` per atleta, confrontato con la misura di qualunque gara. Un atleta può avere 2 gare individuali (`MAX_INDIVIDUAL_EVENTS`): dopo un primato nei 100m il salto in lungo (metri, «più alto è meglio») non poteva più essere un PB, e il +5 fan, la notizia e il segno «PB» dello storico erano sbagliati. L'RNG non cambia (verificato contro il commit precedente: stesso stato finale), ma fan e quindi merchandising e biglietti sì: a parità di seme il bilancio di chi ha due gare è un po' diverso.
+
+**Mie scelte, da confermare:** (a) un primato **per gara**, non per disciplina o per atleta; (b) la **progressione** si salva solo ai miglioramenti veri (pari merito escluso), con le ultime 20 voci per gara; (c) **partite vecchie**: i vecchi `personal_best` non si convertono (non si sa a quale gara appartenessero), quindi ripartono da zero e la prima gara valida di ogni evento fissa il primato (le colonne `personal_best*` restano nella tabella, inutilizzate: niente `DROP`); (d) **elenco della rosa**: la cella «PB» mostra i primati delle gare **in cui l'atleta è iscritto** (fino a 2), altrimenti i due più recenti; l'ordinamento usa il primato della prima gara mostrata, quindi confronta tempi con tempi solo se le gare sono dello stesso tipo; (e) l'ex atleta ricorda i suoi due primati più recenti; (f) gli **atleti rivali** hanno ancora un solo PB (fanno una sola gara); (g) il grafico mostra la progressione **per numero di miglioramenti**, non su una scala di tempo vera (le settimane tra due primati non sono proporzionali) e con il miglioramento sempre in alto.
+
+**Da decidere:** (a) se serve il confronto del primato con il record sociale, il mondiale o il livello di un campo; (b) una scala del tempo vera nel grafico; (c) se i PB per stagione («primato stagionale», SB) vadano aggiunti; (d) se convertire i vecchi PB (oggi persi).
+
+**Priorità:** 🟢 BASSA  
+**Dipendenze:** G.2 (scheda atleta)

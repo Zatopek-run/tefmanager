@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from models.entities import (
+    EVENTS,
     HISTORY_RESULTS,
     STAT_LEVEL_GOOD,
     STAT_LEVEL_GREAT,
@@ -16,6 +17,7 @@ from models.entities import (
     GameState,
 )
 from models.history import result_percentile, results_series
+from models.personal_bests import events_with_best, progression
 from models.simulation import body_fit_score
 
 RADAR_AXES = (("Velocità", "speed"), ("Resistenza", "stamina"), ("Forza", "strength"), ("Tecnica", "technique"), ("Resilienza", "resilience"))
@@ -78,6 +80,29 @@ def _performance(a: Athlete) -> dict:
             "emptyText": "Nessuna gara individuale ancora: lo storico si riempie giocando."}
 
 
+def _records(a: Athlete) -> dict:
+    """Primati personali per gara e loro progressione (Q43). Per ogni gara: primato, miglioramento totale e i punti del grafico, con
+    `y` in 0-1 e **il miglioramento sempre verso l'alto** (tempi più bassi e misure più alte salgono allo stesso modo)."""
+    items = []
+    for event in events_with_best(a):
+        steps = progression(a, event)
+        unit = EVENTS[event].unit
+        first, last = steps[0], steps[-1]
+        span = last["value"] - first["value"]
+        points = []
+        for i, step in enumerate(steps):
+            y = 0.5 if len(steps) == 1 or span == 0 else (step["value"] - first["value"]) / span
+            when = f"S{step['season']}·{step['week']}"
+            tip = f"{event}: {step['display']} — {when}" + (f", {step['meet']}" if step["meet"] else "") + (" (primo risultato)" if i == 0 else "")
+            points.append({"label": when, "y": max(0.0, min(1.0, y)), "display": step["display"], "tip": tip})
+        gain = ""
+        if len(steps) > 1:
+            sign = "−" if EVENTS[event].lower_is_better else "+"
+            gain = f"{sign}{abs(span):.2f}{unit} in {len(steps) - 1} miglioramenti"
+        items.append({"event": event, "best": last["display"], "since": f"S{last['season']}·{last['week']}", "gain": gain, "points": points})
+    return {"items": items, "emptyText": "Nessun primato ancora: il primo risultato valido di ogni gara lo fissa."}
+
+
 def _comparison(a: Athlete, peers: List[Athlete]) -> dict:
     ranked = sorted(peers, key=lambda p: (-p.overall, p.name))
     rank = next(i for i, p in enumerate(ranked, start=1) if p.id == a.id)
@@ -104,6 +129,7 @@ def athlete_snapshot(state: GameState, a: Athlete) -> dict:
         "condition": [_bar("Forma", a.form), _bar("Fatica", a.fatigue, invert=True), _bar("Sonno", a.sleep_quality),
                       _bar("Alimentazione", a.nutrition)],
         "performance": _performance(a),
+        "records": _records(a),
         "comparison": _comparison(a, peers),
     }
 
@@ -116,5 +142,6 @@ def empty_athlete_snapshot() -> dict:
         "potential": {"overall": 0, "potential": 0, "pct": 0, "text": "", "stars": 1},
         "physical": [], "technical": [], "condition": [],
         "performance": {"points": [], "max": HISTORY_RESULTS, "summary": "", "emptyText": ""},
+        "records": {"items": [], "emptyText": ""},
         "comparison": {"title": "", "rank": 1, "of": 1, "top": 1, "text": "", "rows": []},
     }

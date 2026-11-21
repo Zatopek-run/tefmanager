@@ -17,6 +17,7 @@ from models.generator import ensure_staff_market, generate_body, infer_gender
 from models.staff import normalize_attributes
 from models.facilities import facilities_from_json, facilities_to_json
 from models.history import history_from_json, history_to_json
+from models.personal_bests import pb_log_from_json, pb_log_to_json
 from models.relationships import relationships_from_json, relationships_to_json
 from models.scouting import scout_from_json, scout_to_json
 from models.entities import (
@@ -52,7 +53,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -193,6 +194,11 @@ V25_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V26_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("history_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
+# Columns added in v27 (Q43: primati personali per gara e loro progressione; `{}` = nessuno. Le colonne `personal_best` e
+# `personal_best_display`, un solo PB per atleta, restano nella tabella ma non si leggono né si scrivono più).
+V27_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("pb_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -218,6 +224,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     23: V24_COLUMNS,
     24: V25_COLUMNS,
     25: V26_COLUMNS,
+    26: V27_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -906,7 +913,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     agent_id INTEGER,
     record_bonus INTEGER NOT NULL DEFAULT 0,
     relationships_json TEXT NOT NULL DEFAULT '{}',
-    history_json TEXT NOT NULL DEFAULT '{}'
+    history_json TEXT NOT NULL DEFAULT '{}',
+    pb_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -1166,10 +1174,10 @@ class DatabaseManager:
                     id, name, age, specialty, speed, stamina, strength, technique,
                     resilience, form, fatigue, potential, personality, training_focus,
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
-                    is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
+                    is_youth_prospect, doping_boost_weeks,
                     in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
-                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id, record_bonus, relationships_json, history_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id, record_bonus, relationships_json, history_json, pb_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -1193,8 +1201,6 @@ class DatabaseManager:
                         a.weekly_wage,
                         a.injured_weeks,
                         1 if a.is_youth_prospect else 0,
-                        a.personal_best,
-                        a.personal_best_display,
                         a.doping_boost_weeks,
                         1 if a.in_youth_squad else 0,
                         a.fans,
@@ -1211,6 +1217,7 @@ class DatabaseManager:
                         a.record_bonus,
                         relationships_to_json(a.relationships),
                         history_to_json(a.history),
+                        pb_log_to_json(a.pb_log),
                     )
                     for a in state.athletes
                 ],
@@ -1354,8 +1361,6 @@ class DatabaseManager:
                     weekly_wage=r["weekly_wage"],
                     injured_weeks=r["injured_weeks"],
                     is_youth_prospect=bool(r["is_youth_prospect"]),
-                    personal_best=r["personal_best"],
-                    personal_best_display=r["personal_best_display"],
                     doping_boost_weeks=r["doping_boost_weeks"],
                     in_youth_squad=bool(r["in_youth_squad"]),
                     fans=r["fans"],
@@ -1372,6 +1377,7 @@ class DatabaseManager:
                     record_bonus=int(r["record_bonus"]),
                     relationships=relationships_from_json(r["relationships_json"]),
                     history=history_from_json(r["history_json"]),
+                    pb_log=pb_log_from_json(r["pb_json"]),
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]

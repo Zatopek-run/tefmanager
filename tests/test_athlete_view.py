@@ -14,6 +14,7 @@ import unittest
 from models.athlete_view import COMPARISON_ROWS, athlete_snapshot, empty_athlete_snapshot, stat_level
 from models.entities import HISTORY_RESULTS, EventResult, Specialty
 from models.history import record_result
+from models.personal_bests import record_best
 from models.simulation import advance_week
 from tests.test_assignments import make_state
 
@@ -133,6 +134,75 @@ class TestPerformance(unittest.TestCase):
             state.pending_dilemma = None
         total = sum(len(athlete_snapshot(state, a)["performance"]["points"]) for a in state.main_squad)
         self.assertGreater(total, 0)
+
+
+class TestRecords(unittest.TestCase):
+    """Primati personali per gara e progressione (Q43): il miglioramento va sempre verso l'alto, tempi e misure insieme."""
+
+    def records(self, a, state=None):
+        return athlete_snapshot(state or make_state(3), a)["records"]
+
+    def test_empty(self) -> None:
+        state = make_state(3)
+        a = pick(state)
+        a.pb_log = {}
+        rec = athlete_snapshot(state, a)["records"]
+        self.assertEqual(rec["items"], [])
+        self.assertTrue(rec["emptyText"])
+
+    def test_a_time_event_goes_up_when_the_time_goes_down(self) -> None:
+        state = make_state(3)
+        a = pick(state)
+        a.pb_log = {}
+        for i, v in enumerate((11.6, 11.4, 11.0)):
+            record_best(a, "100m", v, f"{v:.2f}s", 1, 4 * (i + 1), f"Meeting {i}")
+        (item,) = athlete_snapshot(state, a)["records"]["items"]
+        self.assertEqual((item["event"], item["best"]), ("100m", "11.00s"))
+        for got, want in zip([p["y"] for p in item["points"]], [0.0, 0.2 / 0.6, 1.0]):
+            self.assertAlmostEqual(got, want)
+        self.assertTrue(item["gain"].startswith("−0.60s"))
+        self.assertIn("2 miglioramenti", item["gain"])
+        self.assertIn("(primo risultato)", item["points"][0]["tip"])
+
+    def test_a_distance_event_goes_up_when_the_mark_goes_up(self) -> None:
+        state = make_state(3)
+        a = pick(state)
+        a.pb_log = {}
+        for i, v in enumerate((6.0, 6.5)):
+            record_best(a, "Salto in Lungo", v, f"{v:.2f}m", 1, 4 * (i + 1), "M")
+        (item,) = athlete_snapshot(state, a)["records"]["items"]
+        self.assertEqual([p["y"] for p in item["points"]], [0.0, 1.0])
+        self.assertTrue(item["gain"].startswith("+0.50m"))
+
+    def test_one_point_only_is_in_the_middle_and_has_no_gain(self) -> None:
+        state = make_state(3)
+        a = pick(state)
+        a.pb_log = {}
+        record_best(a, "400m", 52.0, "52.00s", 1, 4, "M")
+        (item,) = athlete_snapshot(state, a)["records"]["items"]
+        self.assertEqual([p["y"] for p in item["points"]], [0.5])
+        self.assertEqual(item["gain"], "")
+
+    def test_one_item_per_event_in_the_order_of_the_events(self) -> None:
+        state = make_state(3)
+        a = pick(state)
+        a.pb_log = {}
+        record_best(a, "Getto del Peso", 12.0, "12.00m", 1, 4, "M")
+        record_best(a, "100m", 11.0, "11.00s", 1, 4, "M")
+        self.assertEqual([i["event"] for i in athlete_snapshot(state, a)["records"]["items"]], ["100m", "Getto del Peso"])
+
+    def test_a_played_game_fills_it(self) -> None:
+        state = make_state(3)
+        rng = random.Random(5)
+        for _ in range(12):
+            advance_week(state, rng=rng)
+        racer = next((a for a in state.main_squad if a.pb_log), None)
+        self.assertIsNotNone(racer)
+        items = athlete_snapshot(state, racer)["records"]["items"]
+        self.assertEqual({i["event"] for i in items}, set(racer.pb_log))
+        for item in items:
+            self.assertTrue(all(0.0 <= p["y"] <= 1.0 for p in item["points"]))
+            self.assertEqual(item["points"][-1]["display"], item["best"])
 
 
 class TestComparison(unittest.TestCase):

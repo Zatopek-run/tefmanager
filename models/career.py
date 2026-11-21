@@ -30,6 +30,7 @@ from models.entities import (
     Athlete,
     RetiredAthlete,
 )
+from models.personal_bests import summary_text
 from models.generator import SPECIALTY_COACH_FOCUS
 
 REASON_AGE = "Età"
@@ -81,7 +82,7 @@ def make_retired(athlete: Athlete, season: int, reason: str, coach_offer: bool) 
         reason=reason,
         nationality=athlete.nationality,
         overall=athlete.overall,
-        personal_best_display=athlete.personal_best_display,
+        personal_best_display=summary_text(athlete, ()),  # Q43: i primati più recenti (al più due gare)
         coach_skills=coach_skills_from_athlete(athlete) if coach_offer else {},
         coach_offer=coach_offer,
     )
