@@ -431,7 +431,7 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 829 test, ~39 s su Linux
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 95 test, SENZA PyQt6
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 99 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).
