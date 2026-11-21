@@ -118,6 +118,7 @@ from models.finances import (
     close_month_if_due,
     member_fees_income,
     merchandising_income,
+    roster_factor,
     sponsor_after_cut,
     sponsor_target,
     tv_rights_income,
@@ -1668,7 +1669,7 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     tier_cfg = TIER_CONFIG[state.tier]
     rep_mult = 0.65 + (state.reputation / 100.0) * 0.55
     fidelity_mult = 0.8 + 0.2 * (state.fidelity / 100.0)
-    sponsor, sponsor_cut = sponsor_after_cut(state, round(tier_cfg["weekly_sponsor"] * rep_mult * fidelity_mult))
+    sponsor, sponsor_cut = sponsor_after_cut(state, round(tier_cfg["weekly_sponsor"] * rep_mult * fidelity_mult * roster_factor(state)))
     merchandising = merchandising_income(state)
     individual = sum(a.fans // 4 for a in state.main_squad if a.age >= 18)
     athlete_wages = sum(a.weekly_wage for a in state.main_squad)

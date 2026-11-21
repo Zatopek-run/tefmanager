@@ -194,7 +194,7 @@ class TestViews(_Case):
             viewer.assert_not_called()
         self.assertEqual(self.state.week, 13)
         self.assertIn("non si iscrive", " ".join(self.state.news_log))
-        self.assertEqual(self.state.budget > 18000, True)
+        self.assertEqual(self.state.budget, 18000)  # Q32c/d: senza atleti né allenatori nessuna entrata e nessuna uscita
 
 
 class TestSeasonEndDialog(_Case):

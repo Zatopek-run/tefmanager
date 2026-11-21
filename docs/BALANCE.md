@@ -297,11 +297,11 @@ arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrat
 
 ## Q. Avvio senza atleti e Preparazione (2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q32)
 
-**Budget e valori economici di partenza: INVARIATI** (fondo 18.000 in Carriera, 10.000 nel Prototipo, staff e impianti come sempre). Cambia che la rosa parte vuota, **senza allenatori iniziali** (Q32d) e con **quote tesserati proporzionali agli atleti** (Q32c: 0 a rosa vuota, piene da 10 atleti).
+**Budget di partenza: INVARIATO** (fondo 18.000 in Carriera, 10.000 nel Prototipo, staff e impianti come sempre). Cambia che la rosa parte vuota, **senza allenatori iniziali** (Q32d) e con **quote tesserati e sponsor società proporzionali agli atleti** (Q32c: 0 a rosa vuota, pieni da 10 atleti).
 
 | Nome | Valore | File |
 | --- | --- | --- |
-| `MEMBER_FEES_FULL_ROSTER` | 10: quote tesserati piene da 10 atleti in su, proporzionali sotto, 0 senza atleti (Q32c, cifra mia) | `entities.py` |
+| `MEMBER_FEES_FULL_ROSTER` | 10: quote tesserati **e sponsor società** pieni da 10 atleti in su (Prima Squadra e vivaio), proporzionali sotto, 0 senza atleti (Q32c, cifra mia; `finances.roster_factor`) | `entities.py` |
 | `SEASON_PREP_WEEKS` | 8 settimane di Preparazione a inizio di ogni stagione (solo Carriere nuove, `prep_weeks`); multipla di 4 | `entities.py` |
 | `PHASE_WEEKS` | 12 settimane per fase con gare (invariato, prima era un letterale `12`) | `entities.py` |
 | `SEASON_WEEKS` | 36 settimane di gara (invariato); la stagione di una Carriera nuova ne ha 44 | `entities.py` |
@@ -312,7 +312,7 @@ arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrat
 
 Gare: con la Preparazione la prima gara è alla settimana 12 (poi ogni 4: 9 gare per stagione, come prima). Stagione di fondazione: nessuna conseguenza del verdetto, nessun taglio sponsor (`SPONSOR_MISS_PENALTY` non si applica dopo la stagione 1), nessuna penalità «resta fermo». Società senza atleti a un meeting: nessuna trasferta, nessun biglietto.
 
-Misura in autopilota (Carriera nuova, nessuna azione, seme 1): budget 18.000 → circa 53.000 dopo 40 settimane e circa 100.000 dopo 100; reputazione e prestigio fermi. È una **conseguenza non voluta** dell'avvio vuoto (entrate senza costi atleti), non una cifra scelta: vedi QUESTIONS Q32 e AUDIT R29.
+Misura in autopilota (Carriera nuova, nessuna azione): dal 2026-11-21 il budget **resta a 18.000** (nessuna entrata e nessuna uscita: sponsor e quote scalano con gli atleti, nessun allenatore). Prima (seme 1): 18.000 → circa 53.000 dopo 40 settimane e circa 100.000 dopo 100; reputazione e prestigio fermi. È una **conseguenza non voluta** dell'avvio vuoto (entrate senza costi atleti), non una cifra scelta: vedi QUESTIONS Q32 e AUDIT R29.
 
 ## R. Staff con attributi (PIANOLAVORO E.1, 2026-11-20) — cifre degli attributi e del catalogo **confermate dall'utente il 2026-11-20** (QUESTIONS Q33); liquidazione, rinnovo del mercato e formula del costo PROVVISORI
 

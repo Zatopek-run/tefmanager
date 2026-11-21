@@ -35,6 +35,7 @@ from models.finances import (
     merchandising_income,
     month_bounds,
     recent_reports,
+    roster_factor,
     sponsor_after_cut,
     sponsor_cut_active,
     sponsor_target,
@@ -349,6 +350,24 @@ class TestMemberFees(unittest.TestCase):
         fin = weekly_finances(state)
         self.assertEqual(fin["member_fees"], 0)
         self.assertEqual(fin["income"], fin["sponsor"] + fin["individual_sponsors"] + fin["merchandising"])
+
+    def test_the_company_sponsor_scales_with_the_roster_too(self) -> None:
+        state = fresh()
+        full = weekly_finances(state)["sponsor"]
+        base = list(state.athletes)
+        state.athletes = base[:5]
+        half = weekly_finances(state)["sponsor"]
+        self.assertAlmostEqual(half / full, 5 / MEMBER_FEES_FULL_ROSTER, delta=0.01)
+        state.athletes = []
+        self.assertEqual(weekly_finances(state)["sponsor"], 0)
+        self.assertEqual(weekly_finances(state)["net"], 0)  # società vuota: niente entrate, niente uscite
+
+    def test_roster_factor_is_capped_at_one(self) -> None:
+        state = fresh()
+        state.athletes = (list(state.athletes) * 3)[: MEMBER_FEES_FULL_ROSTER * 2]
+        self.assertEqual(roster_factor(state), 1.0)
+        state.athletes = []
+        self.assertEqual(roster_factor(state), 0.0)
 
     def test_a_club_with_a_full_roster_earns_what_it_always_did(self) -> None:
         state = fresh()
