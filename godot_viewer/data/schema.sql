@@ -4,6 +4,7 @@
 -- status = 'DNF' (ritirato): final_time e' solo un tempo di riferimento per la velocita' di corsa;
 -- il corridore si ferma a DNF_STOP_DISTANCE metri e non entra nella classifica d'arrivo.
 -- bib = numero di pettorale a tre cifre, unico nel meeting (0 = nessuno). Una staffetta ha un solo numero per tutte le frazioni.
+-- pace_style = stile di passo in [-1, 1] (solo messa in scena, lo decide Python): positivo parte forte e cala, negativo parte piano e chiude forte, 0 = come sempre.
 -- ATTENZIONE: questo file e il seed si spezzano sul punto e virgola: non usarlo nei commenti.
 
 CREATE TABLE IF NOT EXISTS races (
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS race_results (
     final_time REAL NOT NULL CHECK (final_time > reaction_time),
     status TEXT NOT NULL DEFAULT 'OK' CHECK (status IN ('OK', 'DNF', 'DQ')),
     bib INTEGER NOT NULL DEFAULT 0 CHECK (bib >= 0),
+    pace_style REAL NOT NULL DEFAULT 0 CHECK (pace_style BETWEEN -1 AND 1),
     PRIMARY KEY (race_id, lane)
 );
 

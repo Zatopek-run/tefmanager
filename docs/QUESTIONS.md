@@ -577,3 +577,27 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Mie scelte, da confermare:** (a) i titoli delle sezioni non sono più in maiuscolo; (b) la Rosa si chiama solo «Rosa» (il titolo lungo non stava con i pulsanti, con Inter più largo); (c) una tabella più larga dello spazio mostra la barra di scorrimento orizzontale invece di tagliare i testi; (d) il pulsante «Partita» perde la freccia testuale e prende un'icona; (e) l'icona di ogni voce della barra laterale la scelgo io (`icons.NAV_ICONS`).
 
+
+## Q41 — Gare di corsa «piatte» e rientro alla corda nei 800m e 1500m — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
+
+**Segnalazione dell'utente:** (1) nelle corse «gli atleti partono e arrivano con la stessa velocità, non si superano mai»; (2) nei 800 e 1500m, appena il regolamento lo permette, i corridori prendono il lato stretto della
+curva, e nel gioco non succedeva.
+
+**Cause trovate:** (1) tutti i corridori seguivano la **stessa curva di velocità normalizzata sul proprio tempo**: chi aveva il tempo migliore era davanti dal primo metro; (2) in Godot lo scostamento dalla corda era
+`min(2.1, (corsia-1)*0.30)`, fisso e deciso dalla corsia di partenza (nessuno prendeva davvero la corda); la vista 3D PyQt la prendeva, ma scambiava le file a scatto ai sorpassi; il rientro degli 800m partiva a 100 m,
+prima della fine della prima curva (115,6 m).
+
+**Cosa c'è** (solo messa in scena: tempi, ordine e misure non cambiano): **stile di passo** per corridore (`pace_style`, deformazione del tempo normalizzato con via e arrivo fissi; colonna `race_results.pace_style`
+dell'export), **formazione del gruppo** (`models/pack_formation.py` + trascrizione `PackFormation.gd`), camera di Godot che non scatta ai cambi di testa, `views/race_3d.py` sulla stessa formazione. Test:
+`test_pace_style` (12), `test_pack_formation` (21, senza Qt), `test_race_pack_3d` (6), `tests/verify_pack.gd` (parità con Python); suite 1009 OK.
+
+**Cifre provvisorie, da confermare** (`PACE_AMPLITUDE` in `race_viewer.py` e `RaceMotion.gd`; costanti in `pack_formation.py`): ampiezza dello stile 100m 0,008, 400m 0,012, 800m 0,016, 1500m 0,014 (frazione del tempo di
+gara). **Misurate su 226 gare di 5 partite:** con queste cifre il 29% dei 100m e quasi tutte le gare 400-1500 hanno almeno un sorpasso (prima 0-13% nei 100-400m); a metà gara due stili opposti distano ~2·AMP·distanza
+(100m 2 m, 400m 10 m, 800m 26 m, 1500m 42 m). Formazione: file larghe 0,95 m, distanza lungo la pista 1,6 m davanti e 3,0 m dietro, rientro 800m 115,6-145 m e 1500m 10-90 m, uscita di chi si ferma in 5 s.
+
+**Mie scelte, da confermare:** (a) lo stile è casuale e uguale per tutti i tipi di atleta: **non** dipende dal carattere né dal piano gara scelto dal giocatore (B.1: la messa in scena lo ignora, un sorpasso in
+scena non contraddice il piano ma non lo riflette); (b) le **staffette** non hanno stile (i cambi di testimone restano com'erano); (c) la **4x400m non è stata cambiata** (vedi AUDIT R42); (d) nei concorsi nulla cambia;
+(e) chi taglia il traguardo esce verso l'esterno (prima restava sul posto e l'ultimo attraversava il gruppo).
+
+**Da decidere:** (a) legare lo stile al carattere dell'atleta o al piano gara B.1; (b) ampiezze diverse per categoria; (c) staffette con sorpassi ai cambi; (d) la 4x400m con la linea di rientro vera.
+

@@ -35,6 +35,7 @@ from PyQt6.QtGui import (
 )
 
 from models.entities import CompetitionTier, SeasonPhase, WeatherCondition
+from models.pack_formation import PackFormation
 from views.race_viewer import GUN_AT, TrackRaceWidget, _short, format_race_time
 
 Vec = Tuple[float, float, float]
@@ -781,6 +782,24 @@ class Track3DWidget(TrackRaceWidget):
         self._cam_label = "BROADCAST"
         self._replay_active = False
         self._replay_target_t = 0.0
+        self._pack: Optional[PackFormation] = None  # formazione del gruppo (800m, 1500m), ricreata a ogni gara
+        self._pack_for: Optional[list] = None
+
+    # ---- formazione del gruppo: chi sta dove, di lato (models/pack_formation.py, lo stesso riferimento di Godot)
+    RAIL_Z = 0.52  # distanza dal cordolo interno di chi corre sulla corda
+
+    def _pack_lateral(self) -> List[float]:
+        """Scostamento dalla corda (m) di ogni atleta al tempo di gara attuale, per le gare con rientro alla corda (800m, 1500m)."""
+        if self._pack is None or self._pack_for is not self._runners:
+            runners = self._runners
+            self._pack = PackFormation(
+                self._event,
+                [self._lane_z(i) - self.RAIL_Z for i in range(len(runners))],
+                lambda i, t: self.meters_at(runners[i], t),
+                [self.stop_time(r) for r in runners],
+            )
+            self._pack_for = runners
+        return self._pack.lateral_offsets(self.race_time)
 
     # ---- replay dell'arrivo: stessa posa (funzione pura di _t), solo un'altra camera e un t più indietro
     def start_replay(self, lookback: float = 3.0) -> None:
@@ -919,33 +938,11 @@ class Track3DWidget(TrackRaceWidget):
 
         # gare sull'ovale da 400 m (400m, 4x100m, 1500m, 4x400m)
         lat_zs = [self._lane_z(i) for i in range(n)]
-        if self._event == "1500m":
-            # partenza a cascata in corsia, poi rientro morbido verso la corda (corsia 1) con sorpassi in corsia 2/3
-            order = sorted(range(n), key=lambda i: -meters[i])
-            placed: List[Tuple[float, float]] = []  # (metri, lat_z)
-            for idx in order:
-                m = meters[idx]
-                merge = _clamp(m / 65.0, 0.0, 1.0)
-                target_z = _lerp(self._lane_z(idx), 0.52, merge)
-                # evita sovrapposizioni nel gruppo allargando in 2ª/3ª corsia
-                while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
-                    target_z += 0.58
-                lat_zs[idx] = min(self._track_width() - 0.4, target_z)
-                placed.append((m, lat_zs[idx]))
-        elif self._event == "800m":
-            # prima curva in corsia (circa 100 m), poi rientro graduale alla corda. Semplificazione visiva: la linea di
-            # partenza è allineata (come nei 1500m) invece che sfalsata per corsia; l'esito non cambia, ogni atleta
-            # taglia il traguardo al suo `mark_value`.
-            order = sorted(range(n), key=lambda i: -meters[i])
-            placed = []
-            for idx in order:
-                m = meters[idx]
-                merge = _clamp((m - 100.0) / 50.0, 0.0, 1.0)
-                target_z = _lerp(self._lane_z(idx), 0.52, merge)
-                while any(abs(pm - m) < 1.55 and abs(pz - target_z) < 0.56 for pm, pz in placed):
-                    target_z += 0.58
-                lat_zs[idx] = min(self._track_width() - 0.4, target_z)
-                placed.append((m, lat_zs[idx]))
+        if self._event in ("800m", "1500m"):
+            # Rientro alla corda con la formazione del gruppo: nella propria corsia fino alla linea di rientro (800m: fine della prima curva), poi tutti verso
+            # il lato stretto; chi sorpassa passa all'esterno e rientra senza spingere fuori l'altro. Semplificazione visiva dei 800m: partenza allineata.
+            cap = self._track_width() - 0.4
+            lat_zs = [min(cap, self.RAIL_Z + x) for x in self._pack_lateral()]
         elif self._event == "4x400m":
             # prima frazione (fino a 500 m) in corsia, poi rientro graduale alla corda
             order = sorted(range(n), key=lambda i: -meters[i])

@@ -17,9 +17,9 @@ KMH = 3.6  # m/s → km/h
 def _fraction(runner: dict, event: str, t: float, winner_time: float) -> float:
     """Frazione di pista percorsa: la stessa formula di `TrackRaceWidget.fraction`."""
     if runner["dnf"]:
-        f = position_fraction(event, t, winner_time * 1.25, runner["react"], runner["phase"])
+        f = position_fraction(event, t, winner_time * 1.25, runner["react"], runner["phase"], runner["style"])
         return min(DNF_PROGRESS, f * 0.9)
-    return position_fraction(event, t, runner["s"].mark_value, runner["react"], runner["phase"])
+    return position_fraction(event, t, runner["s"].mark_value, runner["react"], runner["phase"], runner["style"])
 
 
 def _speed_ms(runner: dict, event: str, distance: int, t: float, winner_time: float) -> float:
@@ -27,8 +27,8 @@ def _speed_ms(runner: dict, event: str, distance: int, t: float, winner_time: fl
     if t <= 0 or runner["dnf"] or t >= runner["s"].mark_value:
         return 0.0
     step = max(0.05, 0.01 * winner_time)
-    f0 = position_fraction(event, t - step, runner["s"].mark_value, runner["react"], runner["phase"])
-    f1 = position_fraction(event, t + step, runner["s"].mark_value, runner["react"], runner["phase"])
+    f0 = position_fraction(event, t - step, runner["s"].mark_value, runner["react"], runner["phase"], runner["style"])
+    f1 = position_fraction(event, t + step, runner["s"].mark_value, runner["react"], runner["phase"], runner["style"])
     return max(0.0, (f1 - f0)) * distance / (2 * step)
 
 

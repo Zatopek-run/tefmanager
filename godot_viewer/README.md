@@ -21,7 +21,8 @@ godot_viewer/
     RaceController.gd           CONTROLLER  stato gara, tempo, classifica, segnali
   models/
     RunnerData.gd               dati corridore (DB + stato runtime)
-    RaceMotion.gd               curva di velocità, distanza/velocità al tempo t (funzioni pure)
+    RaceMotion.gd               curva di velocità, distanza/velocità al tempo t (funzioni pure), con lo stile di passo di ogni corridore (sorpassi)
+    PackFormation.gd            posizione laterale di ognuno nei 800m e 1500m (rientro alla corda, sorpassi all'esterno): trascrizione di models/pack_formation.py
     ShotPutMotion.gd            getto del peso: pedana, tentativo, posa e volo del peso (funzioni pure)
   scenes/
     Stadium.tscn  + scripts/Stadium.gd, BroadcastCameras.gd, RunnerView.gd     VIEW 3D

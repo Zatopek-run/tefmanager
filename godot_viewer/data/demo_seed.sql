@@ -205,3 +205,10 @@ INSERT OR REPLACE INTO race_results (race_id, lane, athlete_name, team_name, gen
 
 -- Pettorali di fantasia per il visualizzatore: unici in ogni gara (rowid * 37 e' coprimo con 900).
 UPDATE race_results SET bib = 100 + (rowid * 37) % 900 WHERE bib = 0;
+
+-- Stile di passo di fantasia (100m, 400m, 800m, 1500m): chi ha il tempo migliore chiude forte (-1), chi ha il peggiore parte forte e cala (+1).
+-- Cosi' nelle gare dimostrative ci sono sorpassi veri e il gruppo si rimescola: senza, il seed girava tutto a stile 0 e non provava nulla.
+UPDATE race_results SET pace_style = ROUND(-1.0 + 2.0 *
+    (SELECT COUNT(*) FROM race_results o WHERE o.race_id = race_results.race_id AND o.final_time < race_results.final_time) /
+    MAX(1, (SELECT COUNT(*) FROM race_results o WHERE o.race_id = race_results.race_id) - 1), 3)
+WHERE race_id IN (1, 2, 3, 4, 5, 6, 13, 14);

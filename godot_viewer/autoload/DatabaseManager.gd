@@ -21,7 +21,7 @@ func _ready() -> void:
 		push_warning("DatabaseManager: %s non esiste, creo il DB dimostrativo." % db_path)
 		_create_demo_database()
 	open_database(db_path)
-	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_bib_column() or not _has_field_attempts_table() or _demo_race_count() < 14 or _demo_field_rounds() < 6):
+	if db_path == DEFAULT_DB_PATH and _db != null and (not _has_gender_column() or not _has_bib_column() or not _has_pace_style_column() or not _has_field_attempts_table() or _demo_race_count() < 14 or _demo_field_rounds() < 6):
 		close_database()
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(db_path))
 		_create_demo_database()
@@ -35,6 +35,11 @@ func _has_gender_column() -> bool:
 ## Numero di pettorale: i DB esportati prima di questa colonna non ce l'hanno (si legge 0 = nessun pettorale).
 func _has_bib_column() -> bool:
 	return _has_race_results_column("bib")
+
+
+## Stile di passo: i DB esportati prima di questa colonna non ce l'hanno (si legge 0 = tutti sulla stessa curva).
+func _has_pace_style_column() -> bool:
+	return _has_race_results_column("pace_style")
 
 
 func _has_race_results_column(column: String) -> bool:
@@ -101,8 +106,9 @@ func get_race_info(race_id: int) -> Dictionary:
 func get_race_runners(race_id: int) -> Array[RunnerData]:
 	var result: Array[RunnerData] = []
 	var bib_column: String = "bib" if _has_bib_column() else "0 AS bib"
+	var style_column: String = "pace_style" if _has_pace_style_column() else "0.0 AS pace_style"
 	var rows: Array[Dictionary] = _select(
-		"SELECT lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, " + bib_column + " "
+		"SELECT lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, " + bib_column + ", " + style_column + " "
 		+ "FROM race_results WHERE race_id = ? ORDER BY lane;", [race_id])
 	for row: Dictionary in rows:
 		var runner: RunnerData = RunnerData.from_row(row)

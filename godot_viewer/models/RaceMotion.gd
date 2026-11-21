@@ -13,6 +13,10 @@ const STEPS: int = 600
 const RUNOUT_TAU: float = 1.1   # costante di tempo della decelerazione dopo il traguardo (s)
 const DNF_FRACTION: float = 0.42  # un ritirato smette di correre a questa frazione di gara (DNF_PROGRESS in Python)
 const DNF_TAU: float = 0.7      # ...e rallenta con questa costante di tempo (s)
+## Stile di passo (solo messa in scena): ogni corridore ha `style` in [-1, 1] (lo calcola Python, vedi `pace_style` in views/race_viewer.py, e lo esporta).
+## Il tempo normalizzato si deforma in u' = u + style * AMP * sin(PI * u): 0 e 1 restano fissi, quindi l'arrivo e' ESATTAMENTE `final_time`.
+## > 0 parte forte e cala, < 0 parte piano e chiude forte. Con style = 0 i valori sono quelli di sempre. AMP: copia di PACE_AMPLITUDE di race_viewer.py.
+const PACE_AMPLITUDE: Dictionary = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014}
 
 static var _tables: Dictionary = {}
 
@@ -59,19 +63,44 @@ static func _get_table(kind: String) -> PackedFloat64Array:
 	return _tables[kind]
 
 
-## Frazione di percorso (0..1) al tempo normalizzato u. Monotona; 0 a u=0, 1 a u=1.
-static func progress(u: float, kind: String = "100m") -> float:
+static func pace_amplitude(kind: String) -> float:
+	return float(PACE_AMPLITUDE.get(kind, 0.0))
+
+
+## Tempo normalizzato deformato dallo stile di passo (identita' con style = 0; 0 e 1 fissi).
+static func warp(u: float, kind: String, style: float) -> float:
+	var c: float = clampf(u, 0.0, 1.0)
+	return c + style * pace_amplitude(kind) * sin(PI * c)
+
+
+## Derivata di warp() rispetto a u (positiva finche' |style| * AMP * PI <= 1).
+static func warp_slope(u: float, kind: String, style: float) -> float:
+	return 1.0 + style * pace_amplitude(kind) * PI * cos(PI * clampf(u, 0.0, 1.0))
+
+
+static func _raw_progress(u: float, kind: String) -> float:
 	var table: PackedFloat64Array = _get_table(kind)
 	var x: float = clampf(u, 0.0, 1.0) * STEPS
 	var i: int = mini(STEPS - 1, int(x))
 	return lerpf(table[i], table[i + 1], x - float(i))
 
 
-## Derivata di progress() rispetto a u (spazio normalizzato per unita' di tempo normalizzato).
-static func slope(u: float, kind: String = "100m") -> float:
+static func _raw_slope(u: float, kind: String) -> float:
 	var table: PackedFloat64Array = _get_table(kind)
 	var i: int = mini(STEPS - 1, int(clampf(u, 0.0, 1.0) * STEPS))
 	return (table[i + 1] - table[i]) * STEPS
+
+
+## Frazione di percorso (0..1) al tempo normalizzato u. Monotona; 0 a u=0, 1 a u=1 (anche con uno stile di passo).
+static func progress(u: float, kind: String = "100m", style: float = 0.0) -> float:
+	return _raw_progress(warp(u, kind, style) if style != 0.0 else u, kind)
+
+
+## Derivata di progress() rispetto a u (spazio normalizzato per unita' di tempo normalizzato).
+static func slope(u: float, kind: String = "100m", style: float = 0.0) -> float:
+	if style == 0.0:
+		return _raw_slope(u, kind)
+	return _raw_slope(warp(u, kind, style), kind) * warp_slope(u, kind, style)
 
 
 ## Stato di un corridore al tempo di gara `race_t` (secondi dallo sparo).
@@ -79,28 +108,28 @@ static func slope(u: float, kind: String = "100m") -> float:
 ## - prima di `reaction`: fermo ai blocchi
 ## - fino a `final_time`: corre sulla curva, arrivando a race_distance(kind) esatti a `final_time`
 ## - dopo: continua e rallenta (lancio oltre il traguardo)
-static func state_at(race_t: float, reaction: float, final_time: float, kind: String = "100m") -> Vector2:
+static func state_at(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> Vector2:
 	if race_t <= reaction:
 		return Vector2.ZERO
 	var total: float = race_distance(kind)
 	var run_duration: float = final_time - reaction
 	if race_t < final_time:
 		var u: float = (race_t - reaction) / run_duration
-		return Vector2(total * progress(u, kind), total * slope(u, kind) / run_duration)
-	var finish_speed: float = total * slope(1.0, kind) / run_duration
+		return Vector2(total * progress(u, kind, style), total * slope(u, kind, style) / run_duration)
+	var finish_speed: float = total * slope(1.0, kind, style) / run_duration
 	var dt: float = race_t - final_time
 	var decay: float = exp(-dt / RUNOUT_TAU)
 	return Vector2(total + finish_speed * RUNOUT_TAU * (1.0 - decay), finish_speed * decay)
 
 
 ## Tempo di gara (s dallo sparo) a cui un corridore ha percorso `distance` m, sulla stessa curva di state_at().
-static func time_at_distance(distance: float, reaction: float, final_time: float, kind: String = "100m") -> float:
+static func time_at_distance(distance: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> float:
 	var target: float = clampf(distance / race_distance(kind), 0.0, 1.0)
 	var lo: float = 0.0
 	var hi: float = 1.0
 	for i in range(40):
 		var mid: float = (lo + hi) * 0.5
-		if progress(mid, kind) < target:
+		if progress(mid, kind, style) < target:
 			lo = mid
 		else:
 			hi = mid
@@ -108,11 +137,11 @@ static func time_at_distance(distance: float, reaction: float, final_time: float
 
 
 ## Come state_at(), ma per un ritirato: corre sulla stessa curva fino a dnf_stop_distance(kind), poi rallenta e si ferma.
-static func state_at_dnf(race_t: float, reaction: float, final_time: float, kind: String = "100m") -> Vector2:
-	var t_stop: float = time_at_distance(dnf_stop_distance(kind), reaction, final_time, kind)
+static func state_at_dnf(race_t: float, reaction: float, final_time: float, kind: String = "100m", style: float = 0.0) -> Vector2:
+	var t_stop: float = time_at_distance(dnf_stop_distance(kind), reaction, final_time, kind, style)
 	if race_t < t_stop:
-		return state_at(race_t, reaction, final_time, kind)
-	var at_stop: Vector2 = state_at(t_stop, reaction, final_time, kind)
+		return state_at(race_t, reaction, final_time, kind, style)
+	var at_stop: Vector2 = state_at(t_stop, reaction, final_time, kind, style)
 	var dt: float = race_t - t_stop
 	var decay: float = exp(-dt / DNF_TAU)
 	return Vector2(at_stop.x + at_stop.y * DNF_TAU * (1.0 - decay), at_stop.y * decay)

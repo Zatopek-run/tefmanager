@@ -426,6 +426,11 @@ Dopo il tick di una settimana di gara si apre la **gara in diretta** (`RaceViewe
 - **Modello di movimento** (funzioni pure e testate): `curve_progress`, `position_fraction`, `reaction_time` (0,12-0,22 s, incluso nel tempo ufficiale). Curva di velocità per gara (100m, 400m, 800m, 1500m, staffetta).
 - **Viste PyQt**: 2D laterale (`TrackRaceWidget`) e 3D software con `QPainter` (`Track3DWidget`, senza OpenGL: camera a foro stenopeico, `clip_near`, antialiasing spento per le grandi superfici). Il 3D copre solo le corse in pista.
   Concorsi (lungo, peso): scena 2D + tabellone; le singole prove sono ricavate dal risultato finale con un generatore deterministico (`generate_attempts`).
+- **Sorpassi e stile di passo** (2026-11-21, Q41): ogni corridore ha uno **stile di passo** (parte forte e cala, oppure parte piano e chiude forte; deciso dal meeting e dal nome, uguale in PyQt e in Godot). Prima
+  tutti seguivano la stessa curva normalizzata sul proprio tempo: chi aveva il tempo migliore stava davanti dal primo metro e nessuno si superava. Ora le posizioni in mezzo alla gara si rimescolano (da 100m a 1500m, non
+  nelle staffette), ma **ognuno taglia il traguardo esattamente al suo tempo ufficiale e l'ordine d'arrivo è quello del modello**: è solo messa in scena.
+- **Il gruppo nei 800m e 1500m** (2026-11-21, Q41): si resta nella propria corsia fino alla fine della prima curva (800m) e poi tutti prendono il **lato stretto**; chi sorpassa passa all'esterno e rientra solo quando ha
+  lasciato spazio, senza spingere fuori chi viene superato; chi taglia il traguardo (o si ritira) esce verso l'esterno. Vale in Godot e nella vista 3D PyQt (`models/pack_formation.py`).
 - **Controlli**: pausa, velocità 1×/2×/4×, vista 2D/3D, «Salta alla fine», «Prossima gara», «Vai ai risultati». Ralenti dell'arrivo.
 - **Visualizzatore Godot** (`godot_viewer/`, Godot 4.3+/GDScript, **opzionale**, separato dall'app): stile «diretta TV» 2010 per 100m, 400m, 800m, 1500m, 4x100m, 4x400m, Lungo e Peso. Legge da SQLite
   (`godot_viewer/data/schema.sql` è l'unica fonte dello schema; `models/race_export.py` esporta) i risultati già calcolati. MVC interno: Model `DatabaseManager.gd` (sola lettura), Controller `RaceController.gd`, View 3D (`Stadium.tscn`, `BroadcastCameras`, `RunnerView`)
@@ -448,8 +453,8 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ```bash
 .venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller, qtawesome
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 970 test, ~75 s su Linux
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m tests.test_history tests.test_dashboard_data tests.test_dashboard_snapshot tests.test_athlete_view -v   # 162 test, SENZA PyQt6
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 1009 test, ~80 s su Linux
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m tests.test_history tests.test_dashboard_data tests.test_dashboard_snapshot tests.test_athlete_view tests.test_pack_formation -v   # 183 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).

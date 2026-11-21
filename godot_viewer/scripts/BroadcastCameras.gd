@@ -361,4 +361,26 @@ func _leader_world_position() -> Vector3:
 	var live: Array[RunnerData] = RaceController.live_order
 	if live.is_empty() or RaceController.state == RaceController.State.LOADED or RaceController.state == RaceController.State.COUNTDOWN:
 		return TrackGeometry.runner_pose(RaceController.event_kind, 4, 0.0)["position"]
-	return TrackGeometry.runner_pose(RaceController.event_kind, live[0].lane, live[0].distance)["position"]
+	var lead: RunnerData = live[0]
+	return TrackGeometry.runner_pose(RaceController.event_kind, lead.lane, lead.distance, _front_lateral(lead))["position"]
+
+
+## Larghezza della fascia (m) dietro il primo di cui si fa la media laterale (vedi _front_lateral).
+const FRONT_BAND: float = 4.0
+
+
+## Scostamento laterale della testa della corsa (800m, 1500m): media pesata di chi sta entro FRONT_BAND metri dal primo. Al sorpasso il primo in classifica
+## cambia (la distanza e' continua, ma la sua corsia laterale no): puntare sul singolo primo farebbe scattare la camera di uno o due metri di lato.
+## Senza formazione del gruppo (lateral < 0) vale la regola di sempre.
+func _front_lateral(lead: RunnerData) -> float:
+	if lead.lateral < 0.0 or lead.finished:
+		return lead.lateral
+	var sum_w: float = 0.0
+	var sum_l: float = 0.0
+	for r: RunnerData in RaceController.runners:
+		if r.finished or r.dnf or r.lateral < 0.0:
+			continue
+		var w: float = clampf(1.0 - (lead.distance - r.distance) / FRONT_BAND, 0.0, 1.0)
+		sum_w += w
+		sum_l += w * r.lateral
+	return sum_l / sum_w if sum_w > 0.0 else lead.lateral

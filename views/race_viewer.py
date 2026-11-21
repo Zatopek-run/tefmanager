@@ -93,14 +93,41 @@ def curve_kind(event_name: str) -> str:
     return "relay" if event_name.startswith("4x") else event_name
 
 
-def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006) -> float:
+# ---- Stile di passo per corridore (solo messa in scena, PIANOLAVORO G: «le gare sono piatte»).
+# Ogni corridore ha un numero `style` in [-1, 1], deterministico dal meeting e dal nome (`pace_style`): > 0 parte forte e cala, < 0 parte piano e
+# chiude forte. Il tempo normalizzato `u` si **deforma** con u' = u + style·AMP·sin(π·u): u'(0) = 0 e u'(1) = 1, quindi **l'arrivo resta
+# esattamente `mark_value`** (e il via esattamente 0); è monotona finché |style|·AMP·π ≤ 1. Senza deformazione tutti seguivano la stessa curva
+# normalizzata sul proprio tempo: chi aveva il tempo migliore stava davanti dal primo metro e nessuno si superava mai.
+# AMP in frazione del tempo di gara; CIFRE PROVVISORIE (QUESTIONS Q41), copiate in godot_viewer/models/RaceMotion.gd. Staffette: 0 (cambi al volo).
+# Misurate su 226 gare di 5 partite (distacchi veri tra vicini 0,7-1,3% del tempo): con queste cifre il 29% dei 100m e quasi tutte le gare 400-1500 hanno almeno
+# un sorpasso, e a metà gara gli stili opposti distano ~2·AMP·distanza (100m 2 m, 400m 10 m, 800m 26 m, 1500m 42 m), come un gruppo vero.
+PACE_AMPLITUDE = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014}
+
+
+def pace_amplitude(kind: str) -> float:
+    return PACE_AMPLITUDE.get(kind, 0.0)
+
+
+def pace_style(seed: object, name: str) -> float:
+    """Stile di passo di un corridore in [-1, 1] (uguale per le viste PyQt e per Godot, che lo legge dall'export)."""
+    return _rng(seed, "style", name).uniform(-1.0, 1.0)
+
+
+def warp_time(kind: str, u: float, style: float) -> float:
+    """Tempo normalizzato deformato dallo stile di passo (identità con `style` = 0, 0 e 1 fissi)."""
+    u = max(0.0, min(1.0, u))
+    return u + style * pace_amplitude(kind) * math.sin(math.pi * u)
+
+
+def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006, style: float = 0.0) -> float:
     """Frazione di percorso (0..1) al tempo normalizzato `u`: 0 al via, 1 esatto all'arrivo.
 
-    Monotona crescente; `phase`/`amp` aggiungono solo piccoli sorpassi scenici.
+    Monotona crescente; `phase`/`amp` aggiungono solo piccoli sorpassi scenici, `style` lo stile di passo (vedi sopra).
     """
     u = max(0.0, min(1.0, u))
+    w = warp_time(kind, u, style) if style else u
     table = _g_table(kind)
-    pos = u * _CURVE_STEPS
+    pos = w * _CURVE_STEPS
     i = min(_CURVE_STEPS - 1, int(pos))
     g = table[i] + (table[i + 1] - table[i]) * (pos - i)
     return g + amp * math.sin(phase + 7.0 * u) * u * (1.0 - u)
@@ -110,13 +137,13 @@ def reaction_time(seed: object, name: str) -> float:
     return _rng(seed, "reaction", name).uniform(*REACTION_RANGE)
 
 
-def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0) -> float:
+def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0, style: float = 0.0) -> float:
     """Frazione di percorso al tempo di gara `race_t` (dallo sparo) per chi chiude in `mark` secondi.
 
     Il tempo di reazione è incluso nel tempo ufficiale: corre per (mark - reaction) secondi
     e taglia il traguardo esattamente a `mark`.
     """
-    return curve_progress(curve_kind(event_name), (race_t - reaction) / max(1e-6, mark - reaction), phase)
+    return curve_progress(curve_kind(event_name), (race_t - reaction) / max(1e-6, mark - reaction), phase, style=style)
 
 
 def format_race_time(seconds: float) -> str:
@@ -246,6 +273,7 @@ class TrackRaceWidget(QWidget):
                     "dnf": is_dnf,
                     "phase": _rng(seed, s.athlete_name).uniform(0, 6.28),
                     "react": reaction_time(seed, s.athlete_name),
+                    "style": pace_style(seed, s.athlete_name),  # stile di passo: sorpassi in gara, arrivo invariato
                 }
             )
         self._winner_time = max(0.5, min(valid) if valid else 1.0)
@@ -317,9 +345,9 @@ class TrackRaceWidget(QWidget):
         """Frazione di pista percorsa dall'atleta in questo istante."""
         t = self.race_time
         if runner["dnf"]:
-            f = position_fraction(self._event, t, self._winner_time * 1.25, runner["react"], runner["phase"])
+            f = position_fraction(self._event, t, self._winner_time * 1.25, runner["react"], runner["phase"], runner["style"])
             return min(DNF_PROGRESS, f * 0.9)
-        return position_fraction(self._event, t, runner["s"].mark_value, runner["react"], runner["phase"])
+        return position_fraction(self._event, t, runner["s"].mark_value, runner["react"], runner["phase"], runner["style"])
 
     def _has_finished(self, runner: dict) -> bool:
         return (not runner["dnf"]) and self.race_time >= runner["s"].mark_value
@@ -336,9 +364,36 @@ class TrackRaceWidget(QWidget):
         if self._has_finished(r):
             t_end = r["s"].mark_value
             probe = 0.1 * max(1.0, self._scale)
-            v_end = (d - position_fraction(self._event, t_end - probe, t_end, r["react"], r["phase"]) * d) / probe
+            v_end = (d - position_fraction(self._event, t_end - probe, t_end, r["react"], r["phase"], r["style"]) * d) / probe
             m += v_end * 1.0 * (1.0 - math.exp(-(self.race_time - t_end) / 1.0))
         return m
+
+    def meters_at(self, r: dict, t: float) -> float:
+        """Come `meters`, ma al tempo di gara `t` (la formazione del gruppo ha bisogno della posizione di tutti in istanti diversi da quello attuale).
+        A `t = race_time` vale esattamente `meters(r)`."""
+        d = self._distance
+        if r["dnf"]:
+            f = min(DNF_PROGRESS, position_fraction(self._event, t, self._winner_time * 1.25, r["react"], r["phase"], r["style"]) * 0.9)
+        else:
+            f = position_fraction(self._event, t, r["s"].mark_value, r["react"], r["phase"], r["style"])
+        m = f * d
+        if (not r["dnf"]) and t >= r["s"].mark_value:
+            t_end = r["s"].mark_value
+            probe = 0.1 * max(1.0, self._scale)
+            v_end = (d - position_fraction(self._event, t_end - probe, t_end, r["react"], r["phase"], r["style"]) * d) / probe
+            m += v_end * 1.0 * (1.0 - math.exp(-(t - t_end) / 1.0))
+        return m
+
+    def stop_time(self, r: dict) -> float:
+        """Istante in cui un corridore si ferma: l'arrivo per chi finisce, il punto di arresto per un ritirato."""
+        if not r["dnf"]:
+            return r["s"].mark_value
+        lo, hi = 0.0, self._winner_time * 3.0
+        for _ in range(48):  # il ritirato si ferma quando raggiunge DNF_PROGRESS (la frazione cresce con il tempo)
+            mid = (lo + hi) / 2
+            f = position_fraction(self._event, mid, self._winner_time * 1.25, r["react"], r["phase"], r["style"]) * 0.9
+            lo, hi = (mid, hi) if f < DNF_PROGRESS else (lo, mid)
+        return hi
 
     def _speed_ratio(self, r: dict) -> float:
         """Velocità istantanea relativa (0..1) per cadenza e posa."""
@@ -349,8 +404,8 @@ class TrackRaceWidget(QWidget):
         d = self._distance
         step = max(0.05, 0.01 * self._winner_time)
         t = self.race_time
-        f0 = position_fraction(self._event, t - step, r["s"].mark_value, r["react"], r["phase"])
-        f1 = position_fraction(self._event, t + step, r["s"].mark_value, r["react"], r["phase"])
+        f0 = position_fraction(self._event, t - step, r["s"].mark_value, r["react"], r["phase"], r["style"])
+        f1 = position_fraction(self._event, t + step, r["s"].mark_value, r["react"], r["phase"], r["style"])
         v = max(0.0, (f1 - f0)) * d / (2 * step)
         mean = d / max(0.5, r["s"].mark_value)
         return max(0.0, min(1.0, v / (1.3 * mean)))

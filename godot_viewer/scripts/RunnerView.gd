@@ -222,7 +222,7 @@ func _leg_state() -> Vector2:
 ## Posizione e orientamento in pista: rettilineo dei 100m, oppure anello da 400 m con partenza sfalsata.
 func _apply_transform(leg_dist: float = -1.0) -> void:
 	var d: float = data.distance if leg_dist < 0.0 else leg_dist
-	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, d)
+	var pose: Dictionary = TrackGeometry.runner_pose(RaceController.event_kind, data.lane, d, data.lateral if leg_dist < 0.0 else -1.0)
 	position = pose["position"]
 	rotation.y = pose["yaw"]
 

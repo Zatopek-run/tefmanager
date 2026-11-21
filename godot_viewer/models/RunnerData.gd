@@ -15,11 +15,13 @@ var final_time: float = 0.0     # tempo ufficiale dallo sparo
 var place: int = 0              # 1 = vincitore, deciso da final_time (i ritirati/squalificati vengono dopo)
 var dnf: bool = false           # ritirato o squalificato: si ferma prima e non taglia il traguardo
 var dq: bool = false            # squalificato (staffetta: cambio fuori zona)
+var pace_style: float = 0.0     # stile di passo in [-1, 1] (solo messa in scena, lo decide Python): > 0 parte forte e cala, < 0 chiude forte
 
 # --- runtime ---
 var distance: float = 0.0       # metri dalla linea di partenza (oltre 100 = lancio dopo il traguardo)
 var speed: float = 0.0          # m/s
 var finished: bool = false
+var lateral: float = -1.0       # 800m/1500m: scostamento dalla corda (m) deciso dalla formazione del gruppo (PackFormation), -1 = regola di sempre
 var attempts: Array = []        # concorsi: [{"round": 1..4, "mark": float, "foul": bool}, ...]
 var best_mark: float = 0.0
 var revealed_rounds: int = 0
@@ -38,6 +40,7 @@ static func from_row(row: Dictionary) -> RunnerData:
 	var st: String = str(row.get("status", "OK"))
 	r.dq = st == "DQ"
 	r.dnf = st == "DNF" or r.dq
+	r.pace_style = clampf(float(row.get("pace_style", 0.0)), -1.0, 1.0)
 	return r
 
 

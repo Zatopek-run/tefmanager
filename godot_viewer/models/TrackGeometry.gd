@@ -76,6 +76,11 @@ static func pose(lane: int, distance_run: float) -> Dictionary:
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
 
 
+## Fine della prima curva (PI * R1 = 115,6 m): da qui nei 800m si puo' lasciare la corsia (regolamento). Stessa cifra di BREAK_WINDOWS in PackFormation.
+const BREAK_800M_START: float = 115.6
+const BREAK_800M_END: float = 145.0
+
+
 ## Coordinata d'anello da cui parte la 1500m in corsia 1 (3,75 giri prima del traguardo).
 static func start_offset_1500m() -> float:
 	return 4.0 * loop_length(1) - 1500.0
@@ -121,8 +126,16 @@ static func pose_800m(lane: int, distance_run: float) -> Dictionary:
 	var c: float = start_offset_800m() + distance_run
 	var start_lat: float = float(lane - 1) * LANE_WIDTH
 	var pack_lat: float = minf(2.1, float(lane - 1) * 0.30)
-	var lat: float = lerpf(start_lat, pack_lat, smoothstep(100.0, 150.0, distance_run))
+	var lat: float = lerpf(start_lat, pack_lat, smoothstep(BREAK_800M_START, BREAK_800M_END, distance_run))
 	var p: Vector2 = position_at_radial(c, lat)
+	var h: Vector2 = heading_at(1, c)
+	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
+
+
+## Posa 3D in un gruppo (800m, 1500m) con lo scostamento laterale `lat` dalla corda deciso dalla formazione (PackFormation): vedi runner_pose().
+static func pose_pack(kind: String, distance_run: float, lat: float) -> Dictionary:
+	var c: float = (start_offset_800m() if kind == "800m" else start_offset_1500m()) + distance_run
+	var p: Vector2 = position_at_radial(c, maxf(0.0, lat))
 	var h: Vector2 = heading_at(1, c)
 	return {"position": Vector3(p.x, 0.0, p.y), "heading": h, "yaw": atan2(-h.y, h.x)}
 
@@ -151,7 +164,10 @@ const START_100M_X: float = -100.0
 ## - 800m: partenza sulla linea d'arrivo, prima curva in corsia, poi rientro alla corda.
 ## - 4x400m: primo giro in corsia sfalsata, poi rientro alla corda.
 ## - 400m / 4x100m: partenza sfalsata per corsia (vedi pose()).
-static func runner_pose(kind: String, lane: int, distance_run: float) -> Dictionary:
+## `lat_override` >= 0 (solo 800m e 1500m): scostamento laterale dalla corda deciso dalla formazione del gruppo invece della regola per corsia.
+static func runner_pose(kind: String, lane: int, distance_run: float, lat_override: float = -1.0) -> Dictionary:
+	if lat_override >= 0.0 and (kind == "1500m" or kind == "800m"):
+		return pose_pack(kind, distance_run, lat_override)
 	if kind == "1500m":
 		return pose_1500m(lane, distance_run)
 	if kind == "800m":

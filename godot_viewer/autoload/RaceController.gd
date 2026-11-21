@@ -75,6 +75,7 @@ var info: Dictionary = {}
 var gun_at: float = GUN_AT            # secondi di preparazione prima dello sparo per l'evento caricato
 var event_kind: String = "100m"       # nome dell'evento: sceglie curva, distanza e geometria della pista
 var runners: Array[RunnerData] = []
+var _pack: PackFormation = null   # formazione del gruppo (800m, 1500m): posizione laterale di ognuno, vedi models/PackFormation.gd
 var live_order: Array[RunnerData] = []  # ordine di classifica aggiornato a ogni fotogramma
 var clock: float = 0.0
 var race_time: float = 0.0
@@ -130,6 +131,7 @@ func load_race(race_id: int) -> bool:
 		r.revealed_rounds = 0
 	finish_times.sort()
 	finish_margin = finish_times[1] - finish_times[0] if finish_times.size() >= 2 else INF
+	_build_pack()
 	live_order = runners.duplicate()
 	field_queue.clear()
 	field_idx = 0
@@ -263,13 +265,36 @@ func _process(delta: float) -> void:
 ## Posizione e velocita' di ogni corridore a `race_time` (funzione pura del tempo: si puo' anche riavvolgere).
 func _apply_motion() -> void:
 	for r: RunnerData in runners:
-		var s: Vector2
-		if r.dnf:
-			s = RaceMotion.state_at_dnf(race_time, r.reaction_time, r.final_time, event_kind)
-		else:
-			s = RaceMotion.state_at(race_time, r.reaction_time, r.final_time, event_kind)
+		var s: Vector2 = _state_of(r, race_time)
 		r.distance = s.x
 		r.speed = s.y
+	if _pack != null:  # 800m/1500m: chi sta dove, di lato (solo messa in scena, funzione pura del tempo: vale anche nel ralenti)
+		var lats: PackedFloat64Array = _pack.lateral_offsets(race_time)
+		for i in range(runners.size()):
+			runners[i].lateral = lats[i]
+
+
+## Distanza e velocita' di un corridore al tempo di gara `t` (con il suo stile di passo).
+func _state_of(r: RunnerData, t: float) -> Vector2:
+	if r.dnf:
+		return RaceMotion.state_at_dnf(t, r.reaction_time, r.final_time, event_kind, r.pace_style)
+	return RaceMotion.state_at(t, r.reaction_time, r.final_time, event_kind, r.pace_style)
+
+
+## Prepara la formazione del gruppo per la gara caricata (solo 800m e 1500m; altrimenti nessuna: `lateral` resta -1).
+func _build_pack() -> void:
+	_pack = null
+	for r: RunnerData in runners:
+		r.lateral = -1.0
+	if not PackFormation.applies_to(event_kind):
+		return
+	var starts: PackedFloat64Array = PackedFloat64Array()
+	var stops: PackedFloat64Array = PackedFloat64Array()
+	for r: RunnerData in runners:
+		starts.append(float(r.lane - 1) * TrackGeometry.LANE_WIDTH)
+		# chi si ferma lascia la corda: il ritirato dove si arresta, chi arriva dal traguardo (final_time). Senza, l'ultimo attraversava il gruppo gia' rallentato.
+		stops.append(RaceMotion.time_at_distance(RaceMotion.dnf_stop_distance(event_kind), r.reaction_time, r.final_time, event_kind, r.pace_style) if r.dnf else r.final_time)
+	_pack = PackFormation.new(event_kind, starts, func(i: int, t: float) -> float: return _state_of(runners[i], t).x, stops)
 
 
 func _update_runners() -> void:
