@@ -34,6 +34,9 @@ from views.race_viewer import (
     is_field_event,
     pace_amplitude,
     pace_style,
+    leg_styles,
+    motion_style,
+    relay_offset,
     runner_style,
     position_fraction,
     warp_time,
@@ -83,9 +86,10 @@ class TestTheCurve(unittest.TestCase):
         """u' = u + s·AMP·sin(πu) ha derivata 1 + s·AMP·π·cos(πu) ≥ 0 se |s|·AMP·π ≤ 1: vale per ogni gara con |s| ≤ 1."""
         for kind, amp in PACE_AMPLITUDE.items():
             self.assertLessEqual(amp * math.pi, 1.0, kind)
+        self.assertLess(12 * PACE_AMPLITUDE["relay"], 1.0)  # staffette: smoothstep tra i cambi, pendenza massima 1,5·ΔD·4 con ΔD ≤ 2·AMP
 
-    def test_relays_have_no_style(self) -> None:
-        self.assertEqual(pace_amplitude("relay"), 0.0)
+    def test_relays_have_no_numeric_style(self) -> None:
+        """Le staffette usano solo gli stili per frazione (lista): un numero singolo è inerte."""
         for k in range(0, 101, 5):
             self.assertEqual(curve_progress("relay", k / 100, 0.7, style=1.0), curve_progress("relay", k / 100, 0.7))
 
@@ -266,6 +270,117 @@ class TestRunnerStyleFollowsThePlan(unittest.TestCase):
             self.assertAlmostEqual(curve_progress("1500m", 0.0, style=plan), 0.0, places=9)
 
 
+class TestRelayLegStyles(unittest.TestCase):
+    """Q41c: nelle staffette lo stile è per frazione e le squadre si superano ai cambi; via e arrivo restano esatti."""
+
+    EXTREMES = [(1, 1, 1, -1), (1, -1, 1, -1), (-1, 1, -1, 1), (1, 1, -1, -1), (1, -1, -1, -1), (-1, -1, -1, 1), (1, 1, 1, 1), (-1, -1, -1, -1)]
+
+    def test_leg_styles_are_four_deterministic_numbers_in_range(self) -> None:
+        a = leg_styles("4-Meeting", "CUS Roma")
+        self.assertEqual(len(a), 4)
+        self.assertEqual(a, leg_styles("4-Meeting", "CUS Roma"))
+        self.assertNotEqual(a, leg_styles("4-Meeting", "Altro Club"))
+        self.assertNotEqual(a, leg_styles("5-Meeting", "CUS Roma"))
+        self.assertTrue(all(-1.0 <= v <= 1.0 for v in a))
+        self.assertEqual(len({round(v, 6) for v in a}), 4)  # le frazioni non hanno tutte lo stesso stile
+
+    def test_start_and_finish_are_exact_whatever_the_styles(self) -> None:
+        for combo in self.EXTREMES:
+            self.assertAlmostEqual(curve_progress("relay", 0.0, style=list(combo)), 0.0, places=12, msg=combo)
+            self.assertAlmostEqual(curve_progress("relay", 1.0, style=list(combo)), 1.0, places=12, msg=combo)
+
+    def test_the_position_never_goes_backwards_even_with_extreme_styles(self) -> None:
+        for combo in self.EXTREMES:
+            pr = [curve_progress("relay", i / 2000, style=list(combo)) for i in range(2001)]
+            self.assertTrue(all(b > a for a, b in zip(pr, pr[1:])), combo)
+
+    def test_without_styles_it_is_the_old_curve(self) -> None:
+        for u in (0.0, 0.13, 0.5, 0.77, 1.0):
+            self.assertEqual(curve_progress("relay", u, 0.7, style=[]), legacy_progress("relay", u, 0.7))
+            self.assertEqual(curve_progress("relay", u, 0.7), legacy_progress("relay", u, 0.7))
+
+    def test_equal_styles_change_nothing_and_a_common_shift_changes_nothing(self) -> None:
+        base = [curve_progress("relay", i / 100, style=[0.3, -0.2, 0.5, -0.6]) for i in range(101)]
+        shifted = [curve_progress("relay", i / 100, style=[0.3 + 0.2, -0.2 + 0.2, 0.5 + 0.2, -0.6 + 0.2]) for i in range(101)]
+        for a, b in zip(base, shifted):
+            self.assertAlmostEqual(a, b, places=12)  # contano solo gli scarti dalla media
+        for i in range(101):
+            self.assertAlmostEqual(curve_progress("relay", i / 100, style=[0.8] * 4), curve_progress("relay", i / 100), places=12)
+
+    def test_the_offset_is_continuous_across_the_changes(self) -> None:
+        styles = [1.0, -1.0, 0.5, -0.5]
+        eps = 1e-6
+        for k in (1, 2, 3):
+            u = k / 4
+            self.assertAlmostEqual(relay_offset(styles, 0.01, u - eps), relay_offset(styles, 0.01, u + eps), places=6)
+
+    def test_a_team_that_runs_the_first_legs_hard_leads_at_the_changes_but_the_slower_one_wins(self) -> None:
+        # stessa gara, due squadre: la A è più lenta (tempo ufficiale più alto) ma parte forte, la B è più veloce e parte piano
+        mark_a, mark_b, react = 41.0, 40.0, 0.15
+        style_a, style_b = [1, 1, -1, -1], [-1, -1, 1, 1]
+        def pos(mark, style, t):
+            return position_fraction("4x100m", t, mark, react, style=style)
+        times = [mark_b * f for f in (0.20, 0.45, 0.70)]  # in mezzo alla gara
+        self.assertTrue(any(pos(mark_a, style_a, t) > pos(mark_b, style_b, t) for t in times))  # A davanti a un certo punto
+        self.assertAlmostEqual(pos(mark_a, style_a, mark_a), 1.0, places=9)
+        self.assertAlmostEqual(pos(mark_b, style_b, mark_b), 1.0, places=9)
+        self.assertLess(pos(mark_a, style_a, mark_b), 1.0)  # al traguardo della B la A non è ancora arrivata: l'ordine d'arrivo è quello dei tempi
+
+    def test_motion_style_is_a_list_for_relays_and_a_number_otherwise(self) -> None:
+        from models.entities import EventResult, EventStanding
+
+        std = EventStanding(athlete_name="Squadra A", team_name="CUS Roma", is_player=True, mark_value=41.0, mark_display="41.00")
+        relay = EventResult(event_name="4x100m", player_athlete_name="Squadra A", placement=1, total_competitors=8, player_mark="41.00", prize_money=0, prestige_gained=0)
+        single = EventResult(event_name="100m", player_athlete_name="Mario", placement=1, total_competitors=8, player_mark="10.50", prize_money=0, prestige_gained=0)
+        self.assertEqual(motion_style(relay, std, "4-Meet"), leg_styles("4-Meet", "CUS Roma"))
+        self.assertIsInstance(motion_style(single, std, "4-Meet"), float)
+
+
+class TestRelayStyleOnRealRaces(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.meetings = played_meetings(seeds=(3, 5), weeks=24)
+        cls.relays = [(s, r) for _tmp, h in cls.meetings for s in h for r in s.event_results if r.event_name.startswith("4x") and not r.disqualified]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        for tmp, _h in cls.meetings:
+            tmp.cleanup()
+
+    def widget(self, summ, res) -> TrackRaceWidget:
+        w = TrackRaceWidget()
+        w.set_race(res.event_name, res, f"{summ.week}-{summ.meet_name}")
+        return w
+
+    def test_there_are_relays_to_look_at(self) -> None:
+        self.assertGreater(len(self.relays), 3)
+
+    def test_every_team_gets_its_four_leg_styles_and_each_finishes_exactly_at_its_time(self) -> None:
+        for summ, res in self.relays:
+            w = self.widget(summ, res)
+            for r in w.runners:
+                if r["dnf"]:
+                    continue
+                self.assertEqual(len(r["style"]), 4)
+                t = r["s"].mark_value
+                self.assertAlmostEqual(position_fraction(w.event_name, t, t, r["react"], r["phase"], r["style"]), 1.0, places=9)
+                self.assertLessEqual(position_fraction(w.event_name, t - 0.2, t, r["react"], r["phase"], r["style"]), 1.0)
+
+    def test_the_official_order_is_untouched_and_the_winner_arrives_first(self) -> None:
+        for summ, res in self.relays:
+            w = self.widget(summ, res)
+            runners = [r for r in w.runners if not r["dnf"]]
+            winner = min(runners, key=lambda r: r["s"].mark_value)
+            t = winner["s"].mark_value
+            for r in runners:
+                if r is not winner:
+                    self.assertLessEqual(position_fraction(w.event_name, t, r["s"].mark_value, r["react"], r["phase"], r["style"]), 1.0 + 1e-9)
+
+    def test_teams_really_overtake_each_other(self) -> None:
+        with_overtake = sum(1 for summ, res in self.relays if crossings(self.widget(summ, res), dead=2.0) > 0)
+        self.assertGreaterEqual(with_overtake / len(self.relays), 0.7)  # misurato 28/29 con AMP 0,010 (Q41c)
+
+
 class TestExport(unittest.TestCase):
     def test_the_export_carries_the_same_style_and_upgrades_old_databases(self) -> None:
         tmp, history = played_meetings(seeds=(3,))[0]
@@ -276,12 +391,14 @@ class TestExport(unittest.TestCase):
             race_id = export_race(summ, res, path)
             with closing(sqlite3.connect(str(path))) as conn:
                 rows = conn.execute("SELECT athlete_name, pace_style FROM race_results WHERE race_id = ?", (race_id,)).fetchall()
+                legs = conn.execute("SELECT athlete_name, leg_styles FROM race_results WHERE race_id = ?", (race_id,)).fetchall()
             seed = f"{summ.week}-{summ.meet_name}"
             self.assertEqual(len(rows), len(res.standings))
             for name, style in rows:
                 std = next(s for s in res.standings if s.athlete_name == name)
                 self.assertAlmostEqual(style, runner_style(res, std, seed), places=4)  # stessa funzione delle viste PyQt
                 self.assertTrue(-1.0 <= style <= 1.0)
+            self.assertTrue(all(value == "" for _name, value in legs))  # una gara individuale non ha stili per frazione
             # un file di un'esportazione precedente (senza la colonna) riceve la colonna invece di far fallire l'inserimento
             old = Path(d) / "old.db"
             with closing(sqlite3.connect(str(old))) as conn:

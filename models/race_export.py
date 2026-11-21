@@ -19,7 +19,7 @@ from typing import List, Optional
 from models.bibs import assign_bibs, bib_key
 from models.entities import CompetitionSummary, EventResult, EventStanding
 from models.generator import infer_gender
-from views.race_viewer import _rng, generate_attempts, reaction_time, runner_style
+from views.race_viewer import _rng, generate_attempts, motion_style, reaction_time
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "godot_viewer" / "data" / "schema.sql"
 MAX_LANES = 8
@@ -68,6 +68,15 @@ def _runnable(result: EventResult, standing: EventStanding, seed: str) -> bool:
     return standing.mark_value > reaction_time(seed, standing.athlete_name)
 
 
+def _style_columns(result, standing, seed: object) -> tuple:
+    """(pace_style, leg_styles) di una riga: un numero e una stringa vuota per le gare individuali; per una staffetta 0 e i 4 stili per frazione
+    separati da virgola (`motion_style`, unica fonte con le viste PyQt)."""
+    style = motion_style(result, standing, seed)
+    if isinstance(style, (list, tuple)):
+        return 0.0, ",".join(f"{value:.4f}" for value in style)
+    return round(style, 4), ""
+
+
 def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path) -> int:
     """Scrive la gara in `db_path` (creandolo se serve) e ritorna il `race_id`.
 
@@ -103,14 +112,16 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
             conn.execute("ALTER TABLE race_results ADD COLUMN bib INTEGER NOT NULL DEFAULT 0")
         if "pace_style" not in columns:  # stile di passo (solo messa in scena): senza, Godot mette tutti sulla stessa curva
             conn.execute("ALTER TABLE race_results ADD COLUMN pace_style REAL NOT NULL DEFAULT 0")
+        if "leg_styles" not in columns:  # stili per frazione delle staffette (Q41c): senza, le staffette non hanno sorpassi
+            conn.execute("ALTER TABLE race_results ADD COLUMN leg_styles TEXT NOT NULL DEFAULT ''")
         race_id = conn.execute("SELECT COALESCE(MAX(race_id), 0) + 1 FROM races").fetchone()[0]
         conn.execute(
             "INSERT INTO races (race_id, event_name, meet_name, distance_m, wind_ms) VALUES (?, ?, ?, ?, ?)",
             (race_id, result.event_name, summary.meet_name, DISTANCES_M[result.event_name], result.wind_ms or 0.0),
         )
         conn.executemany(
-            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, bib, pace_style) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO race_results (race_id, lane, athlete_name, team_name, gender, is_player, reaction_time, final_time, status, bib, pace_style, leg_styles) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     race_id,
@@ -123,7 +134,7 @@ def export_race(summary: CompetitionSummary, result: EventResult, db_path: Path)
                     reference_time if _stop_status(result, s) is not None else s.mark_value,
                     _stop_status(result, s) or "OK",
                     bibs[bib_key(s)],
-                    round(runner_style(result, s, seed), 4),  # stessa funzione e stesso seme delle viste PyQt: la stessa gara si vede uguale
+                    *_style_columns(result, s, seed),  # stessa funzione e stesso seme delle viste PyQt: la stessa gara si vede uguale
                 )
                 for s in standings
             ],

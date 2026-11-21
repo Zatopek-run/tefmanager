@@ -102,7 +102,13 @@ def curve_kind(event_name: str) -> str:
 # AMP in frazione del tempo di gara; CIFRE PROVVISORIE (QUESTIONS Q41), copiate in godot_viewer/models/RaceMotion.gd. Staffette: 0 (cambi al volo).
 # Misurate su 226 gare di 5 partite (distacchi veri tra vicini 0,7-1,3% del tempo): con queste cifre il 29% dei 100m e quasi tutte le gare 400-1500 hanno almeno
 # un sorpasso, e a metà gara gli stili opposti distano ~2·AMP·distanza (100m 2 m, 400m 10 m, 800m 26 m, 1500m 42 m), come un gruppo vero.
-PACE_AMPLITUDE = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014}
+PACE_AMPLITUDE = {"100m": 0.008, "400m": 0.012, "800m": 0.016, "1500m": 0.014, "relay": 0.010}
+# Staffette (Q41c, scelta dell'utente 2026-11-21): lo stile è PER FRAZIONE, 4 numeri in [-1, 1] per squadra (`leg_styles`). Il tempo normalizzato si deforma con
+# scostamenti cumulativi ai cambi, D_k = AMP·Σ_{i<k}(stile_i − media), con D_0 = D_4 = 0 (via e arrivo esatti), raccordati con una smoothstep tra un cambio e
+# l'altro: così ai cambi le squadre non sono nell'ordine d'arrivo e si superano; la velocità resta continua (niente salti ai cambi). Cade sui quarti esatti
+# di tempo perché la velocità delle staffette è periodica sui quarti (la posizione a u = k/4 vale k/4). Monotona finché 12·AMP < 1. Copiato in RaceMotion.gd.
+# CIFRA PROVVISORIA (AMP 0,010), da tarare sulle staffette vere.
+RELAY_LEGS = 4
 
 
 def pace_amplitude(kind: str) -> float:
@@ -112,6 +118,28 @@ def pace_amplitude(kind: str) -> float:
 def pace_style(seed: object, name: str) -> float:
     """Stile di passo di un corridore in [-1, 1] (uguale per le viste PyQt e per Godot, che lo legge dall'export)."""
     return _rng(seed, "style", name).uniform(-1.0, 1.0)
+
+
+def leg_styles(seed: object, team: str) -> List[float]:
+    """Stile di passo di ognuna delle 4 frazioni di una squadra di staffetta, in [-1, 1] (deterministico: la stessa gara si rivede uguale)."""
+    return [_rng(seed, "legstyle", team, k).uniform(-1.0, 1.0) for k in range(RELAY_LEGS)]
+
+
+def _smoothstep(x: float) -> float:
+    return x * x * (3.0 - 2.0 * x)
+
+
+def relay_offset(styles, amplitude: float, u: float) -> float:
+    """Scostamento di tempo normalizzato in `u` dovuto agli stili per frazione (vedi sopra): 0 a u = 0 e a u = 1, continuo e monotono."""
+    n = len(styles)
+    mean = sum(styles) / n
+    nodes = [0.0]
+    for s in styles[:-1]:
+        nodes.append(nodes[-1] + amplitude * (s - mean))
+    nodes.append(0.0)  # l'arrivo è esatto per costruzione (la somma degli scarti è 0: lo si scrive per non portarsi dietro l'errore dei float)
+    x = max(0.0, min(1.0, u)) * n
+    k = min(n - 1, int(x))
+    return nodes[k] + (nodes[k + 1] - nodes[k]) * _smoothstep(x - k)
 
 
 def runner_style(result, standing, seed: object) -> float:
@@ -127,13 +155,26 @@ def runner_style(result, standing, seed: object) -> float:
     return max(-1.0, min(1.0, plan + PLAN_STYLE_JITTER * base))
 
 
-def warp_time(kind: str, u: float, style: float) -> float:
-    """Tempo normalizzato deformato dallo stile di passo (identità con `style` = 0, 0 e 1 fissi)."""
+def motion_style(result, standing, seed: object):
+    """Lo stile da passare a `position_fraction`: un numero per le gare individuali, i 4 stili per frazione (lista) per una squadra di
+    staffetta (Q41c). **Unica fonte** per le viste PyQt e per l'export verso Godot."""
+    if result.event_name.startswith("4x"):
+        return leg_styles(seed, standing.team_name)
+    return runner_style(result, standing, seed)
+
+
+def warp_time(kind: str, u: float, style) -> float:
+    """Tempo normalizzato deformato dallo stile di passo (identità con `style` = 0, 0 e 1 fissi). `style` è un numero, o per le staffette la
+    lista dei 4 stili per frazione."""
     u = max(0.0, min(1.0, u))
+    if isinstance(style, (list, tuple)):
+        return u + relay_offset(style, pace_amplitude(kind), u) if style else u
+    if kind == "relay":  # le staffette hanno solo gli stili per frazione: un numero singolo non significa nulla
+        return u
     return u + style * pace_amplitude(kind) * math.sin(math.pi * u)
 
 
-def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006, style: float = 0.0) -> float:
+def curve_progress(kind: str, u: float, phase: float = 0.0, amp: float = 0.006, style=0.0) -> float:
     """Frazione di percorso (0..1) al tempo normalizzato `u`: 0 al via, 1 esatto all'arrivo.
 
     Monotona crescente; `phase`/`amp` aggiungono solo piccoli sorpassi scenici, `style` lo stile di passo (vedi sopra).
@@ -151,7 +192,7 @@ def reaction_time(seed: object, name: str) -> float:
     return _rng(seed, "reaction", name).uniform(*REACTION_RANGE)
 
 
-def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0, style: float = 0.0) -> float:
+def position_fraction(event_name: str, race_t: float, mark: float, reaction: float, phase: float = 0.0, style=0.0) -> float:
     """Frazione di percorso al tempo di gara `race_t` (dallo sparo) per chi chiude in `mark` secondi.
 
     Il tempo di reazione è incluso nel tempo ufficiale: corre per (mark - reaction) secondi
@@ -289,7 +330,7 @@ class TrackRaceWidget(QWidget):
                     "dnf": is_dnf,
                     "phase": _rng(seed, s.athlete_name).uniform(0, 6.28),
                     "react": reaction_time(seed, s.athlete_name),
-                    "style": runner_style(result, s, seed),  # stile di passo (piano gara per il tuo atleta): sorpassi in gara, arrivo invariato
+                    "style": motion_style(result, s, seed),  # stile di passo (piano gara per il tuo atleta; per frazione nelle staffette): sorpassi, arrivo invariato
                 }
             )
         self._winner_time = max(0.5, min(valid) if valid else 1.0)
