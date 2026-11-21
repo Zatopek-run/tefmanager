@@ -32,7 +32,7 @@ from views.race_viewer import TrackRaceWidget, RaceViewerDialog, is_field_event,
 _app = QApplication.instance() or QApplication([])
 
 
-def played_meeting(seed: int = 5):
+def played_meeting(seed: int = 4):  # seed scelto perché il meeting abbia corse e staffette (con il 5 il test delle staffette saltava)
     tmp = tempfile.TemporaryDirectory()
     ctrl = GameController(db_manager=DatabaseManager(db_path=Path(tmp.name) / "s.db"), rng=random.Random(seed), auto_create=False)
     start_game(ctrl)

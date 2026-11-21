@@ -11,7 +11,7 @@ Unità: **sett.** = per settimana · **stag.** = per stagione · **%** · **pt**
 | --- | --- | --- | --- | --- |
 | Sponsor società (entrata) | `weekly_sponsor × (0,65 + rep/100 × 0,55) × (0,8 + 0,2 × fedeltà/100)` | `TIER_CONFIG[...]["weekly_sponsor"]` **840/1750/3500/6720** (prima 600/1250/2500/4800: +40%, A.1 2026-11-20) | €/sett. | `simulation.py:1227-1229`; `entities.py:43-68` |
 | Sponsor individuali (entrata) | `Σ fans // 4` per atleta ≥18 anni, Prima Squadra | divisore 4, età 18 | €/sett. | `simulation.py:1230` |
-| Quote tesserati (entrata) | `member_fees_weekly` | 450 (mai modificato) | €/sett. | `entities.py:785`, `game_controller.py:185` |
+| Quote tesserati (entrata) | `member_fees_weekly` × min(1, atleti / `MEMBER_FEES_FULL_ROSTER` 10) (Q32c, 2026-11-21: prima fisse) | 450 a pieno regime | €/sett. | `entities.py:785`, `game_controller.py:185` |
 | Rimborsi spese atleti (uscita; campo `weekly_wage`) | `Σ weekly_wage` Prima Squadra, infortunati inclusi | `senior_wage = clamp(WAGE_BASE_ADULT 55 | WAGE_BASE_PROSPECT 45 + overall×WAGE_PER_OVERALL 2,3; WAGE_MIN 52; WAGE_MAX 520)` (**−45%** dal 2026-11-20, A.1; prima 100|80 + overall×4,2 tra 95 e 950; vale per atleti creati o promossi da ora, i salvataggi esistenti tengono i rimborsi già scritti) | €/sett. | `simulation.py:1231`; `generator.py:410-413` |
 | Staff medico/mentale (uscita) | `Σ weekly_cost` degli assunti | Fisio 300, Medico 340, Mentale 220 | €/sett. | `simulation.py:1232`; `generator.py:470-500` |
 | Stipendi allenatori (uscita) | `40 + round(Σ max(0, v−40) × 2,2)` | 40, 40, 2,2 | €/sett. | `entities.py:211-212`; `simulation.py:1233` |
@@ -297,10 +297,11 @@ arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrat
 
 ## Q. Avvio senza atleti e Preparazione (2026-11-20) — CIFRE PROVVISORIE (QUESTIONS Q32)
 
-**Budget e valori economici di partenza: INVARIATI** (fondo 18.000 in Carriera, 10.000 nel Prototipo, quote 450/settimana, staff e impianti come sempre). Cambia solo che la rosa parte vuota.
+**Budget e valori economici di partenza: INVARIATI** (fondo 18.000 in Carriera, 10.000 nel Prototipo, staff e impianti come sempre). Cambia che la rosa parte vuota, **senza allenatori iniziali** (Q32d) e con **quote tesserati proporzionali agli atleti** (Q32c: 0 a rosa vuota, piene da 10 atleti).
 
 | Nome | Valore | File |
 | --- | --- | --- |
+| `MEMBER_FEES_FULL_ROSTER` | 10: quote tesserati piene da 10 atleti in su, proporzionali sotto, 0 senza atleti (Q32c, cifra mia) | `entities.py` |
 | `SEASON_PREP_WEEKS` | 8 settimane di Preparazione a inizio di ogni stagione (solo Carriere nuove, `prep_weeks`); multipla di 4 | `entities.py` |
 | `PHASE_WEEKS` | 12 settimane per fase con gare (invariato, prima era un letterale `12`) | `entities.py` |
 | `SEASON_WEEKS` | 36 settimane di gara (invariato); la stagione di una Carriera nuova ne ha 44 | `entities.py` |

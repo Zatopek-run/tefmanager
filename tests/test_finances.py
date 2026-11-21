@@ -18,6 +18,7 @@ from models.entities import (
     MONTH_WEEKS,
     SEASON_WEEKS,
     SPONSOR_MISS_PENALTY,
+    MEMBER_FEES_FULL_ROSTER,
     SPONSOR_TOP_N_BY_TIER,
     TV_RIGHTS_PER_HOME_MEET,
     CompetitionTier,
@@ -30,6 +31,7 @@ from models.entities import (
 from models.finances import (
     build_monthly_report,
     close_month_if_due,
+    member_fees_income,
     merchandising_income,
     month_bounds,
     recent_reports,
@@ -320,3 +322,35 @@ class TestPersistence(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMemberFees(unittest.TestCase):
+    """Q32c: le quote tesserati scalano con gli atleti fino a `MEMBER_FEES_FULL_ROSTER`."""
+
+    def test_full_fee_from_the_full_roster_up(self) -> None:
+        state = fresh()
+        state.member_fees_weekly = 450
+        for n in (MEMBER_FEES_FULL_ROSTER, MEMBER_FEES_FULL_ROSTER + 6):
+            state.athletes = (state.athletes * 6)[:n]
+            self.assertEqual(member_fees_income(state), 450)
+
+    def test_proportional_below_and_zero_without_athletes(self) -> None:
+        state = fresh()
+        state.member_fees_weekly = 450
+        base = list(state.athletes)
+        state.athletes = []
+        self.assertEqual(member_fees_income(state), 0)
+        state.athletes = (base * 4)[:5]
+        self.assertEqual(member_fees_income(state), 450 * 5 // MEMBER_FEES_FULL_ROSTER)
+
+    def test_weekly_finances_uses_it(self) -> None:
+        state = fresh()
+        state.athletes = []
+        fin = weekly_finances(state)
+        self.assertEqual(fin["member_fees"], 0)
+        self.assertEqual(fin["income"], fin["sponsor"] + fin["individual_sponsors"] + fin["merchandising"])
+
+    def test_a_club_with_a_full_roster_earns_what_it_always_did(self) -> None:
+        state = fresh()
+        self.assertGreaterEqual(len(state.athletes), MEMBER_FEES_FULL_ROSTER)
+        self.assertEqual(weekly_finances(state)["member_fees"], state.member_fees_weekly)

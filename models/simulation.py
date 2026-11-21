@@ -116,6 +116,7 @@ from models.relationships import (
 from models.facilities import growth_multiplier, injury_weeks_with_medical_center
 from models.finances import (
     close_month_if_due,
+    member_fees_income,
     merchandising_income,
     sponsor_after_cut,
     sponsor_target,
@@ -1674,14 +1675,15 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     staff_cost = sum(s.weekly_cost for s in state.staff if s.hired) + (state.scout.weekly_cost if state.scout else 0)
     coach_cost = sum(c.weekly_wage for c in state.coaches)
     gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
-    income = sponsor + individual + merchandising + state.member_fees_weekly
+    member_fees = member_fees_income(state)
+    income = sponsor + individual + merchandising + member_fees
     expenses = athlete_wages + staff_cost + coach_cost + gym_upkeep
     return {
         "sponsor": sponsor,
         "sponsor_cut": sponsor_cut,
         "merchandising": merchandising,
         "individual_sponsors": individual,
-        "member_fees": state.member_fees_weekly,
+        "member_fees": member_fees,
         "income": income,
         "athlete_wages": athlete_wages,
         "staff_cost": staff_cost,

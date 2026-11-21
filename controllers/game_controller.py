@@ -216,10 +216,9 @@ class GameController(QObject):
         lineup = build_default_lineup(roster, event_names=events, gender="M")
         lineup_f = build_default_lineup(roster, event_names=events, gender="F")
         staff = create_initial_staff()
-        # Gli allenatori iniziali (uno per disciplina) fanno parte dell'avvio di sempre: restano anche senza atleti da seguire.
-        coaches = create_initial_coaches(
-            roster, rng=self.rng, specialties=list(Specialty) if foundation else None
-        )
+        # Q32d (2026-11-21): una società da fondare parte SENZA allenatori (si assumono quando servono, non costano a vuoto);
+        # il Prototipo ha la sua rosa e gli allenatori di sempre.
+        coaches = [] if foundation else create_initial_coaches(roster, rng=self.rng)
         objectives = create_season_objectives(game_mode, CompetitionTier.PROVINCIALE, budget, foundation=foundation)
 
         state = GameState(

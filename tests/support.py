@@ -13,6 +13,7 @@ from __future__ import annotations
 from models.entities import FIRST_OUTDOOR_DATE, SeasonPhase
 from models.generator import (
     build_default_lineup,
+    create_initial_coaches,
     create_season_objectives,
     generate_initial_roster,
 )
@@ -28,6 +29,8 @@ def make_established_career(ctrl) -> None:
     state.start_date = FIRST_OUTDOOR_DATE
     state.objectives = create_season_objectives("career", state.tier, state.budget)
     state.athletes = generate_initial_roster(rng=ctrl.rng)
+    # Q32d: l'avvio vero non ha allenatori; la società «di una volta» ha i suoi, uno per disciplina della rosa.
+    state.coaches = create_initial_coaches(state.athletes, rng=ctrl.rng)
     for athlete in state.athletes:
         auto_assign_coach(state, athlete)
     state.event_lineup = build_default_lineup(state.athletes, gender="M")

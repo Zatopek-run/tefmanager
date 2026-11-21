@@ -21,6 +21,7 @@ from controllers.game_controller import GameController
 from models.board import progress_text
 from models.database import DatabaseManager
 from models.entities import FOUNDATION_KEYS, SEASON_PREP_WEEKS, SeasonPhase
+from models.generator import SPECIALTY_COACH_FOCUS
 from views.main_window import MainWindow
 
 _app = QApplication.instance() or QApplication([])
@@ -49,7 +50,7 @@ class TestNewGame(_Case):
         self.assertEqual([(t.category, t.amount) for t in s.transactions], [("Capitale", 18000)])
         self.assertEqual((s.week, s.season_number, s.tier.value), (1, 1, "Provinciale"))
         self.assertEqual(len(s.staff), 9)  # mercato dello staff clinico (E.1), nessuno assunto
-        self.assertEqual(len(s.coaches), 4)  # uno per disciplina, come nell'avvio di sempre
+        self.assertEqual(s.coaches, [])  # Q32d: nessun allenatore iniziale, si assumono quando servono
         self.assertEqual(s.member_fees_weekly, 450)
 
     def test_it_starts_in_the_preparation_with_the_foundation_objectives(self) -> None:
@@ -98,7 +99,9 @@ class TestFirstSigning(_Case):
         self.assertEqual(s.transactions[0].category, "Scouting")
         self.assertEqual(s.transactions[0].amount, s.budget - before)
         self.assertGreater(athlete.contract_end_season, 0)
-        self.assertIsNotNone(self.ctrl.state.coach_of(athlete))  # il coach di disciplina lo prende subito
+        self.assertIsNone(self.ctrl.state.coach_of(athlete))  # Q32d: nessun allenatore iniziale, serve assumerne uno
+        self.assertTrue(self.ctrl.hire_coach(athlete.specialty, *SPECIALTY_COACH_FOCUS[athlete.specialty], 1))
+        self.assertIsNotNone(self.ctrl.state.coach_of(athlete))  # l'allenatore assunto prende l'atleta della sua disciplina
         self.assertEqual(progress_text(s, s.objectives[0]), "1/6")
 
     def test_the_first_youth_signing_starts_the_academy(self) -> None:

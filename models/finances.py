@@ -2,6 +2,7 @@
 
 - **Bilancio mensile:** ogni `MONTH_WEEKS` (4) settimane il tick chiude un mese (`close_month_if_due`) e ne ricava il resoconto dal
   libro mastro (`state.transactions`): entrate e uscite per categoria. Il capitale iniziale non conta come entrata d'esercizio.
+- **Quote tesserati:** piene da `MEMBER_FEES_FULL_ROSTER` atleti in su, proporzionali sotto (`member_fees_income`, Q32c).
 - **Merchandising:** incasso settimanale in funzione dei fan della Prima Squadra e del prestigio (`merchandising_income`).
 - **Sponsor con obiettivo:** chiudere la stagione fuori dai primi N della lega (`SPONSOR_TOP_N_BY_TIER`, per livello) taglia lo sponsor società della
   stagione dopo del `SPONSOR_MISS_PENALTY` (`sponsor_cut_active`, letto dal verdetto dell'ultima stagione: nessun dato in più da salvare).
@@ -14,6 +15,7 @@ from typing import Dict, List
 
 from models.entities import (
     MAX_MONTHLY_REPORTS,
+    MEMBER_FEES_FULL_ROSTER,
     MERCH_FANS_DIVISOR,
     MERCH_PRESTIGE_DIVISOR,
     MONTH_WEEKS,
@@ -75,6 +77,14 @@ def merchandising_income(state: GameState) -> int:
     """Incasso settimanale dalle magliette: fan della Prima Squadra ÷ 40 + prestigio ÷ 20 (0 a inizio partita)."""
     fans = sum(a.fans for a in state.main_squad)
     return fans // MERCH_FANS_DIVISOR + max(0, state.prestige) // MERCH_PRESTIGE_DIVISOR
+
+
+def member_fees_income(state: GameState) -> int:
+    """Quote tesserati settimanali (Q32c): la quota piena da `MEMBER_FEES_FULL_ROSTER` atleti in su, proporzionale sotto, 0 a società vuota."""
+    members = len(state.athletes)
+    if members >= MEMBER_FEES_FULL_ROSTER:
+        return state.member_fees_weekly
+    return state.member_fees_weekly * members // MEMBER_FEES_FULL_ROSTER
 
 
 def sponsor_top_n(tier: CompetitionTier) -> int:

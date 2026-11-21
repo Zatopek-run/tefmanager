@@ -506,6 +506,10 @@ MAX_MONTHLY_REPORTS = 36  # bilanci mensili ricordati (quattro stagioni)
 # Merchandising settimanale: fan della Prima Squadra ÷ MERCH_FANS_DIVISOR + prestigio ÷ MERCH_PRESTIGE_DIVISOR (extra del 5-15%).
 MERCH_FANS_DIVISOR = 40
 MERCH_PRESTIGE_DIVISOR = 20
+# Quote tesserati (Q32c, 2026-11-21): `GameState.member_fees_weekly` è la quota piena, incassata da MEMBER_FEES_FULL_ROSTER atleti in su
+# (rosa del Prototipo e minimo di sempre); sotto è proporzionale al numero di atleti della società (Prima Squadra e vivaio), 0 senza
+# atleti. CIFRA PROVVISORIA mia. Evita che una società vuota si arricchisca (AUDIT R29).
+MEMBER_FEES_FULL_ROSTER = 10
 # Diritti TV: solo per i meeting IN CASA del livello Internazionale.
 TV_RIGHTS_PER_HOME_MEET = 3000
 # Sponsor con obiettivo: chiudere la stagione fuori dai primi N della lega (N per livello, Q31b: scelta dell'utente 2026-11-21, cifre
