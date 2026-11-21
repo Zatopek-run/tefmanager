@@ -99,7 +99,7 @@ class GloryMomentDialog(QDialog):
         text = QLabel(moment.text)
         text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text.setWordWrap(True)
-        text.setStyleSheet("color: #e2e8f0; font-size: 15px;")
+        text.setStyleSheet("color: #e9eefc; font-size: 15px;")
         layout.addWidget(text, stretch=1)
         self.close_btn = QPushButton("Che emozione!")
         self.close_btn.setObjectName("PrimaryButton")
@@ -144,7 +144,7 @@ class PressConferenceDialog(QDialog):
         for question in self.conference.questions:
             text = QLabel(question.text)
             text.setWordWrap(True)
-            text.setStyleSheet("font-size: 13px; font-weight: 700; color: #e2e8f0;")
+            text.setStyleSheet("font-size: 13px; font-weight: 700; color: #e9eefc;")
             layout.addWidget(text)
             buttons: dict[str, QRadioButton] = {}
             group = QButtonGroup(self)  # un gruppo per domanda: senza, le radio dello stesso genitore si escluderebbero tra loro
@@ -781,7 +781,7 @@ class EthicalDilemmaDialog(QDialog):
 
         desc = QLabel(self.dilemma.description)
         desc.setWordWrap(True)
-        desc.setStyleSheet("font-size: 13px; color: #e2e8f0;")
+        desc.setStyleSheet("font-size: 13px; color: #e9eefc;")
         layout.addWidget(desc)
         layout.addStretch()
 

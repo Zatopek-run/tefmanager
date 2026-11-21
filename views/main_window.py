@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -42,7 +42,9 @@ from views.dialogs import (
 )
 from views.race_viewer import RaceViewerDialog
 from views.start_screen import StartScreen
+from views import icons
 from views.dashboard_qml import DashboardTab
+from views.table_fit import install_table_fitter
 from views.styles import DARK_STYLESHEET
 from views.tabs import (
     CalendarTab,
@@ -68,6 +70,7 @@ class MainWindow(QMainWindow):
         self.resize(1340, 840)
         self.setStyleSheet(DARK_STYLESHEET)
         self._nav_buttons: List[QPushButton] = []
+        install_table_fitter()  # colonne delle tabelle adattate al contenuto (una sola volta per applicazione)
 
         self._build_ui()
         self._connect_signals()
@@ -124,7 +127,8 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.hud_budget)
         header_layout.addWidget(self.hud_prestige)
 
-        self.menu_btn = QPushButton("Partita ▾")
+        self.menu_btn = QPushButton("Partita")
+        self.menu_btn.setIcon(icons.icon(icons.UI_ICONS["save"], color="#e9eefc"))
         game_menu = QMenu(self)
         act_save = QAction("Salva Partita", self)
         act_save.triggered.connect(self.controller.save_game)
@@ -144,6 +148,8 @@ class MainWindow(QMainWindow):
 
         self.advance_btn = QPushButton("Avanza Settimana")
         self.advance_btn.setObjectName("AdvanceWeekButton")
+        self.advance_btn.setIcon(icons.icon(icons.UI_ICONS["next"], color="#0a0f1f", color_on="#0a0f1f"))
+        self.advance_btn.setIconSize(QSize(18, 18))
         self.advance_btn.clicked.connect(self._on_advance_clicked)
         header_layout.addWidget(self.advance_btn)
 
@@ -207,6 +213,8 @@ class MainWindow(QMainWindow):
                 self.tabs.addWidget(widget)
                 btn = QPushButton(label)
                 btn.setObjectName("NavButton")
+                btn.setIcon(icons.nav_icon_for(label))
+                btn.setIconSize(QSize(18, 18))
                 btn.setCheckable(True)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 if idx == 0:
@@ -220,8 +228,10 @@ class MainWindow(QMainWindow):
 
         side_lay.addStretch()
 
-        menu_shortcut = QPushButton("← Menu Principale")
+        menu_shortcut = QPushButton("Menu Principale")
         menu_shortcut.setObjectName("NavButton")
+        menu_shortcut.setIcon(icons.nav_icon_for("Menu"))
+        menu_shortcut.setIconSize(QSize(18, 18))
         menu_shortcut.setCursor(Qt.CursorShape.PointingHandCursor)
         menu_shortcut.clicked.connect(self.show_start_screen)
         side_lay.addWidget(menu_shortcut)

@@ -407,6 +407,8 @@ Durante le **corse in pista** (vista interna 2D o 3D) a destra compare un **tabe
 
 ## 8. Interfaccia (PyQt6, tema scuro)
 
+- **Design system (Lotto G):** colori, tipografia (Inter inclusa), spaziature e raggi stanno in `views/theme.py` e il foglio di stile è generato da lì; barra laterale e intestazione con icone; tabelle con colonne adattate al contenuto. Dashboard, parte grafica della scheda atleta e tabellone live della gara sono in QML (vedi 5.24-5.26).
+
 - **Schermata iniziale** (`StartScreen`): hero, scheda «Continua ultima partita», nuova società (nome, modalità, provincia di partenza), tabella dei salvataggi (carica, elimina, doppio clic).
 - **Finestra principale** (`MainWindow`): barra laterale con tre sezioni e dieci pagine:
   GESTIONE → *Dashboard*, *Rosa & Allenamenti*, *Vivaio & Osservatori*; COMPETIZIONI → *Calendario & Gare*, *Staffette*, *Rivali*, *Ranking* (classifica mondiale, nazionale e delle società, per disciplina e sesso: C.1); SOCIETÀ → *Staff & Impianto*, *Finanze*, *Albo & Record*.

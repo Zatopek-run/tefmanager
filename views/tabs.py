@@ -596,7 +596,7 @@ class RosterTab(QWidget):
         root.addWidget(self.empty_hint)
 
         toolbar = QHBoxLayout()
-        title = QLabel("Rosa, Periodizzazione & Recupero")
+        title = QLabel("Rosa")  # il resto («periodizzazione e recupero») è nei pulsanti: con Inter il titolo lungo non ci stava
         title.setObjectName("SectionHeader")
         toolbar.addWidget(title)
         toolbar.addStretch()
@@ -605,6 +605,7 @@ class RosterTab(QWidget):
         for phase in PeriodizationPhase:
             self.bulk_period_combo.addItem(f"Ciclo Tutti: {phase.value}", phase)
         self.bulk_period_combo.activated.connect(self._apply_bulk_period)
+        self.bulk_period_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         toolbar.addWidget(self.bulk_period_combo)
 
         btn_rest = QPushButton("Tutti: Riposo")
@@ -2786,7 +2787,7 @@ class RecordsTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 1:
-                    item.setForeground(QColor("#0de0cc"))
+                    item.setForeground(QColor("#19d3c0"))
                 table.setItem(row, col, item)
 
     def refresh(self, state: GameState) -> None:
@@ -2815,7 +2816,7 @@ class RecordsTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 4 and ex.coach_offer:
-                    item.setForeground(QColor("#0de0cc"))
+                    item.setForeground(QColor("#19d3c0"))
                 self.retired_table.setItem(row, col, item)
         if selected is not None and selected < len(state.retired):
             self.retired_table.selectRow(selected)
@@ -2836,8 +2837,8 @@ class RankingTab(QWidget):
     suo posto vero (per esempio «143°»): il gioco non nasconde dove sei.
     """
 
-    CLUB_COLOR = "#0de0cc"
-    RIVAL_COLOR = "#94a3b8"
+    CLUB_COLOR = "#19d3c0"
+    RIVAL_COLOR = "#93a0c6"
 
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)

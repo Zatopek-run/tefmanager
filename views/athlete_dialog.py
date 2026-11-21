@@ -82,7 +82,7 @@ class _StatColumn(QFrame):
         box.setContentsMargins(16, 14, 16, 14)
         box.setSpacing(0)
         head = QLabel(title.upper())
-        head.setStyleSheet("color: #0de0cc; font-weight: 800; font-size: 12px; letter-spacing: 0.7px; padding-bottom: 8px;")
+        head.setStyleSheet("color: #19d3c0; font-weight: 800; font-size: 12px; letter-spacing: 0.7px; padding-bottom: 8px;")
         box.addWidget(head)
         for name, value, invert in rows:
             row = QFrame()
@@ -145,7 +145,7 @@ class AthleteDetailDialog(QDialog):
         self.btn_no_renew.clicked.connect(self._toggle_no_renew)
         btn_recover = QPushButton("RECUPERO (€250)")
         btn_recover.setStyleSheet(
-            "background-color: #0e7490; color: #f8fafc; border: 1px solid #0de0cc; font-weight: 700;"
+            "background-color: #0e7490; color: #e9eefc; border: 1px solid #19d3c0; font-weight: 700;"
         )
         btn_recover.clicked.connect(self._recover)
         btn_close = QPushButton("✓ CHIUDI")
@@ -229,13 +229,13 @@ class AthleteDetailDialog(QDialog):
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl.setFixedSize(size, size)
         lbl.setStyleSheet(
-            f"background-color: #1e3a8a; color: #f8fafc; border: 3px solid {color};"
+            f"background-color: #1e3a8a; color: #e9eefc; border: 3px solid {color};"
             f"border-radius: {size // 2}px; font-weight: 800; font-size: {size // 3}px;"
         )
         return lbl
 
     @staticmethod
-    def _pill(text: str, bg: str, fg: str = "#f8fafc") -> QLabel:
+    def _pill(text: str, bg: str, fg: str = "#e9eefc") -> QLabel:
         pill = QLabel(text)
         pill.setStyleSheet(
             f"background-color: {bg}; color: {fg}; border-radius: 10px; padding: 3px 10px;"
@@ -252,7 +252,7 @@ class AthleteDetailDialog(QDialog):
         lay.addWidget(self._avatar(athlete, 52))
         names = QVBoxLayout()
         title = QLabel(f"{athlete.name} {athlete.flag}" + (" *" if athlete.is_youth_prospect else ""))
-        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #f8fafc;")
+        title.setStyleSheet("font-size: 20px; font-weight: 800; color: #e9eefc;")
         team = QLabel(f"{self.controller.state.team_name}  ·  {athlete.flag} {athlete.nationality}")
         team.setObjectName("SubTitle")
         names.addWidget(title)
@@ -272,8 +272,8 @@ class AthleteDetailDialog(QDialog):
         outer.setContentsMargins(0, 0, 0, 0)
         title = QLabel("CARATTERISTICHE")
         title.setStyleSheet(
-            "font-size: 15px; font-weight: 800; color: #f8fafc; padding-bottom: 6px;"
-            "border-bottom: 2px solid #0de0cc;"
+            "font-size: 15px; font-weight: 800; color: #e9eefc; padding-bottom: 6px;"
+            "border-bottom: 2px solid #19d3c0;"
         )
         outer.addWidget(title)
 
@@ -289,7 +289,7 @@ class AthleteDetailDialog(QDialog):
         badges.addStretch()
         ovr = QLabel(str(a.overall))
         ovr.setStyleSheet(
-            "background-color: #0de0cc; color: #060e26; border-radius: 4px; padding: 3px 10px;"
+            "background-color: #19d3c0; color: #060e26; border-radius: 4px; padding: 3px 10px;"
             "font-weight: 800; font-size: 15px;"
         )
         stars = QLabel(f"★ {potential_stars(a.potential)}")
@@ -327,9 +327,9 @@ class AthleteDetailDialog(QDialog):
         form.setHorizontalSpacing(18)
         for k, v in info_rows:
             key = QLabel(k)
-            key.setStyleSheet("color: #94a3b8;")
+            key.setStyleSheet("color: #93a0c6;")
             val = QLabel(v)
-            val.setStyleSheet("font-weight: 700; color: #f8fafc;")
+            val.setStyleSheet("font-weight: 700; color: #e9eefc;")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             form.addRow(key, val)
         left.addWidget(info)

@@ -13,11 +13,12 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
 from models.entities import MonthlyReport
+from views import theme
 
-INCOME_COLOR = QColor("#34d399")
-EXPENSE_COLOR = QColor("#f87171")
-AXIS_COLOR = QColor("#475569")
-TEXT_COLOR = QColor("#94a3b8")
+INCOME_COLOR = QColor(theme.GOOD)
+EXPENSE_COLOR = QColor(theme.BAD)
+AXIS_COLOR = QColor(theme.BORDER_STRONG)
+TEXT_COLOR = QColor(theme.TEXT_MUTED)
 MAX_BARS = 12  # ultimi 12 mesi
 
 
@@ -45,7 +46,7 @@ class MonthlyBarsWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         w, h = self.width(), self.height()
-        painter.fillRect(0, 0, w, h, QColor("#0b1228"))
+        painter.fillRect(0, 0, w, h, QColor(theme.BG))
         font = QFont(painter.font())
         font.setPixelSize(11)
         painter.setFont(font)
