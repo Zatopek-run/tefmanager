@@ -533,9 +533,9 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) le relazioni restano la nascita deterministica più il +2 delle staffette, nessun evento che le crei o le rompa; (c) **le notizie (F.1) raccontano le nuove amicizie e rivalità**, non le conferenze: `relationships.new_relationships` (nuova, ritorna le coppie create) e `narrative.new_relation_news` scrivono **una sola riga** per tick sulla coppia nuova più forte (|valore| massimo, a parità i nomi in ordine); evento e non mensile, perché non c'è memoria di «già annunciato» e così ogni coppia nasce una volta sola; con una rosa nuova nascono decine di coppie ma la riga è una (le altre esistono, non sono raccontate); (d) nessun morale per atleta: basta la chimica di squadra. Nessun RNG, nessuno schema nuovo.
 
 
-## Q39 — Momenti di gloria (PIANOLAVORO F.4) — 🟡 IN CORSO dal 2026-11-21, **regole da confermare**
+## Q39 — Momenti di gloria (PIANOLAVORO F.4) — ✅ FATTA il 2026-11-21: regole confermate; il popup Diamond League c'era già (C.1b) e ora ha i test
 
-**Proposta dell'assistente accettata («ok»):** popup per ciò che esiste nel gioco — record del mondo, momento storico, titolo e promozione, atleta dell'anno — e **fuori** convocazione in nazionale e invito Diamond League (dipendono da C.1b).
+**Proposta dell'assistente accettata («ok»):** popup per ciò che esiste nel gioco — record del mondo, momento storico, titolo e promozione, atleta dell'anno — e **fuori** convocazione in nazionale e invito Diamond League (dipendevano da C.1b; la Diamond League è stata aggiunta dopo con C.1b).
 
 **Cosa c'è** (nessuna modifica allo schema, nessun RNG): `models/glory.py` (senza Qt), `WORLD_RECORDS` in `entities.py`, `GameController.glory_moments` (segnale) e `_glory_of`, `GloryMomentDialog` in `views/dialogs.py` e `MainWindow._show_glory_moments`. Regole in `BALANCE.md` §W. Test: `test_glory.py` (19, senza Qt), `test_glory_ui.py` (11, Qt offscreen); suite 829 test OK.
 
@@ -545,7 +545,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Limiti dichiarati:** vedi AUDIT R36; il «test manuale» del piano (record del mondo → popup) **non eseguito con il mouse**: provato solo con test offscreen e misure forzate.
 
-**Da decidere:** (a) i momenti da celebrare (record sociale importante? primo podio? ritiro di un campione?); (b) un'animazione più ricca; (c) salvare i momenti per rivederli (un «albo» della gloria); (d) i criteri dell'atleta dell'anno (livello della gara, ranking); (e) C.1b per aggiungere nazionale e Diamond League.
+**Deciso il 2026-11-21 (utente):** (a) regole confermate (record del mondo = tetto della simulazione; il record sociale non apre popup; atleta dell'anno = più vittorie poi più podi; popup dopo risultati e fine stagione, prima di un dilemma); (b) tra i momenti nuovi l'utente ha scelto l'**invito alla Diamond League**: **era già implementato** con C.1b (`glory.meeting_moments` crea un `DIAMOND` quando `summary.is_diamond`, prima di un eventuale record del mondo; nessuna riga nuova nel registro, il meeting ha già la sua notizia) ma **non aveva test**: aggiunti 4 in `test_glory.py` e 1 in `test_glory_ui.py`; la convocazione in nazionale resta inesistente; (c) i momenti non si salvano (nessun «albo della gloria»); (d) l'atleta dell'anno resta vittorie e podi, senza livello né ranking.
 
 
 ## Q40 — Lotto G (UI/UX) — 🟡 IN CORSO dal 2026-11-21, **direzione grafica da approvare**

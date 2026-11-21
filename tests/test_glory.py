@@ -25,6 +25,7 @@ from models.entities import (
 from models.glory import (
     ATHLETE_OF_THE_YEAR,
     CHAMPION,
+    DIAMOND,
     HISTORIC,
     PROMOTION,
     WORLD_RECORD,
@@ -110,6 +111,31 @@ class TestMeetingMoments(unittest.TestCase):
         state = make_state(3)
         self.assertEqual(meeting_moments(state, meet([result("Anna", 1, gender="F", mark=10.49)]))[0].kind, WORLD_RECORD)
         self.assertEqual(meeting_moments(state, meet([result("Anna", 1, gender="F", mark=10.60)])), [])
+
+    def test_the_diamond_league_meeting_is_a_moment_with_its_prizes_and_no_new_log_line(self) -> None:
+        state = make_state(3)
+        summary = meet([])
+        summary.is_diamond, summary.meet_name = True, "Diamond League — Meeting dei Colli"
+        summary.total_prize_money, summary.total_prestige_gained = 4200, 70
+        moments = meeting_moments(state, summary)
+        self.assertEqual([m.kind for m in moments], [DIAMOND])
+        self.assertIn("Meeting dei Colli", moments[0].text)
+        self.assertIn("4,200", moments[0].text)
+        self.assertIn("+70 prestigio", moments[0].text)
+        self.assertIsNone(moments[0].log_line)  # il meeting ha già la sua notizia (C.1b)
+
+    def test_a_normal_meeting_is_not_a_diamond_moment(self) -> None:
+        self.assertEqual([m.kind for m in meeting_moments(make_state(3), meet([result("A", 1, mark=10.5)]))], [])
+
+    def test_an_absent_club_is_not_celebrated_even_in_the_diamond_week(self) -> None:
+        summary = meet([], absent=True)
+        summary.is_diamond = True
+        self.assertEqual(meeting_moments(make_state(3), summary), [])
+
+    def test_the_diamond_moment_comes_before_a_world_record_of_the_same_meeting(self) -> None:
+        summary = meet([result("Mario Rossi", 1, mark=9.58)])
+        summary.is_diamond = True
+        self.assertEqual([m.kind for m in meeting_moments(make_state(3), summary)], [DIAMOND, WORLD_RECORD])
 
     def test_new_historic_milestones_become_moments_without_a_new_log_line(self) -> None:
         state = make_state(3)

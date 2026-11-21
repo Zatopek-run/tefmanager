@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import QApplication, QLabel
 from controllers.game_controller import GameController
 from models.database import DatabaseManager
 from models.entities import SeasonOutcome
-from models.glory import ATHLETE_OF_THE_YEAR, CHAMPION, WORLD_RECORD, GloryMoment
+from models.glory import ATHLETE_OF_THE_YEAR, CHAMPION, DIAMOND, WORLD_RECORD, GloryMoment
 from tests.support import start_game
 from tests.test_glory import meet, result, season_end
 from views.dialogs import GloryMomentDialog
@@ -52,6 +52,14 @@ class TestDialog(_Base):
         self.assertEqual(dlg.windowTitle(), "RECORD DEL MONDO!")
         self.assertEqual(dlg.fade.duration(), GloryMomentDialog.FADE_MS)
         self.assertEqual(dlg.windowOpacity(), 0.0)  # parte trasparente e sale con la dissolvenza
+
+    def test_the_diamond_moment_opens_like_any_other(self) -> None:
+        moment = GloryMoment(DIAMOND, "DIAMOND LEAGUE!", "CUS Test ha gareggiato su invito: +€4,200 di premi e +70 prestigio.")
+        dlg = GloryMomentDialog(moment)
+        self.addCleanup(dlg.close)
+        text = " ".join(label.text() for label in dlg.findChildren(QLabel))
+        self.assertIn("DIAMOND LEAGUE!", text)
+        self.assertIn("+70 prestigio", text)
 
     def test_the_button_closes_it(self) -> None:
         dlg = GloryMomentDialog(GloryMoment(CHAMPION, "CAMPIONI!", "x"))
