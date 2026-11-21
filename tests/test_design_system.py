@@ -73,10 +73,12 @@ class TestStylesheet(unittest.TestCase):
             for color in RETIRED_COLORS:
                 self.assertNotIn(color, text, f"{f.name}: colore del tema vecchio {color}")
 
-    def test_the_athlete_dialog_has_no_hand_written_colors(self) -> None:
-        """Ogni colore della scheda atleta viene dai token di `theme.py` (R37-R41): nessun `#rrggbb` nel file."""
-        text = (VIEWS / "athlete_dialog.py").read_text(encoding="utf-8")
-        self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", text), [])
+    def test_the_ui_views_have_no_hand_written_colors(self) -> None:
+        """Ogni colore delle viste dell'interfaccia viene dai token di `theme.py` (R41): nessun `#rrggbb` nei file.
+        Fuori restano `theme.py` (i token), `styles.py` (il generatore del foglio di stile) e le viste di scena (gara, 3D)."""
+        for name in ("tabs", "dialogs", "athlete_dialog", "start_screen", "main_window", "results_board", "widgets", "finance_chart", "dashboard_qml", "qml_host"):
+            text = (VIEWS / f"{name}.py").read_text(encoding="utf-8")
+            self.assertEqual(re.findall(r"#[0-9a-fA-F]{6}\b", text), [], f"{name}.py: colori scritti a mano")
 
     def test_every_object_name_styled_in_the_views_exists_in_the_stylesheet_or_is_unstyled_on_purpose(self) -> None:
         css = DARK_STYLESHEET

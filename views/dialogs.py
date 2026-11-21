@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from views import theme
 from models.entities import (
     COACH_BASE_SKILL,
     COACH_COMFORT_LOAD,
@@ -84,22 +85,22 @@ class GloryMomentDialog(QDialog):
         self.moment = moment
         self.setWindowTitle(moment.title)
         self.resize(520, 300)
-        self.setStyleSheet("QDialog { background: #0b1220; border: 3px solid #fbbf24; }")
+        self.setStyleSheet(f"QDialog {{ background: {theme.BG}; border: 3px solid {theme.WARN}; }}")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 20)
         layout.setSpacing(12)
         star = QLabel("★  ★  ★")
         star.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        star.setStyleSheet("color: #fbbf24; font-size: 22px; letter-spacing: 6px;")
+        star.setStyleSheet(f"color: {theme.WARN}; font-size: 22px; letter-spacing: 6px;")
         layout.addWidget(star)
         title = QLabel(moment.title)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("color: #fbbf24; font-size: 28px; font-weight: 900;")
+        title.setStyleSheet(f"color: {theme.WARN}; font-size: 28px; font-weight: 900;")
         layout.addWidget(title)
         text = QLabel(moment.text)
         text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         text.setWordWrap(True)
-        text.setStyleSheet("color: #e9eefc; font-size: 15px;")
+        text.setStyleSheet(f"color: {theme.TEXT}; font-size: 15px;")
         layout.addWidget(text, stretch=1)
         self.close_btn = QPushButton("Che emozione!")
         self.close_btn.setObjectName("PrimaryButton")
@@ -139,12 +140,12 @@ class PressConferenceDialog(QDialog):
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
         title = QLabel("Il giornalista alza la mano…")
-        title.setStyleSheet("color: #fbbf24; font-size: 18px; font-weight: 800;")
+        title.setStyleSheet(f"color: {theme.WARN}; font-size: 18px; font-weight: 800;")
         layout.addWidget(title)
         for question in self.conference.questions:
             text = QLabel(question.text)
             text.setWordWrap(True)
-            text.setStyleSheet("font-size: 13px; font-weight: 700; color: #e9eefc;")
+            text.setStyleSheet(f"font-size: 13px; font-weight: 700; color: {theme.TEXT};")
             layout.addWidget(text)
             buttons: dict[str, QRadioButton] = {}
             group = QButtonGroup(self)  # un gruppo per domanda: senza, le radio dello stesso genitore si escluderebbero tra loro
@@ -243,7 +244,7 @@ class CompetitionResultsDialog(QDialog):
             promo_label = QLabel(
                 f"PROMOZIONE SBLOCCATA: Benvenuto in categoria {self.summary.promoted_to.value}!"
             )
-            promo_label.setStyleSheet("color: #34d399; font-weight: 800; font-size: 14px;")
+            promo_label.setStyleSheet(f"color: {theme.GOOD}; font-weight: 800; font-size: 14px;")
             promo_layout.addWidget(promo_label)
             layout.addWidget(promo)
 
@@ -298,13 +299,13 @@ class CompetitionResultsDialog(QDialog):
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if res.withdrew_injured or res.disqualified:
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(QColor(theme.BAD))
                 elif col == 4 and res.wind_illegal:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                 elif res.placement == 1:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                 elif res.placement <= 3:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 self.events_table.setItem(row, col, item)
 
         self.events_table.itemSelectionChanged.connect(self._on_event_selected)
@@ -341,7 +342,7 @@ class CompetitionResultsDialog(QDialog):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if team == self.summary.player_team:
-                    item.setForeground(QColor("#38bdf8"))
+                    item.setForeground(QColor(theme.INFO))
                 self.team_table.setItem(row, col, item)
         team_box.addWidget(self.team_table)
         lower.addLayout(team_box, stretch=2)
@@ -377,7 +378,7 @@ class CompetitionResultsDialog(QDialog):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if s.is_player:
-                    item.setForeground(QColor("#38bdf8"))
+                    item.setForeground(QColor(theme.INFO))
                 self.standings_table.setItem(row, col, item)
 
 
@@ -470,9 +471,9 @@ class RecruitAthleteDialog(QDialog):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 5 and a.potential >= 85:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 elif col == 10 and fee > self.budget:
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(QColor(theme.BAD))
                 if col == 9 and agent is not None:
                     item.setToolTip(self._agent_tooltip(a, agent))
                 self.table.setItem(row, col, item)
@@ -776,12 +777,12 @@ class EthicalDilemmaDialog(QDialog):
 
         title = QLabel(self.dilemma.title)
         title.setObjectName("AppTitle")
-        title.setStyleSheet("color: #fbbf24; font-size: 18px; font-weight: 800;")
+        title.setStyleSheet(f"color: {theme.WARN}; font-size: 18px; font-weight: 800;")
         layout.addWidget(title)
 
         desc = QLabel(self.dilemma.description)
         desc.setWordWrap(True)
-        desc.setStyleSheet("font-size: 13px; color: #e9eefc;")
+        desc.setStyleSheet(f"font-size: 13px; color: {theme.TEXT};")
         layout.addWidget(desc)
         layout.addStretch()
 
@@ -988,10 +989,10 @@ class SeasonEndDialog(QDialog):
     """Final league table of the season with promotion / relegation outcome."""
 
     OUTCOME_COLORS = {
-        SeasonOutcome.PROMOTED: "#34d399",
-        SeasonOutcome.CHAMPION: "#fbbf24",
-        SeasonOutcome.STAYED: "#38bdf8",
-        SeasonOutcome.RELEGATED: "#f87171",
+        SeasonOutcome.PROMOTED: theme.GOOD,
+        SeasonOutcome.CHAMPION: theme.WARN,
+        SeasonOutcome.STAYED: theme.INFO,
+        SeasonOutcome.RELEGATED: theme.BAD,
     }
 
     def __init__(self, result: SeasonEndResult, team_name: str, parent=None) -> None:
@@ -1037,11 +1038,11 @@ class SeasonEndDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         for row, (team, pts) in enumerate(result.final_table):
             if team == team_name:
-                color = "#38bdf8"
+                color = theme.INFO
             elif row < PROMOTION_SPOTS:
-                color = "#34d399"
+                color = theme.GOOD
             elif row >= n - RELEGATION_SPOTS:
-                color = "#f87171"
+                color = theme.BAD
             else:
                 color = None
             for col, value in enumerate((str(row + 1), team, str(pts))):
@@ -1056,16 +1057,16 @@ class SeasonEndDialog(QDialog):
         if result.board_failed is not None:  # verdetto del Board (C.2); None = stagione senza obiettivi del Board
             lines = [f"{'✔' if ok else '✘'} {title}" for title, ok in result.board_results]
             if result.fired:
-                verdict, color = f"ESONERATO: {result.board_streak} stagioni fallite di fila.", "#f87171"
+                verdict, color = f"ESONERATO: {result.board_streak} stagioni fallite di fila.", theme.BAD
             elif result.board_foundation:  # stagione di fondazione (Q32): solo informativa
                 verdict, color = (
-                    "Stagione di fondazione: nessuna conseguenza. Da ora il Board guarda i risultati.", "#38bdf8"
+                    "Stagione di fondazione: nessuna conseguenza. Da ora il Board guarda i risultati.", theme.INFO
                 )
             elif result.board_failed:
                 verdict = f"Stagione FALLITA per il Board. Fallite di fila: {result.board_streak}. Alla {BOARD_MAX_FAILED_STREAK}ª arriva l'esonero."
-                color = "#fbbf24"
+                color = theme.WARN
             else:
-                verdict, color = "Il Board è soddisfatto della stagione.", "#34d399"
+                verdict, color = "Il Board è soddisfatto della stagione.", theme.GOOD
             self.board_label = QLabel("OBIETTIVI DEL BOARD\n" + "\n".join(lines) + "\n" + verdict)
             self.board_label.setWordWrap(True)
             self.board_label.setStyleSheet(f"color: {color}; font-weight: 700;")
@@ -1105,7 +1106,7 @@ class BoardObjectivesDialog(QDialog):
         layout.addWidget(self.objectives_label)
         if failed_streak:
             warn = QLabel(f"Attenzione: la stagione scorsa è stata fallita ({failed_streak} di fila).")
-            warn.setStyleSheet("color: #fbbf24; font-weight: 700;")
+            warn.setStyleSheet(f"color: {theme.WARN}; font-weight: 700;")
             layout.addWidget(warn)
         layout.addStretch()
         btn_row = QHBoxLayout()

@@ -498,7 +498,7 @@ Le viste QML hanno test che falliscono su **qualunque avviso del motore QML** (`
 | Mercato (R18) | Pool e scouting solo in memoria. |
 | `hash()` (R17) | Salato per processo nella fascia del potenziale mostrata nel mercato. |
 | Tick (T1-T11) | Dettaglio dei punti d'ordine sospetti in `TICK.md` §E. |
-| Interfaccia G (R37-R41) | QML provato solo su Wayland+OpenGL e offscreen (Windows/macOS no); animazioni e mouse reale non visti; due Dashboard da mantenere (QML + ripiego QWidget); pacchetto PyInstaller non provato (font, `views/qml`, `qtawesome`); replay: una sola inquadratura nel 2D; stili inline residui nelle schede (dialogo atleta ripulito: colori dai token). |
+| Interfaccia G (R37-R41) | QML provato solo su Wayland+OpenGL e offscreen (Windows/macOS no); animazioni e mouse reale non visti; due Dashboard da mantenere (QML + ripiego QWidget); pacchetto PyInstaller non provato (font, `views/qml`, `qtawesome`); replay: una sola inquadratura nel 2D; stili inline con dimensioni scritte a mano (i colori sono tutti dai token). |
 
 Le decisioni di design aperte (parte delle 22 domande, es. «che cosa è il fallimento», «dove vivono le costanti di bilanciamento») sono in `docs/QUESTIONS.md` e **spettano all'utente**.
 

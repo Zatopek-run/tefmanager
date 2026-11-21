@@ -199,7 +199,7 @@ def _empty_hint(text: str) -> QLabel:
     label = QLabel(text.replace("&&", "&"))
     label.setObjectName("SubTitle")
     label.setWordWrap(True)
-    label.setStyleSheet("color: #fbbf24; border: 1px solid #fbbf24; border-radius: 6px; padding: 8px 10px;")
+    label.setStyleSheet(f"color: {theme.WARN}; border: 1px solid {theme.WARN}; border-radius: 6px; padding: 8px 10px;")
     label.hide()
     return label
 
@@ -833,15 +833,15 @@ class RosterTab(QWidget):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
                 elif col == 9:
                     item.setForeground(
-                        QColor("#34d399" if a.form >= 70 else ("#fbbf24" if a.form >= 45 else "#f87171"))
+                        QColor(theme.GOOD if a.form >= 70 else (theme.WARN if a.form >= 45 else theme.BAD))
                     )
                 elif col == 10:
                     item.setForeground(
-                        QColor("#f87171" if a.fatigue >= 75 else ("#fbbf24" if a.fatigue >= 50 else "#34d399"))
+                        QColor(theme.BAD if a.fatigue >= 75 else (theme.WARN if a.fatigue >= 50 else theme.GOOD))
                     )
                 elif col == 11:
                     item.setForeground(
-                        QColor("#f87171" if a.is_injured else ("#fbbf24" if a.fatigue >= 75 else "#34d399"))
+                        QColor(theme.BAD if a.is_injured else (theme.WARN if a.fatigue >= 75 else theme.GOOD))
                     )
                 self.table.setItem(row, col, item)
 
@@ -1123,13 +1123,13 @@ class CalendarTab(QWidget):
                 "Prototipo Stagione Outdoor completato (2 gare disputate)! "
                 "Puoi continuare a testare il loop o avviare una Carriera Completa."
             )
-            self.cycle_label.setStyleSheet("color: #34d399;")
+            self.cycle_label.setStyleSheet(f"color: {theme.GOOD};")
         elif state.is_competition_week:
             self.cycle_label.setText(
                 f"Sett. {state.week} ({state.current_date:%d %b %Y}) — "
                 f"SETTIMANA DI GARA ({state.season_phase.value})! Conferma le convocazioni e avanza."
             )
-            self.cycle_label.setStyleSheet("color: #fbbf24;")
+            self.cycle_label.setStyleSheet(f"color: {theme.WARN};")
         else:
             rem = state.weeks_until_competition
             venue = "in casa" if state.next_meet_is_home else "in trasferta"
@@ -1164,7 +1164,7 @@ class CalendarTab(QWidget):
                     item = QTableWidgetItem(text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     if col == 0 and uncovered:
-                        item.setForeground(QColor("#f87171"))
+                        item.setForeground(QColor(theme.BAD))
                     self.lineup_table.setItem(row, col, item)
 
                 combo = QComboBox()
@@ -1214,11 +1214,11 @@ class CalendarTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if team == state.team_name:
-                    item.setForeground(QColor("#38bdf8"))
+                    item.setForeground(QColor(theme.INFO))
                 elif state.game_mode == "career" and row < PROMOTION_SPOTS:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 elif state.game_mode == "career" and row >= len(league_rows) - RELEGATION_SPOTS:
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(QColor(theme.BAD))
                 self.league_table.setItem(row, col, item)
 
         query = self.hist_search.text().strip().lower() if hasattr(self, "hist_search") else ""
@@ -1513,9 +1513,9 @@ class StaffTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if 2 <= col <= 5 and int(text) >= 80:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 if col == 6 and load > COACH_COMFORT_LOAD:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                 self.coach_table.setItem(row, col, item)
             fire_btn = QPushButton("Licenzia")
             fire_btn.setObjectName("DangerButton")
@@ -1543,7 +1543,7 @@ class StaffTab(QWidget):
                     else Qt.AlignmentFlag.AlignCenter
                 )
                 if s.hired and col == 0:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 self.table.setItem(row, col, item)
 
             current = hired_of_role(state, s.role)  # chi sarebbe sostituito, se non è già s
@@ -1698,7 +1698,7 @@ class FinancesTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 3:
-                    item.setForeground(QColor("#34d399" if rep.net >= 0 else "#f87171"))
+                    item.setForeground(QColor(theme.GOOD if rep.net >= 0 else theme.BAD))
                 self.months_table.setItem(row, col, item)
         self.months_table.blockSignals(False)
         if self._monthly_list:
@@ -1723,9 +1723,9 @@ class FinancesTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 1 and inc:
-                    item.setForeground(QColor("#34d399"))
+                    item.setForeground(QColor(theme.GOOD))
                 elif col == 2 and exp:
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(QColor(theme.BAD))
                 if cat == "TOTALE":
                     font = item.font()
                     font.setBold(True)
@@ -1737,7 +1737,7 @@ class FinancesTab(QWidget):
         net = fin["net"]
 
         self.balance_val.setText(f"€{state.budget:,}")
-        self.balance_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
+        self.balance_val.setStyleSheet(f"color: {theme.BAD};" if state.budget < 0 else "")
         self.balance_sub.setText(
             f"Fedeltà sponsor {state.fidelity}% (scende con acquisti/cessioni)"
             if state.budget >= 0
@@ -1759,7 +1759,7 @@ class FinancesTab(QWidget):
 
         sign = "+" if net >= 0 else ""
         self.net_val.setText(f"{sign}€{net:,}")
-        self.net_val.setStyleSheet("color: #34d399;" if net >= 0 else "color: #f87171;")
+        self.net_val.setStyleSheet(f"color: {theme.GOOD};" if net >= 0 else f"color: {theme.BAD};")
         self.net_sub.setText("Esclusi premi, biglietti e trasferte")
 
         query = self.ledger_search.text().strip().lower() if hasattr(self, "ledger_search") else ""
@@ -1786,7 +1786,7 @@ class FinancesTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 3:
-                    item.setForeground(QColor("#34d399" if tx.amount >= 0 else "#f87171"))
+                    item.setForeground(QColor(theme.GOOD if tx.amount >= 0 else theme.BAD))
                 self.table.setItem(row, col, item)
         self._refresh_monthly(state)
 
@@ -2118,7 +2118,7 @@ class YouthTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 4 and a.potential >= 88:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                 self.youth_table.setItem(row, col, item)
 
             focus_combo = QComboBox()
@@ -2155,7 +2155,7 @@ class YouthTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 5 and k.potential >= 88:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                 self.results_table.setItem(row, col, item)
         if results:
             self.results_table.selectRow(0)
@@ -2546,7 +2546,7 @@ class RivalsTab(QWidget):
             ]
             if mine_val is not None and best is not None:
                 margin = mine_val - best.skill
-                vals.append((f"{margin:+.1f}", "#34d399" if margin >= 0 else ("#fbbf24" if margin > -4 else "#f87171")))
+                vals.append((f"{margin:+.1f}", theme.GOOD if margin >= 0 else (theme.WARN if margin > -4 else theme.BAD)))
             else:
                 vals.append(("—", None))
             for col, (text, color) in enumerate(vals):
@@ -2570,8 +2570,8 @@ class RivalsTab(QWidget):
         self.clubs_table.blockSignals(True)
         self.clubs_table.setRowCount(len(ordered))
         for row, club in enumerate(ordered):
-            trend_color = "#34d399" if club.trend >= 0.5 else ("#f87171" if club.trend <= -0.5 else None)
-            amb_color = "#fbbf24" if club.ambition >= 1.2 else None
+            trend_color = theme.GOOD if club.trend >= 0.5 else (theme.BAD if club.trend <= -0.5 else None)
+            amb_color = theme.WARN if club.ambition >= 1.2 else None
             vals = [
                 (club.name, None),
                 (f"{club.level(events):.1f}", None),
@@ -2613,7 +2613,7 @@ class RivalsTab(QWidget):
         self.roster_table.setRowCount(len(events))
         for row, ev in enumerate(events):
             a = athletes_map[ev]
-            age_color = "#34d399" if a.age <= 23 else ("#f87171" if a.age >= 30 else None)
+            age_color = theme.GOOD if a.age <= 23 else (theme.BAD if a.age >= 30 else None)
             vals = [(f"{ev} ({gender})", None), (a.name, None), (str(a.age), age_color),
                     (f"{a.skill:.1f}", None), (a.pb_display or "—", None)]
             for col, (text, color) in enumerate(vals):
@@ -2624,10 +2624,10 @@ class RecordsTab(QWidget):
     """Club records (M/F), seasonal honours history, and milestone archive."""
 
     OUTCOME_COLORS = {
-        SeasonOutcome.PROMOTED: "#34d399",
-        SeasonOutcome.CHAMPION: "#fbbf24",
-        SeasonOutcome.STAYED: "#38bdf8",
-        SeasonOutcome.RELEGATED: "#f87171",
+        SeasonOutcome.PROMOTED: theme.GOOD,
+        SeasonOutcome.CHAMPION: theme.WARN,
+        SeasonOutcome.STAYED: theme.INFO,
+        SeasonOutcome.RELEGATED: theme.BAD,
     }
 
     def __init__(self, controller: GameController, parent=None) -> None:
@@ -2787,7 +2787,7 @@ class RecordsTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 1:
-                    item.setForeground(QColor("#19d3c0"))
+                    item.setForeground(QColor(theme.ACCENT))
                 table.setItem(row, col, item)
 
     def refresh(self, state: GameState) -> None:
@@ -2816,7 +2816,7 @@ class RecordsTab(QWidget):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 if col == 4 and ex.coach_offer:
-                    item.setForeground(QColor("#19d3c0"))
+                    item.setForeground(QColor(theme.ACCENT))
                 self.retired_table.setItem(row, col, item)
         if selected is not None and selected < len(state.retired):
             self.retired_table.selectRow(selected)
@@ -2837,8 +2837,8 @@ class RankingTab(QWidget):
     suo posto vero (per esempio «143°»): il gioco non nasconde dove sei.
     """
 
-    CLUB_COLOR = "#19d3c0"
-    RIVAL_COLOR = "#93a0c6"
+    CLUB_COLOR = theme.ACCENT
+    RIVAL_COLOR = theme.TEXT_MUTED
 
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)

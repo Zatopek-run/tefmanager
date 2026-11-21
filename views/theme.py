@@ -29,6 +29,7 @@ BAD = "#f87171"
 INFO = "#60a5fa"
 ORANGE = "#fb923c"  # terzo livello delle caratteristiche (tra giallo e rosso)
 VIOLET = "#a78bfa"  # salti (specialità)
+HEAT_COLD = "#262c63"  # heat map: freddo (poi ACCENT_DIM, poi WARN)
 PINK = "#f472b6"  # sesso femminile nelle pillole della scheda atleta
 
 # ---- Scala tipografica (pixel) e pesi

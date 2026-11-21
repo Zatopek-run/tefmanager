@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from views import theme
 from controllers.game_controller import GameController
 from models.database import SaveSlotInfo
 from models.entities import GAME_MODE_OPTIONS, CompetitionTier
@@ -289,9 +290,9 @@ class StartScreen(QWidget):
                     else Qt.AlignmentFlag.AlignCenter
                 )
                 if col == 4 and s.budget < 0:
-                    item.setForeground(QColor("#f87171"))
+                    item.setForeground(QColor(theme.BAD))
                 if not s.is_supported:
-                    item.setForeground(QColor("#fbbf24"))
+                    item.setForeground(QColor(theme.WARN))
                     item.setToolTip(f"{s.path.name} — versione del salvataggio: v{s.schema_version}")
                 self.saves_table.setItem(row, col, item)
 

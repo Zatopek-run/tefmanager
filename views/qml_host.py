@@ -60,7 +60,7 @@ def theme_tokens(animations: Optional[bool] = None) -> Dict[str, Any]:
         "fsXs": theme.FS_XS, "fsSm": theme.FS_SM, "fsMd": theme.FS_MD, "fsLg": theme.FS_LG, "fsXl": theme.FS_XL, "fsXxl": theme.FS_XXL,
         "sp1": theme.SP_1, "sp2": theme.SP_2, "sp3": theme.SP_3, "sp4": theme.SP_4, "sp5": theme.SP_5, "sp6": theme.SP_6,
         "radiusSm": theme.RADIUS_SM, "radiusMd": theme.RADIUS_MD, "radiusLg": theme.RADIUS_LG,
-        "heatCold": "#262c63", "heatMid": "#0f8f85", "heatHot": "#fbbf24",
+        "heatCold": theme.HEAT_COLD, "heatMid": theme.ACCENT_DIM, "heatHot": theme.WARN,
         "fontFamily": family, "animScale": 1.0 if animations else 0.0,
     }
 

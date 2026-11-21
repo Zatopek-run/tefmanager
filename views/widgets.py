@@ -65,7 +65,7 @@ def short_event_name(name: str) -> str:
     return name if any(ch.isdigit() for ch in name) else name.split()[-1]
 
 
-HEAT_COLD, HEAT_MID, HEAT_HOT = "#262c63", "#0f8f85", "#fbbf24"
+HEAT_COLD, HEAT_MID, HEAT_HOT = theme.HEAT_COLD, theme.ACCENT_DIM, theme.WARN
 
 
 def heat_color(level: float) -> QColor:
@@ -78,7 +78,7 @@ def heat_color(level: float) -> QColor:
 def readable_on(background: QColor) -> QColor:
     """Testo scuro su sfondi chiari, chiaro su sfondi scuri."""
     luminance = 0.299 * background.red() + 0.587 * background.green() + 0.114 * background.blue()
-    return QColor("#0a0f1f") if luminance > 150 else QColor(theme.TEXT)
+    return QColor(theme.BG) if luminance > 150 else QColor(theme.TEXT)
 
 
 # ---------------------------------------------------------------- componenti piccoli

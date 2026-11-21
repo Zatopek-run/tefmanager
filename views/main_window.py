@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from views import theme
 from controllers.game_controller import GameController
 from models.entities import (
     BOARD_KEYS,
@@ -128,7 +129,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.hud_prestige)
 
         self.menu_btn = QPushButton("Partita")
-        self.menu_btn.setIcon(icons.icon(icons.UI_ICONS["save"], color="#e9eefc"))
+        self.menu_btn.setIcon(icons.icon(icons.UI_ICONS["save"], color=theme.TEXT))
         game_menu = QMenu(self)
         act_save = QAction("Salva Partita", self)
         act_save.triggered.connect(self.controller.save_game)
@@ -148,7 +149,7 @@ class MainWindow(QMainWindow):
 
         self.advance_btn = QPushButton("Avanza Settimana")
         self.advance_btn.setObjectName("AdvanceWeekButton")
-        self.advance_btn.setIcon(icons.icon(icons.UI_ICONS["next"], color="#0a0f1f", color_on="#0a0f1f"))
+        self.advance_btn.setIcon(icons.icon(icons.UI_ICONS["next"], color=theme.BG, color_on=theme.BG))
         self.advance_btn.setIconSize(QSize(18, 18))
         self.advance_btn.clicked.connect(self._on_advance_clicked)
         header_layout.addWidget(self.advance_btn)
