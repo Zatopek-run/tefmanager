@@ -262,6 +262,14 @@ FACILITY_COSTS: Dict[str, int] = {
     FACILITY_WEIGHTS: 12000,
     FACILITY_ALTITUDE: 20000,
 }
+# Manutenzione settimanale degli impianti avanzati posseduti (Q34a, scelta dell'utente 2026-11-21; CIFRE MIE provvisorie: circa il
+# prezzo ÷ 250, come ordine di grandezza della «Gestione Palestra» da 40 €/livello). Tutti e quattro: 230 €/sett.
+FACILITY_UPKEEP: Dict[str, int] = {
+    FACILITY_MEDICAL: 60,
+    FACILITY_VIDEO: 40,
+    FACILITY_WEIGHTS: 50,
+    FACILITY_ALTITUDE: 80,
+}
 # Centro medico: taglia del 15% i tempi di infortunio (allenamento e gare, non la squalifica per doping). Su 1-3 settimane
 # intere si arrotonda a caso (una sola estrazione dell'RNG, solo con l'impianto) e non si scende sotto 1 settimana.
 MEDICAL_CENTER_INJURY_CUT = 0.15

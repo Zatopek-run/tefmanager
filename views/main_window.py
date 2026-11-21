@@ -55,6 +55,7 @@ from views.tabs import (
     RelayTab,
     RivalsTab,
     RosterTab,
+    InfrastructureTab,
     StaffTab,
     YouthTab,
 )
@@ -179,6 +180,7 @@ class MainWindow(QMainWindow):
         self.rivals_tab = RivalsTab(self.controller)
         self.ranking_tab = RankingTab(self.controller)
         self.staff_tab = StaffTab(self.controller)
+        self.infrastructure_tab = InfrastructureTab(self.controller)
         self.finances_tab = FinancesTab(self.controller)
         self.records_tab = RecordsTab(self.controller)
 
@@ -198,6 +200,7 @@ class MainWindow(QMainWindow):
                 ("Staff && Impianto", self.staff_tab),
                 ("Finanze", self.finances_tab),
                 ("Albo && Record", self.records_tab),
+                ("Infrastrutture", self.infrastructure_tab),  # in fondo al gruppo: gli indici delle altre pagine non cambiano
             ]),
         ]
 
@@ -358,6 +361,7 @@ class MainWindow(QMainWindow):
         self.rivals_tab.refresh(state)
         self.ranking_tab.refresh(state)
         self.staff_tab.refresh(state)
+        self.infrastructure_tab.refresh(state)
         self.finances_tab.refresh(state)
         self.records_tab.refresh(state)
 

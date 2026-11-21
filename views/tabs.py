@@ -72,6 +72,7 @@ from models.entities import (
     ACADEMY_MAX_LEVEL,
     FACILITY_LABELS,
     FACILITY_ORDER,
+    FACILITY_UPKEEP,
     SCOUT_REGION_EXTRA_POINTS,
     SCOUT_REGION_FEE,
     SCOUT_REGIONS,
@@ -1315,71 +1316,6 @@ class StaffTab(QWidget):
         track_layout.addWidget(maint_btn)
         root.addWidget(track_card)
 
-        facilities_row = QHBoxLayout()
-        facilities_row.setSpacing(12)
-
-        gym_card = QFrame()
-        gym_card.setObjectName("StatCard")
-        gym_layout = QVBoxLayout(gym_card)
-        gym_layout.setContentsMargins(14, 12, 14, 12)
-        self.gym_label = QLabel("Palestra")
-        self.gym_label.setObjectName("SectionHeader")
-        self.gym_sub = QLabel("")
-        self.gym_sub.setObjectName("SubTitle")
-        self.gym_sub.setWordWrap(True)
-        self.gym_btn = QPushButton("Amplia Palestra")
-        self.gym_btn.setObjectName("PrimaryButton")
-        self.gym_btn.clicked.connect(self.controller.upgrade_gym)
-        gym_layout.addWidget(self.gym_label)
-        gym_layout.addWidget(self.gym_sub)
-        gym_layout.addWidget(self.gym_btn)
-        facilities_row.addWidget(gym_card)
-
-        stand_card = QFrame()
-        stand_card.setObjectName("StatCard")
-        stand_layout = QVBoxLayout(stand_card)
-        stand_layout.setContentsMargins(14, 12, 14, 12)
-        self.stand_label = QLabel("Tribune")
-        self.stand_label.setObjectName("SectionHeader")
-        self.stand_sub = QLabel("")
-        self.stand_sub.setObjectName("SubTitle")
-        self.stand_sub.setWordWrap(True)
-        self.stand_btn = QPushButton("Amplia Tribune")
-        self.stand_btn.setObjectName("PrimaryButton")
-        self.stand_btn.clicked.connect(self.controller.expand_stands)
-        stand_layout.addWidget(self.stand_label)
-        stand_layout.addWidget(self.stand_sub)
-        stand_layout.addWidget(self.stand_btn)
-        facilities_row.addWidget(stand_card)
-
-        root.addLayout(facilities_row)
-
-        # Impianti avanzati (E.2): una scheda per impianto, acquisto una tantum.
-        advanced_row = QHBoxLayout()
-        advanced_row.setSpacing(12)
-        self.facility_btns: Dict[str, QPushButton] = {}
-        self.facility_subs: Dict[str, QLabel] = {}
-        for key in FACILITY_ORDER:
-            card = QFrame()
-            card.setObjectName("StatCard")
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            head = QLabel(FACILITY_LABELS[key])
-            head.setObjectName("SectionHeader")
-            sub = QLabel(FACILITY_EFFECTS[key])
-            sub.setObjectName("SubTitle")
-            sub.setWordWrap(True)
-            btn = QPushButton("")
-            btn.setObjectName("PrimaryButton")
-            btn.clicked.connect(lambda _checked=False, k=key: self.controller.buy_facility(k))
-            card_layout.addWidget(head)
-            card_layout.addWidget(sub)
-            card_layout.addWidget(btn)
-            self.facility_btns[key] = btn
-            self.facility_subs[key] = sub
-            advanced_row.addWidget(card)
-        root.addLayout(advanced_row)
-
         coach_panel = QFrame()
         coach_panel.setObjectName("SectionPanel")
         coach_layout = QVBoxLayout(coach_panel)
@@ -1447,41 +1383,6 @@ class StaffTab(QWidget):
             f"Condizione Pista in Tartan: {state.track_condition}% "
             "(una pista usurata rallenta leggermente tempi e salti)"
         )
-        lvl = state.gym_level
-        self.gym_label.setText(f"Palestra — livello {lvl}/{GYM_MAX_LEVEL}")
-        self.gym_sub.setText(
-            f"+{int(lvl * GYM_TRAINING_BONUS_PER_LEVEL * 100)}% probabilità di miglioramento in allenamento · "
-            f"gestione €{lvl * GYM_UPKEEP_PER_LEVEL}/sett"
-        )
-        if lvl >= GYM_MAX_LEVEL:
-            self.gym_btn.setText("Livello massimo")
-            self.gym_btn.setEnabled(False)
-        else:
-            self.gym_btn.setText(f"Amplia a livello {lvl + 1} (€{gym_upgrade_cost(lvl):,})")
-            self.gym_btn.setEnabled(True)
-
-        for key, btn in self.facility_btns.items():
-            if owns(state.facilities, key):
-                btn.setText("Posseduto")
-                btn.setEnabled(False)
-            else:
-                btn.setText(f"Acquista (€{facility_cost(key):,})")
-                btn.setEnabled(True)
-
-        price = TICKET_PRICE[state.tier.value]
-        self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")
-        self.stand_sub.setText(
-            f"Nei meeting in casa niente trasferta e incasso biglietti (€{price}/biglietto in "
-            f"{state.tier.display_name}). Il pubblico cresce con prestigio, categoria e reputazione."
-        )
-        if state.stand_seats >= STAND_MAX_SEATS:
-            self.stand_btn.setText("Capienza massima")
-            self.stand_btn.setEnabled(False)
-        else:
-            self.stand_btn.setText(
-                f"+{STAND_EXPANSION_SEATS} posti (€{stand_expansion_cost(state.stand_seats):,})"
-            )
-            self.stand_btn.setEnabled(True)
         n_spec = sum(1 for c in state.coaches if not c.is_youth_coach)
         n_youth = len(state.coaches) - n_spec
         self.coach_title.setText(
@@ -1596,6 +1497,134 @@ class StaffTab(QWidget):
             "adatto, se c'è.",
         ) == QMessageBox.StandardButton.Yes:
             self.controller.fire_coach(coach.id)
+
+
+class InfrastructureTab(QWidget):
+    """Palestra, tribune e impianti avanzati (E.2): una scheda per impianto (Q34d, scelta dell'utente 2026-11-21)."""
+
+    def __init__(self, controller: GameController, parent=None) -> None:
+        super().__init__(parent)
+        self.controller = controller
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(14)
+
+        title = QLabel("Infrastrutture")
+        title.setObjectName("SectionHeader")
+        root.addWidget(title)
+        hint = QLabel(
+            "Palestra e tribune si ampliano a livelli; gli impianti avanzati si acquistano una volta sola e "
+            "costano una manutenzione settimanale."
+        )
+        hint.setObjectName("SubTitle")
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+
+        facilities_row = QHBoxLayout()
+        facilities_row.setSpacing(12)
+
+        gym_card = QFrame()
+        gym_card.setObjectName("StatCard")
+        gym_layout = QVBoxLayout(gym_card)
+        gym_layout.setContentsMargins(14, 12, 14, 12)
+        self.gym_label = QLabel("Palestra")
+        self.gym_label.setObjectName("SectionHeader")
+        self.gym_sub = QLabel("")
+        self.gym_sub.setObjectName("SubTitle")
+        self.gym_sub.setWordWrap(True)
+        self.gym_btn = QPushButton("Amplia Palestra")
+        self.gym_btn.setObjectName("PrimaryButton")
+        self.gym_btn.clicked.connect(self.controller.upgrade_gym)
+        gym_layout.addWidget(self.gym_label)
+        gym_layout.addWidget(self.gym_sub)
+        gym_layout.addWidget(self.gym_btn)
+        facilities_row.addWidget(gym_card)
+
+        stand_card = QFrame()
+        stand_card.setObjectName("StatCard")
+        stand_layout = QVBoxLayout(stand_card)
+        stand_layout.setContentsMargins(14, 12, 14, 12)
+        self.stand_label = QLabel("Tribune")
+        self.stand_label.setObjectName("SectionHeader")
+        self.stand_sub = QLabel("")
+        self.stand_sub.setObjectName("SubTitle")
+        self.stand_sub.setWordWrap(True)
+        self.stand_btn = QPushButton("Amplia Tribune")
+        self.stand_btn.setObjectName("PrimaryButton")
+        self.stand_btn.clicked.connect(self.controller.expand_stands)
+        stand_layout.addWidget(self.stand_label)
+        stand_layout.addWidget(self.stand_sub)
+        stand_layout.addWidget(self.stand_btn)
+        facilities_row.addWidget(stand_card)
+
+        root.addLayout(facilities_row)
+
+        # Impianti avanzati (E.2): una scheda per impianto, acquisto una tantum.
+        advanced_row = QHBoxLayout()
+        advanced_row.setSpacing(12)
+        self.facility_btns: Dict[str, QPushButton] = {}
+        self.facility_subs: Dict[str, QLabel] = {}
+        for key in FACILITY_ORDER:
+            card = QFrame()
+            card.setObjectName("StatCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            head = QLabel(FACILITY_LABELS[key])
+            head.setObjectName("SectionHeader")
+            sub = QLabel(f"{FACILITY_EFFECTS[key]} · manutenzione €{FACILITY_UPKEEP[key]}/sett")
+            sub.setObjectName("SubTitle")
+            sub.setWordWrap(True)
+            btn = QPushButton("")
+            btn.setObjectName("PrimaryButton")
+            btn.clicked.connect(lambda _checked=False, k=key: self.controller.buy_facility(k))
+            card_layout.addWidget(head)
+            card_layout.addWidget(sub)
+            card_layout.addWidget(btn)
+            self.facility_btns[key] = btn
+            self.facility_subs[key] = sub
+            advanced_row.addWidget(card)
+        root.addLayout(advanced_row)
+        root.addStretch()
+
+    def refresh(self, state: GameState) -> None:
+        lvl = state.gym_level
+        self.gym_label.setText(f"Palestra — livello {lvl}/{GYM_MAX_LEVEL}")
+        self.gym_sub.setText(
+            f"+{int(lvl * GYM_TRAINING_BONUS_PER_LEVEL * 100)}% probabilità di miglioramento in allenamento · "
+            f"gestione €{lvl * GYM_UPKEEP_PER_LEVEL}/sett"
+        )
+        if lvl >= GYM_MAX_LEVEL:
+            self.gym_btn.setText("Livello massimo")
+            self.gym_btn.setEnabled(False)
+        else:
+            self.gym_btn.setText(f"Amplia a livello {lvl + 1} (€{gym_upgrade_cost(lvl):,})")
+            self.gym_btn.setEnabled(True)
+
+        for key, btn in self.facility_btns.items():
+            if owns(state.facilities, key):
+                btn.setText("Posseduto")
+                btn.setEnabled(False)
+            else:
+                btn.setText(f"Acquista (€{facility_cost(key):,})")
+                btn.setEnabled(True)
+
+        price = TICKET_PRICE[state.tier.value]
+        self.stand_label.setText(f"Tribune — {state.stand_seats:,} posti")
+        self.stand_sub.setText(
+            f"Nei meeting in casa niente trasferta e incasso biglietti (€{price}/biglietto in "
+            f"{state.tier.display_name}). Il pubblico cresce con prestigio, categoria e reputazione."
+        )
+        if state.stand_seats >= STAND_MAX_SEATS:
+            self.stand_btn.setText("Capienza massima")
+            self.stand_btn.setEnabled(False)
+        else:
+            self.stand_btn.setText(
+                f"+{STAND_EXPANSION_SEATS} posti (€{stand_expansion_cost(state.stand_seats):,})"
+            )
+            self.stand_btn.setEnabled(True)
 
 
 class FinancesTab(QWidget):
@@ -1764,6 +1793,7 @@ class FinancesTab(QWidget):
         self.payroll_sub.setText(
             f"Atleti €{fin['athlete_wages']:,} + Allenatori €{fin['coach_cost']:,} "
             f"+ Staff €{fin['staff_cost']:,} + Palestra €{fin['gym_upkeep']:,}"
+            + (f" + Impianti €{fin['facilities_upkeep']:,}" if fin["facilities_upkeep"] else "")
         )
 
         sign = "+" if net >= 0 else ""

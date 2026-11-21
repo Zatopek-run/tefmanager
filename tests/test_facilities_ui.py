@@ -1,4 +1,4 @@
-"""Lotto E.2 (parte con Qt offscreen): schede degli impianti avanzati nella tab «Staff & Impianto» e acquisto dal controller.
+"""Lotto E.2 (parte con Qt offscreen): schede degli impianti avanzati nella tab «Infrastrutture» e acquisto dal controller.
 
 Non si prova il mouse reale: si legge lo stato dei pulsanti e si chiama `buy_facility` come farebbe il click.
 """
@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
 from models.database import DatabaseManager
-from models.entities import FACILITY_COSTS, FACILITY_MEDICAL, FACILITY_ORDER, FACILITY_VIDEO
+from models.entities import FACILITY_COSTS, FACILITY_MEDICAL, FACILITY_ORDER, FACILITY_UPKEEP, FACILITY_VIDEO
 from tests.support import start_game
 from views.main_window import MainWindow
 
@@ -35,7 +35,7 @@ class TestFacilitiesUi(unittest.TestCase):
         self.ctrl.state.budget = 100000
         self.win = MainWindow(self.ctrl)
         self.addCleanup(self.win.close)
-        self.tab = self.win.staff_tab
+        self.tab = self.win.infrastructure_tab  # Q34d: le schede stanno nella tab «Infrastrutture»
 
     def test_there_is_one_buy_button_per_facility_with_its_cost(self) -> None:
         self.tab.refresh(self.ctrl.state)
@@ -55,6 +55,31 @@ class TestFacilitiesUi(unittest.TestCase):
         self.assertFalse(self.tab.facility_btns[FACILITY_MEDICAL].isEnabled())
         self.assertEqual(self.tab.facility_btns[FACILITY_MEDICAL].text(), "Posseduto")
         self.assertTrue(self.tab.facility_btns[FACILITY_VIDEO].isEnabled())
+
+    def test_the_cards_show_the_weekly_upkeep(self) -> None:
+        self.tab.refresh(self.ctrl.state)
+        for key in FACILITY_ORDER:
+            self.assertIn(f"manutenzione €{FACILITY_UPKEEP[key]}/sett", self.tab.facility_subs[key].text())
+
+    def test_the_infrastructure_tab_is_last_and_does_not_move_the_other_pages(self) -> None:
+        labels = [b.text().split(" (")[0] for b in self.win._nav_buttons]
+        self.assertEqual(labels[-1], "Infrastrutture")
+        self.assertEqual(self.win.tabs.widget(len(labels) - 1), self.win.infrastructure_tab)
+        # la tab nuova è in fondo: gli indici delle pagine che c'erano prima non si spostano
+        self.assertEqual(labels[7:10], ["Staff && Impianto", "Finanze", "Albo && Record"])  # «&&» = «&» letterale nei pulsanti Qt
+
+    def test_gym_stands_and_facilities_live_in_the_new_tab_not_in_the_staff_tab(self) -> None:
+        for attr in ("gym_btn", "stand_btn", "facility_btns"):
+            self.assertTrue(hasattr(self.win.infrastructure_tab, attr), attr)
+            self.assertFalse(hasattr(self.win.staff_tab, attr), attr)
+
+    def test_the_gym_and_stand_buttons_still_work_from_the_new_tab(self) -> None:
+        tab, state = self.win.infrastructure_tab, self.ctrl.state
+        gym, seats = state.gym_level, state.stand_seats
+        tab.gym_btn.click()
+        tab.stand_btn.click()
+        self.assertEqual(state.gym_level, gym + 1)
+        self.assertGreater(state.stand_seats, seats)
 
     def test_the_button_click_buys(self) -> None:
         self.tab.facility_btns[FACILITY_VIDEO].click()

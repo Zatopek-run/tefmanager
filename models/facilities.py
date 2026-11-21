@@ -16,6 +16,7 @@ from models.entities import (
     FACILITY_LABELS,
     FACILITY_MEDICAL,
     FACILITY_ORDER,
+    FACILITY_UPKEEP,
     FACILITY_VIDEO,
     FACILITY_WEIGHTS,
     INJURY_MIN_WEEKS,
@@ -91,6 +92,16 @@ def facilities_from_json(raw: Optional[str]) -> Dict[str, int]:
 
 def facility_cost(key: str) -> int:
     return FACILITY_COSTS[key]
+
+
+def facility_upkeep(key: str) -> int:
+    """Manutenzione settimanale (€) di un impianto avanzato posseduto (Q34a)."""
+    return FACILITY_UPKEEP[key]
+
+
+def total_upkeep(facilities: Optional[Facilities]) -> int:
+    """Manutenzione settimanale di tutti gli impianti avanzati posseduti; 0 senza impianti."""
+    return sum(FACILITY_UPKEEP[k] for k in FACILITY_ORDER if owns(facilities, k))
 
 
 def facility_label(key: str) -> str:

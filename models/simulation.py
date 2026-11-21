@@ -113,7 +113,7 @@ from models.relationships import (
     relay_chemistry_bonus,
     team_chemistry_form_bonus,
 )
-from models.facilities import growth_multiplier, injury_weeks_with_medical_center
+from models.facilities import growth_multiplier, injury_weeks_with_medical_center, total_upkeep
 from models.finances import (
     close_month_if_due,
     member_fees_income,
@@ -1676,9 +1676,10 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     staff_cost = sum(s.weekly_cost for s in state.staff if s.hired) + (state.scout.weekly_cost if state.scout else 0)
     coach_cost = sum(c.weekly_wage for c in state.coaches)
     gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
+    facilities_upkeep = total_upkeep(state.facilities)  # Q34a: manutenzione degli impianti avanzati
     member_fees = member_fees_income(state)
     income = sponsor + individual + merchandising + member_fees
-    expenses = athlete_wages + staff_cost + coach_cost + gym_upkeep
+    expenses = athlete_wages + staff_cost + coach_cost + gym_upkeep + facilities_upkeep
     return {
         "sponsor": sponsor,
         "sponsor_cut": sponsor_cut,
@@ -1690,6 +1691,7 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
         "staff_cost": staff_cost,
         "coach_cost": coach_cost,
         "gym_upkeep": gym_upkeep,
+        "facilities_upkeep": facilities_upkeep,
         "expenses": expenses,
         "net": income - expenses,
     }
@@ -1928,6 +1930,8 @@ def advance_week(
         ledger(f"Stipendi Allenatori ({len(state.coaches)})", "Allenatori", -fin["coach_cost"])
     if fin["gym_upkeep"] > 0:
         ledger(f"Gestione Palestra (livello {state.gym_level})", "Impianto", -fin["gym_upkeep"])
+    if fin["facilities_upkeep"] > 0:
+        ledger("Manutenzione impianti avanzati", "Impianto", -fin["facilities_upkeep"])
 
     # Debt: interest on the negative balance, bankruptcy below the threshold
     if state.budget < 0:

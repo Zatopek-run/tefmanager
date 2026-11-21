@@ -19,6 +19,7 @@ from models.entities import (
     FACILITY_LABELS,
     FACILITY_MEDICAL,
     FACILITY_ORDER,
+    FACILITY_UPKEEP,
     FACILITY_VIDEO,
     FACILITY_WEIGHTS,
     INJURY_MIN_WEEKS,
@@ -36,9 +37,10 @@ from models.facilities import (
     growth_multiplier,
     injury_weeks_with_medical_center,
     owns,
+    total_upkeep,
 )
 from models.generator import generate_initial_roster
-from models.simulation import apply_weekly_training, simulate_competition
+from models.simulation import advance_week, apply_weekly_training, simulate_competition, weekly_finances
 from tests.test_assignments import make_state
 
 ALL = {key: 1 for key in FACILITY_ORDER}
@@ -274,6 +276,48 @@ class TestMedicalCenterInRaces(unittest.TestCase):
             self.total_weeks({})[0],
             self.total_weeks({FACILITY_VIDEO: 1, FACILITY_WEIGHTS: 1, FACILITY_ALTITUDE: 1})[0],
         )
+
+
+class TestUpkeep(unittest.TestCase):
+    """Q34a: ogni impianto avanzato posseduto costa una manutenzione settimanale."""
+
+    def test_every_facility_has_a_positive_upkeep_below_its_price(self) -> None:
+        self.assertEqual(sorted(FACILITY_UPKEEP), sorted(FACILITY_ORDER))
+        for key in FACILITY_ORDER:
+            self.assertGreater(FACILITY_UPKEEP[key], 0)
+            self.assertLess(FACILITY_UPKEEP[key] * 52, FACILITY_COSTS[key])  # in un anno costa meno dell'acquisto
+
+    def test_total_is_the_sum_of_the_owned_ones_and_zero_without_any(self) -> None:
+        self.assertEqual(total_upkeep({}), 0)
+        self.assertEqual(total_upkeep(None), 0)
+        self.assertEqual(total_upkeep({FACILITY_MEDICAL: 1}), FACILITY_UPKEEP[FACILITY_MEDICAL])
+        self.assertEqual(total_upkeep(ALL), sum(FACILITY_UPKEEP.values()))
+        self.assertEqual(total_upkeep({FACILITY_VIDEO: 0}), 0)
+
+    def test_weekly_finances_charges_it_and_nothing_without_facilities(self) -> None:
+        state = make_state(3)
+        before = weekly_finances(state)
+        self.assertEqual(before["facilities_upkeep"], 0)
+        state.facilities = dict(ALL)
+        after = weekly_finances(state)
+        self.assertEqual(after["facilities_upkeep"], sum(FACILITY_UPKEEP.values()))
+        self.assertEqual(after["expenses"], before["expenses"] + sum(FACILITY_UPKEEP.values()))
+        self.assertEqual(after["net"], before["net"] - sum(FACILITY_UPKEEP.values()))
+
+    def test_the_week_writes_a_ledger_line_and_pays_it(self) -> None:
+        state = make_state(3)
+        state.week, state.transactions = 1, []
+        state.facilities = {FACILITY_MEDICAL: 1, FACILITY_ALTITUDE: 1}
+        expected = FACILITY_UPKEEP[FACILITY_MEDICAL] + FACILITY_UPKEEP[FACILITY_ALTITUDE]
+        advance_week(state, rng=random.Random(4))
+        lines = [t for t in state.transactions if t.description == "Manutenzione impianti avanzati"]
+        self.assertEqual([(t.category, t.amount) for t in lines], [("Impianto", -expected)])
+
+    def test_no_ledger_line_without_facilities(self) -> None:
+        state = make_state(3)
+        state.week, state.transactions = 1, []
+        advance_week(state, rng=random.Random(4))
+        self.assertFalse(any("Manutenzione impianti" in t.description for t in state.transactions))
 
 
 class TestPersistenceHelpers(unittest.TestCase):

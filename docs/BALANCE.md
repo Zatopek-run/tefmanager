@@ -344,7 +344,7 @@ Il costo sale con gli attributi (circa ×0,6 a 10, ×1 a 14, ×1,5 a 18-19).
 
 ## S. Impianti avanzati (PIANOLAVORO E.2, 2026-11-21) — CIFRE DEL PIANO, interpretazione e arrotondamento PROVVISORI (QUESTIONS Q34)
 
-Quattro impianti **una tantum** (nessuna manutenzione: il piano non ne indica, aperta in Q34), in `GameState.facilities` (schema v23). **Senza impianti ogni effetto è identico a prima di E.2** (stessa impronta SHA-256 di atleti, budget, notizie e RNG contro `40540c5`: 3 semi, 72 settimane, clinici assunti). Tutte le cifre sono in `entities.py`.
+Quattro impianti **una tantum** con una **manutenzione settimanale** (Q34a, scelta dell'utente 2026-11-21, cifre mie: vedi sotto), in `GameState.facilities` (schema v23). **Senza impianti ogni effetto è identico a prima di E.2** (stessa impronta SHA-256 di atleti, budget, notizie e RNG contro `40540c5`: 3 semi, 72 settimane, clinici assunti). Tutte le cifre sono in `entities.py`.
 
 | Impianto | Costo | Effetto | Costanti |
 | --- | ---: | --- | --- |
@@ -353,6 +353,7 @@ Quattro impianti **una tantum** (nessuna manutenzione: il piano non ne indica, a
 | Palestra pesi | €12.000 | ×1,10 sulla probabilità di migliorare la Forza (si somma alla Palestra a livelli) | `WEIGHTS_ROOM_STRENGTH_BONUS` 0,10 |
 | Campo altura | €20.000 | ×1,10 sulla probabilità di migliorare la Resistenza, **solo Mezzofondo** | `ALTITUDE_CAMP_STAMINA_BONUS` 0,10 |
 
+- **Manutenzione (Q34a):** `FACILITY_UPKEEP` = Centro medico €60 · Analisi video €40 · Palestra pesi €50 · Campo altura €80 per settimana, circa il prezzo ÷ 250; tutti e quattro €230/sett. Entra in `weekly_finances` (`facilities_upkeep`, `models/facilities.total_upkeep`) e nel libro mastro («Manutenzione impianti avanzati», categoria «Impianto»). Senza impianti 0: identico a prima. **Non misurato** in una partita lunga (peso sul netto di una società con rosa piena: circa 17% delle entrate di base con tutti e quattro).
 - **«%» = probabilità di crescita** (scelta dell'utente, 2026-11-21): il moltiplicatore entra in `chance` prima del tetto `min(0,95; …)`; nessuna estrazione in più.
 - **Centro medico, arrotondamento:** gli stop sono 1-3 settimane intere, quindi il taglio si arrotonda a caso (`injury_weeks_with_medical_center`): **una `r.random()` per infortunio, solo con il centro**. Con stop equiprobabili da 1 a 3 il taglio reale è ≈**12,5%** e non 15% (il minimo di 1 settimana mangia il resto: un infortunio di 1 sett. non cambia); su stop lunghi è 15%. Sui tempi: 2 sett. → 1,7 in media, 3 → 2,55.
 - Le giovanili (`in_youth_squad`) ricevono i bonus come tutti (il moltiplicatore non distingue la squadra).

@@ -30,6 +30,7 @@ NAV_ICONS = {
     "Staff": "mdi6.account-tie-outline",
     "Finanze": "mdi6.cash-multiple",
     "Albo": "mdi6.trophy-outline",
+    "Infrastrutture": "mdi6.office-building-outline",
     "Menu": "mdi6.arrow-left",
 }
 UI_ICONS = {"save": "mdi6.content-save-outline", "play": "mdi6.play", "menu": "mdi6.menu-down", "next": "mdi6.skip-next"}
