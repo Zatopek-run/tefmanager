@@ -780,8 +780,6 @@ class Track3DWidget(TrackRaceWidget):
         super().__init__(parent)
         self.setMinimumHeight(420)
         self._cam_label = "BROADCAST"
-        self._replay_active = False
-        self._replay_target_t = 0.0
         self._pack: Optional[PackFormation] = None  # formazione del gruppo (800m, 1500m, 4x400m), ricreata a ogni gara
         self._pack_for: Optional[list] = None
 
@@ -801,25 +799,7 @@ class Track3DWidget(TrackRaceWidget):
             self._pack_for = runners
         return self._pack.lateral_offsets(self.race_time)
 
-    # ---- replay dell'arrivo: stessa posa (funzione pura di _t), solo un'altra camera e un t più indietro
-    def start_replay(self, lookback: float = 3.0) -> None:
-        """Riavvolge a `lookback` secondi prima dell'arrivo del vincitore e riparte al rallentatore
-        da un'altra inquadratura. Non ri-simula nulla: la posa di ogni atleta resta la stessa
-        funzione pura di _t già usata in diretta."""
-        rewind_race_time = max(0.0, self._winner_time - lookback)
-        self._t = GUN_AT + rewind_race_time / self._scale
-        self._replay_target_t = GUN_AT + self._winner_time / self._scale
-        self._done = False
-        self._replay_active = True
-        self.update()
-
-    def end_replay(self) -> None:
-        """Torna al fotogramma statico di fine gara (stesso `end_anim` di `advance()`)."""
-        self._replay_active = False
-        self._t = GUN_AT + self._last_finish() / self._scale + 1.2
-        self._done = True
-        self.update()
-
+    # ---- replay dell'arrivo: start_replay/end_replay stanno in TrackRaceWidget (2D e 3D); qui solo l'inquadratura
     def _replay_camera(self, poses: Sequence[Tuple[float, float, float, float]], leader_idx: int, w: int, h: int) -> Camera:
         """Inquadratura bassa e ravvicinata dal lato pista, in stile moviola: diversa da quelle
         broadcast usate in diretta, per far sentire che è davvero un replay."""

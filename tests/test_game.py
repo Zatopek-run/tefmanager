@@ -232,16 +232,16 @@ class TestRaceViewer(unittest.TestCase):
                         painted += 1
                     widget.skip_to_end()
                     widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
-                    if cls is Track3DWidget:
-                        widget.start_replay()
-                        self.assertTrue(widget._replay_active)
-                        widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
-                        widget.advance(1.0)
-                        widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
-                        widget.end_replay()
-                        self.assertFalse(widget._replay_active)
-                        widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
-                        painted += 3
+                    # replay dell'arrivo: ora in 2D e in 3D
+                    widget.start_replay()
+                    self.assertTrue(widget._replay_active)
+                    widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    widget.advance(1.0)
+                    widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    widget.end_replay()
+                    self.assertFalse(widget._replay_active)
+                    widget.render(QImage(960, 520, QImage.Format.Format_ARGB32))
+                    painted += 3
                     widget.close()
             self.assertGreater(painted, 40)
 

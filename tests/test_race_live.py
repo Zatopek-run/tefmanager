@@ -266,6 +266,38 @@ class TestPanelInTheDialog(unittest.TestCase):
             if not r["dnf"]:
                 self.assertAlmostEqual(position_fraction(d.track.event_name, r["s"].mark_value, r["s"].mark_value, r["react"], r["phase"]), 1.0, places=6)
 
+    def test_the_finish_replay_works_in_2d_and_3d_and_changes_nothing(self) -> None:
+        """Replay dell'arrivo (G.3): disponibile in entrambe le viste, riavvolge, scorre al rallentatore e torna al finale identico."""
+        d = self.dialog()
+        res = self.summary.event_results[0]
+        before = [(s.athlete_name, s.mark_value, s.placement) for s in res.standings]
+        self.assertFalse(d.btn_replay.isEnabled())  # non prima della fine della gara
+        d._skip_race()
+        QTest.qWait(100)
+        for view in ("2d", "3d"):
+            if (d.track is d.track2d) != (view == "2d"):
+                d._toggle_view()
+            w = d.track
+            final_t = w._t
+            self.assertTrue(d.btn_replay.isEnabled(), view)
+            d._start_replay()
+            self.assertTrue(d._replay_active and w._replay_active, view)
+            self.assertLess(w._t, final_t, view)  # riavvolto
+            self.assertFalse(d.btn_replay.isEnabled(), view)
+            self.assertFalse(d.btn_view.isEnabled(), view)
+            w.grab()  # disegno in replay senza eccezioni
+            d._clock.restart()
+            for _ in range(2000):  # scorre fino al traguardo del vincitore
+                if not d._replay_active:
+                    break
+                w.advance(0.1 * d.REPLAY_SPEED)
+                d._tick()
+            self.assertFalse(d._replay_active, view)
+            self.assertFalse(w._replay_active, view)
+            self.assertTrue(w._done and d.btn_replay.isEnabled() and d.btn_view.isEnabled(), view)
+            self.assertAlmostEqual(w._t, final_t, places=6, msg=view)
+        self.assertEqual(before, [(s.athlete_name, s.mark_value, s.placement) for s in res.standings])
+
 
 if __name__ == "__main__":
     unittest.main()

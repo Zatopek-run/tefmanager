@@ -516,7 +516,7 @@ Popup celebrativi per:
 **Descrizione:**
 - **Tabellone risultati live:** Aggiornato in tempo reale
 - **Statistiche live:** Velocità media, distacco
-- **Replay ultimi secondi:** (già c'è in Godot, portare anche in PyQt)
+- **Replay ultimi secondi:** (già c'è in Godot, portare anche in PyQt) ✅ fatto 2026-11-21 nella vista 2D e 3D
 
 **File da modificare:**
 - `views/race_viewer.py`: aggiungere tabellone live e statistiche
