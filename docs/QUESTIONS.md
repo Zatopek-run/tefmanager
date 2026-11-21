@@ -602,7 +602,7 @@ scena non contraddice il piano ma non lo riflette); (b) le **staffette** non han
 
 **Deciso il 2026-11-21 (utente):** (a) cifre dello stile e della formazione confermate; (b) **lo stile del tuo atleta segue il piano gara B.1**: `plan_pace_style` (ritmo + scatto, `PLAN_PACE_STYLE`, `PLAN_KICK_STYLE`, cifre mie), memorizzato in `EventResult.plan_style` (nel JSON della storia dei meeting, senza migrazione di schema) e usato da `race_viewer.runner_style` sia dalle viste PyQt sia dall'export per Godot (Godot legge la stessa colonna `pace_style`: nessun codice GDScript cambiato); gli avversari restano casuali; solo 800m/1500m (gli altri eventi non hanno un piano di ritmo); (c) **staffette con sorpassi ai cambi: fatto** con stili per frazione (`leg_styles`, `PACE_AMPLITUDE["relay"]` = 0,010 provvisoria, misurata: 28 staffette su 29 hanno almeno un sorpasso vero, circa 9 a gara); (d) la 4x400m **ha** ora i sorpassi (stessi stili per frazione; formazione dopo i 400 m invariata). Verificato con Godot 4.7.2 (flatpak): `verify_pack` (parità con Python per le staffette), `verify_race` (14 gare), `verify_replay`, `verify_bib`, `verify_stride`, `verify_pack_scene` sulla 4x400m (vedi AUDIT R46).
 
-## Q42 — Inviti alla Diamond League (PIANOLAVORO C.1b) — 🟡 FATTO 2026-11-21, **cifre provvisorie da confermare**
+## Q42 — Inviti alla Diamond League (PIANOLAVORO C.1b) — ✅ FATTA il 2026-11-21: cifre e scelte confermate
 
 **Decisione dell'utente (2026-11-21):** invito **per società**, come proposto in Q26: una società con un buon posto nella classifica di società (dal 2026-11-21 stagionale, Q26) è invitata a **un meeting a invito a stagione**, con solo premio e prestigio e senza punti di lega.
 
@@ -612,12 +612,12 @@ scena non contraddice il piano ma non lo riflette); (b) le **staffette** non han
 
 **Scostamenti dal piano e mie scelte, da confermare:** (a) il piano diceva solo «influenza inviti Diamond League»: ho fatto un **meeting che sostituisce quello di lega** e non uno in più (un meeting extra avrebbe sfasato la cadenza di 4 settimane, la fase di forma prima della gara e la fatica); (b) **solo nel livello Internazionale**: la Diamond League è l'élite e in un livello più basso gli avversari non sarebbero all'altezza del nome; ne segue che **una partita comincia a vederla solo dopo due promozioni**; (c) il criterio è **«primi 3 della classifica di società» più una soglia minima di punti**, non la soglia assoluta del solo punteggio, così non dipende dalla scala dei punti; (d) il meeting a invito **non dà punti di lega e non conta per lo spareggio**: tutta la lega salta quel turno, quindi la classifica finale si calcola su un meeting in meno; (e) i punti ranking di questo meeting valgono come quelli di un meeting Internazionale (moltiplicatore 1,0); (f) il popup di F.4 arriva **dopo** il meeting, non all'invito (i momenti si calcolano dopo il tick).
 
-**Da decidere:** (a) le cifre (soglie, moltiplicatori, in quale meeting cadere); (b) se il meeting debba **aggiungersi** a quello di lega invece di sostituirlo; (c) se serve anche negli altri livelli, con avversari più forti; (d) se l'invito debba arrivare **prima**, per esempio con una scelta del giocatore («accetto/rifiuto»); (e) **la convocazione in nazionale** (C.1b la citava insieme): non fatta, dipende da un'altra meccanica.
+**Confermato dall'utente il 2026-11-21, nessuna modifica al codice:** (a) cifre (settimana 8, primi 3, 100 punti, ×2 premio e prestigio); (b) il meeting a invito **sostituisce** quello di lega; (c) **solo** livello Internazionale; (d) invito **automatico**, annunciato nel tick precedente. Resta non fatta la convocazione in nazionale (non esiste la meccanica).
 
 **Priorità:** 🟢 BASSA  
 **Dipendenze:** C.1 (ranking), F.4 (popup)
 
-## Q43 — Primati personali per gara e progressione nel tempo — 🟡 FATTO 2026-11-21, **scelte da confermare**
+## Q43 — Primati personali per gara e progressione nel tempo — ✅ FATTA il 2026-11-21: tutte le scelte confermate
 
 **Richiesta dell'utente (2026-11-21):** «i singoli atleti dovrebbero avere un PR e una progressione dei PR nel tempo».
 
@@ -627,7 +627,7 @@ scena non contraddice il piano ma non lo riflette); (b) le **staffette** non han
 
 **Mie scelte, da confermare:** (a) un primato **per gara**, non per disciplina o per atleta; (b) la **progressione** si salva solo ai miglioramenti veri (pari merito escluso), con le ultime 20 voci per gara; (c) **partite vecchie**: i vecchi `personal_best` non si convertono (non si sa a quale gara appartenessero), quindi ripartono da zero e la prima gara valida di ogni evento fissa il primato (le colonne `personal_best*` restano nella tabella, inutilizzate: niente `DROP`); (d) **elenco della rosa**: la cella «PB» mostra i primati delle gare **in cui l'atleta è iscritto** (fino a 2), altrimenti i due più recenti; l'ordinamento usa il primato della prima gara mostrata, quindi confronta tempi con tempi solo se le gare sono dello stesso tipo; (e) l'ex atleta ricorda i suoi due primati più recenti; (f) gli **atleti rivali** hanno ancora un solo PB (fanno una sola gara); (g) il grafico mostra la progressione **per numero di miglioramenti**, non su una scala di tempo vera (le settimane tra due primati non sono proporzionali) e con il miglioramento sempre in alto.
 
-**Da decidere:** (a) se serve il confronto del primato con il record sociale, il mondiale o il livello di un campo; (b) una scala del tempo vera nel grafico; (c) se i PB per stagione («primato stagionale», SB) vadano aggiunti; (d) se convertire i vecchi PB (oggi persi).
+**Confermato dall'utente il 2026-11-21, nessuna modifica al codice:** tutte le scelte (a)-(g); nessun confronto con il record sociale o mondiale nella scheda; il grafico resta per numero di miglioramenti; nessun primato stagionale (SB); i vecchi PB non si convertono (le partite esistenti sono sacrificabili).
 
 **Priorità:** 🟢 BASSA  
 **Dipendenze:** G.2 (scheda atleta)
