@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sys
 
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
 from controllers.game_controller import GameController
+from views import theme
 from views.main_window import MainWindow
 
 
@@ -15,6 +17,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Track & Field Manager")
     app.setOrganizationName("TrackFieldManager")
+    app.setFont(QFont(theme.load_fonts(), 10))  # Inter incluso in assets/fonts (OFL), ripiego sui font di sistema
 
     controller = GameController(auto_create=False)
     window = MainWindow(controller=controller, start_on_menu=True)

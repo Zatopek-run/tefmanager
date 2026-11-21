@@ -334,6 +334,17 @@ RELAY_RIVAL_HARMONY = -10
 CHEMISTRY_FORM_PER_NET_PAIR = 0.25
 CHEMISTRY_FORM_MAX = 3
 RELATION_BOND_PER_RELAY = 2
+# Storico per atleta (PIANOLAVORO G.1/G.2, solo per i grafici: nessun effetto sul gioco, nessun RNG). A fine di ogni tick si salva
+# (forma, fatica, infortunato) di ogni atleta, al più le ultime HISTORY_WEEKS settimane; a ogni gara individuale si salva il
+# risultato, al più gli ultimi HISTORY_RESULTS. Vedi `models/history.py`.
+HISTORY_WEEKS = 12
+# Heat map della Dashboard (G.1): il punteggio atteso di un atleta in una gara (`expected_event_score`, stessa scala dei rivali: 42
+# provinciale, 56 regionale, 70 nazionale, 84 internazionale) si colora tra HEATMAP_SCORE_LOW (freddo) e HEATMAP_SCORE_HIGH (caldo).
+# Righe: i migliori HEATMAP_ATHLETES della Prima Squadra per valore complessivo.
+HEATMAP_SCORE_LOW = 40.0
+HEATMAP_SCORE_HIGH = 80.0
+HEATMAP_ATHLETES = 8
+HISTORY_RESULTS = 10
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
@@ -834,6 +845,8 @@ class Athlete:
     # Relazioni con gli altri atleti (F.3): id dell'altro → −100..+100, simmetrico; vuoto = nessuna (atleta nuovo, vecchi salvataggi).
     relationships: Dict[int, int] = field(default_factory=dict)
     record_bonus: int = 0  # € pagati a ogni record sociale individuale finché dura il contratto (D.2); 0 = nessun bonus
+    # Storico per i grafici (G.1/G.2): {"weekly": [[forma, fatica, infortunato], ...], "results": [{...}, ...]}, dal più vecchio al più recente.
+    history: Dict[str, list] = field(default_factory=dict)
 
     @property
     def release_clause_cost(self) -> int:

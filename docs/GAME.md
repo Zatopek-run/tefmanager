@@ -359,6 +359,11 @@ Ogni coppia della Prima Squadra ha una **relazione** (−100…+100): per ora ne
 
 Cinque eventi aprono un **popup celebrativo** (finestra dorata con dissolvenza d'ingresso, uno dopo l'altro, dopo i risultati e la fine stagione): **record del mondo** (la misura raggiunge il tetto del gioco, solo gare individuali valide), **momento storico** (un muro di `historic_mark` abbattuto), **titolo** e **promozione** a fine stagione e **atleta dell'anno** (più vittorie, poi più podi nella stagione). Sono messe in scena: nessun effetto su soldi, reputazione o atleti. Record del mondo e atleta dell'anno lasciano anche una riga nelle notizie e nei traguardi (gli altri tre le avevano già); i momenti non sono salvati. **Non ci sono** la convocazione in nazionale e l'invito alla Diamond League del piano: nel gioco non esistono (C.1b). Il record sociale non apre popup (capita spesso e ha già la sua notizia). `models/glory.py`, `BALANCE.md` §W.
 
+
+### 5.24 Dashboard potenziata (G.1, 2026-11-21; prototipo, `QUESTIONS.md` Q40)
+
+La **Dashboard** («Panoramica») si ridisegna con il design system del Lotto G (`views/theme.py`, font Inter incluso). In alto un **semaforo** (rosso: dilemma da risolvere o urgenza; ambra: c'è da guardare; verde: tutto ok) e i quattro indicatori; poi il **grafico di forma e fatica medie della Prima Squadra** (ultime 12 settimane, con valori al passaggio del mouse), gli obiettivi con spunte vere, la **timeline della stagione** (una casella per settimana, gare in rilievo, Preparazione tratteggiata, «oggi», contratti in scadenza), la **heat map** dei migliori 8 atleti sulle gare della fase (punteggio atteso, anello sulla specialità), le priorità, la tabella dei migliori con stato a «pillola» e la cronaca. Lo **storico** che alimenta i grafici (forma, fatica e ultime 10 gare per atleta) si scrive a fine tick e a ogni gara individuale, **senza RNG e senza effetti sul gioco**; le partite già in corso lo riempiono giocando. `models/history.py`, `models/dashboard.py`, `views/widgets.py`.
+
 ---
 
 ## 6. Categorie: parametri principali
@@ -384,6 +389,7 @@ Cinque eventi aprono un **popup celebrativo** (finestra dorata con dissolvenza d
 - `GameController.load_save_slot`/`load_game` non fanno salire le eccezioni (in PyQt6 un'eccezione che esce da uno slot termina il processo): ritornano `False`, riempiono `last_load_error` (messaggio + percorso del backup + traceback)
   e la schermata iniziale mostra un `QMessageBox.warning` con il traceback nei dettagli.
 - **Elenco slot**: `read_save_summary` (sola lettura) elenca anche gli slot non apribili («versione più recente», «non compatibile», «danneggiato») con i soli metadati affidabili; «Continua» usa il più recente slot apribile.
+- **Schema 26** (G.1/G.2): `athletes.history_json` = storico di forma, fatica e ultime gare per i grafici (`{}` = nessuno). Le versioni elencate sopra sono ferme alla v21 per brevità: la corrente è `SCHEMA_VERSION` in `database.py`.
 - I campi mancanti dei vecchi salvataggi si riempiono al caricamento in modo deterministico (es. corpo degli atleti, seed = id atleta).
 - **Non salvati**: risultati dello scouting e pool del mercato (solo in memoria). Lo stato dell'RNG **sì** (A.3): ricaricare non «ritira i dadi». Resta una crepa: il pool del mercato si rigenera dall'RNG al momento in cui lo si apre; se dopo averlo aperto si fa un'altra azione che salva, il pool riaperto dopo la ricarica è diverso (AUDIT R5).
 

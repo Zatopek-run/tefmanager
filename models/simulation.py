@@ -104,6 +104,7 @@ from models.staff import (
 )
 from models.scouting import academy_growth_multiplier
 from models.narrative import monthly_news
+from models.history import record_result, record_weekly
 from models.relationships import (
     bond_relay_teammates,
     ensure_relationships,
@@ -1157,7 +1158,7 @@ def simulate_competition(
             total_prize += prize
             total_prestige += prestige_gain
 
-            event_results.append(
+            individual_result = (
                 EventResult(
                     event_name=event_name,
                     player_athlete_name=player_athlete.name,
@@ -1176,6 +1177,8 @@ def simulate_competition(
                     gender=gender,
                 )
             )
+            event_results.append(individual_result)
+            record_result(state, player_athlete, individual_result)  # G.2: storico per il grafico (nessun effetto sul gioco)
 
     # ---- Relays: harmony, legs and baton changes (M & F); no effect on individual form or fans
     relay_bonded: set = set()
@@ -1989,6 +1992,8 @@ def advance_week(
     if close_month_if_due(state):  # D.3: bilancio del mese appena finito (dopo ogni movimento del tick, bonus promozione compreso)
         # F.1: le notizie del mese appena chiuso; senza RNG, dopo tutto il resto del tick
         state.news_log[0:0] = monthly_news(state, state.week - MONTH_WEEKS, state.week - 1)
+
+    record_weekly(state)  # G.1: forma e fatica di fine tick per i grafici (nessun RNG, nessun effetto sul gioco)
 
     state.news_log = state.news_log[:70]
     state.milestones = state.milestones[:40]

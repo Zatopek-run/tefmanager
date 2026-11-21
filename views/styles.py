@@ -4,7 +4,7 @@ DARK_STYLESHEET = """
 QMainWindow, QDialog {
     background-color: #080d22;
     color: #eef3ff;
-    font-family: "Bahnschrift", "Segoe UI", "Inter", Arial, sans-serif;
+    font-family: "Inter", "Segoe UI", "Bahnschrift", "Noto Sans", Arial, sans-serif;
     font-size: 13px;
 }
 
@@ -525,3 +525,75 @@ QPushButton#FilterPill:checked {
     border-color: #0de0cc;
 }
 """
+
+
+def _modern_stylesheet() -> str:
+    """Regole del design system (PIANOLAVORO G): leggono i token di `views/theme.py` e **ridefiniscono** quelle sopra, che si ritirano
+    schermata per schermata man mano che il redesign le copre."""
+    from views import theme as t
+
+    return f"""
+QMainWindow, QDialog {{ background-color: {t.BG}; }}
+QWidget#DashboardPage {{ background-color: {t.BG}; }}
+QScrollArea {{ background: transparent; border: none; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+QScrollBar::handle:vertical {{ background: {t.BORDER_STRONG}; border-radius: 4px; min-height: 36px; }}
+QScrollBar::handle:vertical:hover {{ background: {t.TEXT_FAINT}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+
+QLabel#PageTitle {{ font-size: {t.FS_XL}px; font-weight: 700; color: {t.TEXT}; }}
+QFrame#Card {{ background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_LG}px; }}
+QFrame#Card QLabel {{ background: transparent; }}
+QLabel#CardHeading {{ font-size: {t.FS_MD}px; font-weight: 700; color: {t.TEXT}; }}
+QLabel#CardHint {{ font-size: {t.FS_SM}px; color: {t.TEXT_MUTED}; }}
+QLabel#CardLead {{ font-size: {t.FS_LG}px; font-weight: 600; color: {t.TEXT}; }}
+
+QFrame#StatCard {{
+    background-color: {t.SURFACE}; border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_LG}px;
+}}
+QFrame#StatCard:hover {{ border-color: {t.ACCENT_DIM}; background-color: {t.SURFACE_2}; }}
+QFrame#StatCard QLabel {{ background: transparent; }}
+QLabel#CardTitle {{ font-size: {t.FS_XS}px; font-weight: 600; color: {t.TEXT_MUTED}; letter-spacing: 0.6px; }}
+QLabel#CardValue {{ font-size: {t.FS_XXL}px; font-weight: 700; color: {t.TEXT}; }}
+QLabel#SubTitle {{ font-size: {t.FS_SM}px; color: {t.TEXT_MUTED}; }}
+
+QLabel#StatusPill {{ font-size: {t.FS_SM}px; font-weight: 600; border-radius: 13px; padding: 5px 14px; border: 1px solid {t.BORDER}; }}
+QLabel#StatusPill[level="ok"] {{ color: {t.GOOD}; background-color: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.45); }}
+QLabel#StatusPill[level="warn"] {{ color: {t.WARN}; background-color: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.45); }}
+QLabel#StatusPill[level="danger"] {{ color: {t.BAD}; background-color: rgba(248, 113, 113, 0.14); border-color: rgba(248, 113, 113, 0.55); }}
+
+QListWidget#FlatList {{ background: transparent; border: none; padding: 0; outline: none; }}
+QListWidget#FlatList::item {{ padding: 8px 4px; border-bottom: 1px solid {t.BORDER}; color: {t.TEXT}; }}
+QListWidget#FlatList::item:hover {{ background: transparent; }}
+
+/* Tabelle, intestazioni e barra di avanzamento: solo dentro la Dashboard finché non si approva la direzione (la Rosa, ad esempio, ha colonne strette che il padding schiaccerebbe). */
+QWidget#DashboardPage QTableWidget {{
+    background-color: transparent; alternate-background-color: transparent; border: none; gridline-color: transparent;
+    selection-background-color: {t.SURFACE_2}; selection-color: {t.TEXT}; outline: none;
+}}
+QWidget#DashboardPage QTableWidget::item {{ padding: 4px 8px; border-bottom: 1px solid {t.BORDER}; }}
+QWidget#DashboardPage QHeaderView {{ background-color: transparent; border: none; }}
+QWidget#DashboardPage QTableCornerButton::section {{ background-color: transparent; border: none; }}
+QWidget#DashboardPage QHeaderView::section {{
+    background-color: transparent; color: {t.TEXT_MUTED}; border: none; border-bottom: 1px solid {t.BORDER_STRONG};
+    padding: 8px 8px; font-size: {t.FS_XS}px; font-weight: 600; letter-spacing: 0.4px;
+}}
+
+QPushButton#ActionItemButton {{
+    text-align: left; padding: 10px 14px; border-radius: {t.RADIUS_MD}px; font-weight: 500; font-size: {t.FS_MD}px;
+    background-color: {t.SURFACE_2}; border: 1px solid {t.BORDER}; border-left: 3px solid {t.WARN}; color: {t.TEXT};
+}}
+QPushButton#ActionItemButton:hover {{ border-color: {t.BORDER_STRONG}; border-left-color: {t.WARN}; background-color: #1d2858; }}
+QPushButton#ActionItemButton[severity="danger"] {{ border-left-color: {t.BAD}; }}
+QPushButton#ActionItemButton[severity="ok"] {{ border-left-color: {t.GOOD}; }}
+
+QWidget#DashboardPage QProgressBar {{
+    background-color: {t.BG}; border: 1px solid {t.BORDER}; border-radius: 8px; text-align: center; color: {t.TEXT};
+    font-size: {t.FS_XS}px; font-weight: 600; height: 18px;
+}}
+QWidget#DashboardPage QProgressBar::chunk {{ background-color: {t.ACCENT_DIM}; border-radius: 7px; }}
+"""
+
+
+DARK_STYLESHEET = DARK_STYLESHEET + _modern_stylesheet()

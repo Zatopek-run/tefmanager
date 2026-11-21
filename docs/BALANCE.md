@@ -411,3 +411,14 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | Momento storico | un nuovo «MOMENTO STORICO!» in `milestones` nel tick (il muro di `historic_mark`) |
 | Promozione / titolo | `SeasonOutcome.PROMOTED` / `CHAMPION` a fine stagione |
 | Atleta dell'anno | l'atleta del club con più **vittorie**, poi più **podi** (1°-3°, gare individuali non ritirate né squalificate) nella stagione; a parità il nome alfabeticamente primo; serve almeno un podio |
+
+
+## X. Grafici della Dashboard (PIANOLAVORO G.1, 2026-11-21) — SOLO PRESENTAZIONE, nessun effetto sul gioco
+
+| Costante (`entities.py`) | Valore | Uso |
+|---|---|---|
+| `HISTORY_WEEKS` | 12 | settimane di forma e fatica conservate per atleta (`athletes.history_json`) |
+| `HISTORY_RESULTS` | 10 | gare individuali conservate per atleta |
+| `HEATMAP_SCORE_LOW` / `HEATMAP_SCORE_HIGH` | 40 / 80 | punteggio atteso che colora la cella di freddo / di caldo (scala dei rivali: 42 provinciale, 56 regionale, 70 nazionale, 84 internazionale) |
+| `HEATMAP_ATHLETES` | 8 | righe della heat map: i migliori per valore complessivo |
+

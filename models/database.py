@@ -16,6 +16,7 @@ from typing import Dict, Iterator, List, Optional, Tuple
 from models.generator import ensure_staff_market, generate_body, infer_gender
 from models.staff import normalize_attributes
 from models.facilities import facilities_from_json, facilities_to_json
+from models.history import history_from_json, history_to_json
 from models.relationships import relationships_from_json, relationships_to_json
 from models.scouting import scout_from_json, scout_to_json
 from models.entities import (
@@ -51,7 +52,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -188,6 +189,10 @@ V24_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V25_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "athletes": [("relationships_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
+# Columns added in v26 (G.1/G.2: storico di forma, fatica e risultati per i grafici; `{}` = nessuno, si riempie giocando).
+V26_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "athletes": [("history_json", "TEXT NOT NULL DEFAULT '{}'")],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -212,6 +217,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     22: V23_COLUMNS,
     23: V24_COLUMNS,
     24: V25_COLUMNS,
+    25: V26_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -899,7 +905,8 @@ CREATE TABLE IF NOT EXISTS athletes (
     season_injuries INTEGER NOT NULL DEFAULT 0,
     agent_id INTEGER,
     record_bonus INTEGER NOT NULL DEFAULT 0,
-    relationships_json TEXT NOT NULL DEFAULT '{}'
+    relationships_json TEXT NOT NULL DEFAULT '{}',
+    history_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS coaches (
@@ -1161,8 +1168,8 @@ class DatabaseManager:
                     periodization, sleep_quality, nutrition, weekly_wage, injured_weeks,
                     is_youth_prospect, personal_best, personal_best_display, doping_boost_weeks,
                     in_youth_squad, fans, coach_id, nationality, height_cm, weight_kg, gender,
-                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id, record_bonus, relationships_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    contract_end_season, contract_no_renew, ranking_json, season_injuries, agent_id, record_bonus, relationships_json, history_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -1203,6 +1210,7 @@ class DatabaseManager:
                         a.agent_id,
                         a.record_bonus,
                         relationships_to_json(a.relationships),
+                        history_to_json(a.history),
                     )
                     for a in state.athletes
                 ],
@@ -1363,6 +1371,7 @@ class DatabaseManager:
                     agent_id=(int(r["agent_id"]) if r["agent_id"] is not None else None),
                     record_bonus=int(r["record_bonus"]),
                     relationships=relationships_from_json(r["relationships_json"]),
+                    history=history_from_json(r["history_json"]),
                 )
                 for r in conn.execute("SELECT * FROM athletes ORDER BY id ASC").fetchall()
             ]

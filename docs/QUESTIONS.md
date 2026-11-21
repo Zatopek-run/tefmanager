@@ -547,3 +547,15 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Limiti dichiarati:** vedi AUDIT R36; il «test manuale» del piano (record del mondo → popup) **non eseguito con il mouse**: provato solo con test offscreen e misure forzate.
 
 **Da decidere:** (a) i momenti da celebrare (record sociale importante? primo podio? ritiro di un campione?); (b) un'animazione più ricca; (c) salvare i momenti per rivederli (un «albo» della gloria); (d) i criteri dell'atleta dell'anno (livello della gara, ranking); (e) C.1b per aggiungere nazionale e Diamond League.
+
+
+## Q40 — Lotto G (UI/UX) — 🟡 IN CORSO dal 2026-11-21, **direzione grafica da approvare**
+
+**Decisioni dell'utente (2026-11-21):** (1) ~~nessuna libreria di grafici~~ **revocata lo stesso giorno**: prima scelta QPainter (come `finance_chart.py`) per il prototipo; poi l'utente ha approvato la direzione e **tolto ogni vincolo sulle nuove dipendenze** («disponibile a progetti più radicali»). I grafici del prototipo restano QPainter perché già fatti, non per una regola; (2) risultato «il più rifinito possibile, **a costo di ridisegnare tutta l'interfaccia**»; (3) **schema v26** (`athletes.history_json`) autorizzato, anche se il piano scriveva «Lotto G: nessuna modifica schema»: senza storico non si può fare il grafico forma/fatica né le «ultime 10 gare»; (4) font **Inter** (OFL) incluso in `assets/fonts/` (4 pesi, 1,6 MB con la licenza).
+
+**Cosa c'è (G.1, prototipo della Dashboard):** `views/theme.py` (design system: colori, scala tipografica, spaziature, raggi, caricamento del font), `views/widgets.py` (`TrendChart`, `HeatMapWidget`, `SeasonTimelineWidget`, `StatusPill`, `BadgeDelegate`, `check_icon`, `make_card`), `models/history.py` e `models/dashboard.py` (senza Qt, senza RNG), passo 21d del tick (`TICK.md`), schema v26. Test: `test_history.py` (9), `test_dashboard_data.py` (10), `test_dashboard_ui.py` (20) e 3 di migrazione; suite 871 OK.
+
+**Mie scelte, da confermare:** (a) la tabella dei migliori atleti perde la colonna «Carattere» (sta nella Rosa) per dare spazio ai nomi interi e ai badge; (b) la Dashboard mostra i primi 8 per valore, non tutta la rosa; (c) il semaforo è rosso con un dilemma pendente o un'urgenza, ambra con avvisi, verde altrimenti; (d) la heat map usa il punteggio atteso (`expected_event_score`, pista 75) e un anello segna la gara migliore; (e) il grafico forma/fatica è la **media della Prima Squadra**.
+
+**Direzione grafica del prototipo: approvata (2026-11-21).** **Da decidere:** quanto radicale è il redesign del resto (vedi la proposta in chat: restare su QWidget, oppure QML per le schermate di colpo d'occhio); G.2 (scheda atleta: radar, storico gare, confronto, potenziale) e G.3 (gara in diretta) vengono dopo.
+

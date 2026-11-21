@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -16,9 +16,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -29,6 +31,18 @@ from PyQt6.QtWidgets import (
 from controllers.game_controller import GameController
 from views.athlete_dialog import AthleteDetailDialog
 from views.finance_chart import MonthlyBarsWidget
+from views import theme
+from views.widgets import (
+    BADGE_LEVEL_ROLE,
+    BadgeDelegate,
+    HeatMapWidget,
+    SeasonTimelineWidget,
+    StatusPill,
+    TrendChart,
+    check_icon,
+    make_card,
+)
+from models.dashboard import heat_map, season_timeline, squad_trend
 from models.board import progress_text
 from models.ranking import (
     club_points,
@@ -40,6 +54,7 @@ from models.entities import (
     BANKRUPTCY_THRESHOLD,
     BOARD_KEYS,
     BOARD_MAX_FAILED_STREAK,
+    HISTORY_WEEKS,
     PROMOTION_SPOTS,
     RELEGATION_SPOTS,
     COACH_BASE_SKILL,
@@ -272,9 +287,10 @@ def _weekly_action_items(state: GameState, free_agent_pool: Optional[list] = Non
 
 
 class DashboardTab(QWidget):
-    """Overview tab with KPIs, action center, seasonal objectives, and squad snapshot."""
+    """Panoramica (G.1): indicatori, andamento di forma e fatica, stagione, heat map atleti × gare, priorità e cronaca."""
 
     navigate_requested = pyqtSignal(int)
+    TOP_ATHLETES = 8  # righe della tabella dei migliori atleti
 
     def __init__(self, controller: GameController, parent=None) -> None:
         super().__init__(parent)
@@ -283,12 +299,32 @@ class DashboardTab(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(scroll)
+        page = QWidget()
+        page.setObjectName("DashboardPage")
+        scroll.setWidget(page)
+        root = QVBoxLayout(page)
+        root.setContentsMargins(theme.SP_5, theme.SP_4, theme.SP_5, theme.SP_5)
+        root.setSpacing(theme.SP_4)
+
+        # Intestazione: titolo e semaforo delle notifiche (rosso = dilemma o urgenza, ambra = da guardare, verde = tutto ok)
+        head = QHBoxLayout()
+        title = QLabel("Panoramica")
+        title.setObjectName("PageTitle")
+        head.addWidget(title)
+        head.addStretch()
+        self.status_pill = StatusPill()
+        head.addWidget(self.status_pill)
+        root.addLayout(head)
 
         cards_row = QHBoxLayout()
-        cards_row.setSpacing(12)
+        cards_row.setSpacing(theme.SP_4)
         c1, self.budget_val, self.budget_sub = _make_stat_card("Bilancio Società", clickable=True)
         c2, self.prestige_val, self.prestige_sub = _make_stat_card("Prestigio & Etica", clickable=True)
         c3, self.squad_val, self.squad_sub = _make_stat_card("Rosa & Pista Tartan", clickable=True)
@@ -302,112 +338,110 @@ class DashboardTab(QWidget):
         c3.clicked.connect(lambda: self.navigate_requested.emit(1))
         c4.clicked.connect(lambda: self.navigate_requested.emit(3))
         for c in (c1, c2, c3, c4):
-            cards_row.addWidget(c)
+            cards_row.addWidget(c, stretch=1)
         root.addLayout(cards_row)
 
-        # Tier progress + Objectives row
-        mid_row = QHBoxLayout()
-        mid_row.setSpacing(12)
+        # Andamento della rosa + priorità (l'azione sta sopra la piega anche a 840 px di altezza)
+        row2 = QHBoxLayout()
+        row2.setSpacing(theme.SP_4)
+        trend_card, trend_body, _ = make_card("Forma e fatica della rosa", f"ultime {HISTORY_WEEKS} settimane")
+        self.trend_chart = TrendChart()
+        trend_body.addWidget(self.trend_chart, stretch=1)
+        row2.addWidget(trend_card, stretch=3)
 
-        tier_panel = QFrame()
-        tier_panel.setObjectName("SectionPanel")
-        tier_layout = QVBoxLayout(tier_panel)
-        tier_layout.setContentsMargins(14, 10, 14, 10)
-        self.tier_progress_label = QLabel("Percorso Categoria")
-        self.tier_progress_label.setObjectName("SectionHeader")
-        self.tier_progress = QProgressBar()
-        rec_row = QHBoxLayout()
-        self.records_label = QLabel("Record Sociali: nessuno ancora stabilito")
-        self.records_label.setObjectName("SubTitle")
-        self.records_label.setWordWrap(True)
-        rec_row.addWidget(self.records_label, stretch=1)
-        albo_btn = QPushButton("Albo & Record →")
-        albo_btn.clicked.connect(lambda: self.navigate_requested.emit(8))
-        rec_row.addWidget(albo_btn)
-        tier_layout.addWidget(self.tier_progress_label)
-        tier_layout.addWidget(self.tier_progress)
-        tier_layout.addLayout(rec_row)
-        mid_row.addWidget(tier_panel, stretch=3)
-
-        obj_panel = QFrame()
-        obj_panel.setObjectName("SectionPanel")
-        obj_layout = QVBoxLayout(obj_panel)
-        obj_layout.setContentsMargins(14, 10, 14, 10)
-        obj_title = QLabel("Obiettivi di Stagione")
-        obj_title.setObjectName("SectionHeader")
-        obj_layout.addWidget(obj_title)
-        self.objectives_list = QListWidget()
-        self.objectives_list.setWordWrap(True)
-        self.objectives_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.objectives_list.setMaximumHeight(140)
-        obj_layout.addWidget(self.objectives_list)
-        mid_row.addWidget(obj_panel, stretch=2)
-
-        root.addLayout(mid_row)
-
-        # Lower split: Squad snapshot + Action Center & News
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(12)
-
-        left_panel = QFrame()
-        left_panel.setObjectName("SectionPanel")
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(14, 12, 14, 12)
-        left_head = QHBoxLayout()
-        left_title = QLabel("Migliori Atleti in Rosa")
-        left_title.setObjectName("SectionHeader")
-        left_head.addWidget(left_title)
-        left_head.addStretch()
-        left_hint = QLabel("Doppio clic per aprire la Scheda Atleta")
-        left_hint.setObjectName("SubTitle")
-        left_head.addWidget(left_hint)
-        left_layout.addLayout(left_head)
-
-        self.top_table = QTableWidget(0, 7)
-        self.top_table.setHorizontalHeaderLabels(
-            ["Atleta", "Disciplina", "Carattere", "OVR", "Forma", "Fatica", "Stato"]
-        )
-        self.top_table.setAlternatingRowColors(True)
-        self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.top_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.top_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.top_table.verticalHeader().setVisible(False)
-        self.top_table.cellDoubleClicked.connect(lambda row, _col: self._open_top_detail(row))
-        left_layout.addWidget(self.top_table)
-        bottom_row.addWidget(left_panel, stretch=3)
-
-        right_col = QVBoxLayout()
-        right_col.setSpacing(12)
-
-        actions_panel = QFrame()
-        actions_panel.setObjectName("SectionPanel")
-        actions_layout = QVBoxLayout(actions_panel)
-        actions_layout.setContentsMargins(14, 10, 14, 10)
-        actions_layout.setSpacing(6)
-        actions_title = QLabel("Priorità della Settimana")
-        actions_title.setObjectName("SectionHeader")
-        actions_layout.addWidget(actions_title)
+        actions_card, actions_outer, _ = make_card("Priorità della settimana")
         self.actions_box = QVBoxLayout()
-        self.actions_box.setSpacing(5)
-        actions_layout.addLayout(self.actions_box)
-        right_col.addWidget(actions_panel)
+        self.actions_box.setSpacing(theme.SP_2)
+        actions_outer.addLayout(self.actions_box)
+        actions_outer.addStretch()
+        row2.addWidget(actions_card, stretch=2)
+        root.addLayout(row2)
 
-        right_panel = QFrame()
-        right_panel.setObjectName("SectionPanel")
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(14, 12, 14, 12)
-        right_title = QLabel("Momenti Memorabili & Cronaca")
-        right_title.setObjectName("SectionHeader")
-        right_layout.addWidget(right_title)
+        # Stagione (timeline, posizione in lega, record) + obiettivi
+        row3 = QHBoxLayout()
+        row3.setSpacing(theme.SP_4)
+        tier_card, tier_body, _ = make_card("Stagione")
+        self.tier_progress_label = QLabel("Percorso Categoria")
+        self.tier_progress_label.setObjectName("CardLead")
+        self.tier_progress_label.setWordWrap(True)
+        tier_body.addWidget(self.tier_progress_label)
+        self.timeline = SeasonTimelineWidget()
+        tier_body.addWidget(self.timeline)
+        self.tier_progress = QProgressBar()
+        tier_body.addWidget(self.tier_progress)
+        rec_row = QHBoxLayout()
+        rec_texts = QVBoxLayout()
+        rec_texts.setSpacing(2)
+        self.records_label = QLabel("Record Sociali: nessuno ancora stabilito")
+        self.records_label.setObjectName("CardHint")
+        self.records_label.setWordWrap(True)
+        rec_texts.addWidget(self.records_label)
+        self.contracts_label = QLabel("")
+        self.contracts_label.setObjectName("CardHint")
+        self.contracts_label.setWordWrap(True)
+        rec_texts.addWidget(self.contracts_label)
+        rec_row.addLayout(rec_texts, stretch=1)
+        albo_btn = QPushButton("Albo && Record →")  # «&&»: un «&» solo sarebbe il mnemonico di tastiera e sparirebbe
+        albo_btn.clicked.connect(lambda: self.navigate_requested.emit(8))
+        rec_row.addWidget(albo_btn, alignment=Qt.AlignmentFlag.AlignBottom)
+        tier_body.addLayout(rec_row)
+        row3.addWidget(tier_card, stretch=3)
+
+        obj_card, obj_body, _ = make_card("Obiettivi di stagione")
+        self.objectives_list = QListWidget()
+        self.objectives_list.setObjectName("FlatList")
+        self.objectives_list.setWordWrap(True)
+        self.objectives_list.setIconSize(QSize(18, 18))
+        self.objectives_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.objectives_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.objectives_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        obj_body.addWidget(self.objectives_list, stretch=1)
+        row3.addWidget(obj_card, stretch=2)
+        root.addLayout(row3)
+
+        # Heat map + cronaca
+        row4 = QHBoxLayout()
+        row4.setSpacing(theme.SP_4)
+        heat_card, heat_body, _ = make_card("Dove sono forti e deboli", "punteggio atteso per gara, oggi")
+        self.heat_map_widget = HeatMapWidget()
+        heat_body.addWidget(self.heat_map_widget)
+        row4.addWidget(heat_card, stretch=3)
+
+        news_card, news_body, _ = make_card("Momenti memorabili & cronaca")
         self.news_list = QListWidget()
+        self.news_list.setObjectName("FlatList")
         self.news_list.setWordWrap(True)
         self.news_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        right_layout.addWidget(self.news_list)
-        right_col.addWidget(right_panel, stretch=1)
+        self.news_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.news_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.news_list.setMinimumHeight(200)
+        news_body.addWidget(self.news_list, stretch=1)
+        row4.addWidget(news_card, stretch=2)
+        root.addLayout(row4)
 
-        bottom_row.addLayout(right_col, stretch=2)
+        # Migliori atleti (a tutta larghezza: i nomi stanno interi)
+        top_card, top_body, _ = make_card("Migliori atleti in rosa", "doppio clic per la Scheda Atleta")
+        self.top_table = QTableWidget(0, 6)
+        self.top_table.setHorizontalHeaderLabels(["Atleta", "Disciplina", "OVR", "Forma", "Fatica", "Stato"])
+        self.top_table.setAlternatingRowColors(False)
+        self.top_table.setShowGrid(False)
+        self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.top_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.top_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.top_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = self.top_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)  # niente più «Giulia ...» né «isciplir»
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setMinimumSectionSize(64)
+        self.top_table.verticalHeader().setVisible(False)
+        self.top_table.verticalHeader().setDefaultSectionSize(self.TOP_ROW_H)
+        self.top_table.setItemDelegateForColumn(5, BadgeDelegate(self.top_table))
+        self.top_table.cellDoubleClicked.connect(lambda row, _col: self._open_top_detail(row))
+        top_body.addWidget(self.top_table)
+        root.addWidget(top_card)
+        root.addStretch()
 
-        root.addLayout(bottom_row, stretch=1)
+    TOP_ROW_H = 40
 
     def _open_top_detail(self, row: int) -> None:
         if 0 <= row < len(self._top_athlete_ids) and self._top_athlete_ids[row] != -1:
@@ -417,7 +451,7 @@ class DashboardTab(QWidget):
         net = weekly_finances(state)["net"]
 
         self.budget_val.setText(f"€{state.budget:,}")
-        self.budget_val.setStyleSheet("color: #f87171;" if state.budget < 0 else "")
+        self.budget_val.setStyleSheet(f"color: {theme.BAD};" if state.budget < 0 else "")
         sign = "+" if net >= 0 else ""
         if state.bankrupt:
             self.budget_sub.setText("SOCIETÀ FALLITA — avvia una nuova partita")
@@ -468,6 +502,16 @@ class DashboardTab(QWidget):
                 f"Stagione {last.season}: {last.placement}° in {last.tier.display_name} — {last.outcome.value}"
             )
 
+        timeline = season_timeline(state)
+        in_career = state.game_mode == "career"  # il Prototipo dura 8 settimane e non ha stagioni né contratti: niente timeline
+        self.timeline.setVisible(in_career)
+        self.timeline.set_timeline(timeline, [p.value.split(" (")[0] for p in state.season_cycle])
+        if in_career and timeline.expiring:
+            shown = ", ".join(timeline.expiring[:2]) + (f" e altri {len(timeline.expiring) - 2}" if len(timeline.expiring) > 2 else "")
+            self.contracts_label.setText(f"Contratti in scadenza a fine stagione: {shown}")
+        else:
+            self.contracts_label.setText("")
+
         n_m = len(state.club_records)
         n_f = len(state.club_records_f)
         if n_m or n_f:
@@ -495,11 +539,11 @@ class DashboardTab(QWidget):
 
         if state.is_vertical_slice_complete:
             self.comp_val.setText("Prototipo OK")
-            self.comp_val.setStyleSheet("color: #34d399;")
+            self.comp_val.setStyleSheet(f"color: {theme.GOOD};")
             self.comp_sub.setText("2 gare completate — avvia Carriera!")
         elif state.is_competition_week:
             self.comp_val.setText("QUESTA SETT!")
-            self.comp_val.setStyleSheet("color: #fbbf24;")
+            self.comp_val.setStyleSheet(f"color: {theme.WARN};")
             self.comp_sub.setText("Prepara lo Scarico & gareggia")
         else:
             rem = state.weeks_until_competition
@@ -508,11 +552,22 @@ class DashboardTab(QWidget):
             venue = "In casa" if state.next_meet_is_home else "In trasferta"
             self.comp_sub.setText(f"{venue} · {state.season_phase.value}")
 
+        trend = squad_trend(state)
+        self.trend_chart.set_empty_text(
+            "Lo storico si riempie giocando: avanza la prima settimana."
+            if state.main_squad
+            else "Nessun atleta in rosa: lo storico parte quando tessererai i primi atleti."
+        )
+        self.trend_chart.set_series([t[0] for t in trend], [t[1] for t in trend])
+        self.heat_map_widget.set_heat_map(heat_map(state))
+
         self.objectives_list.clear()
         for obj in state.objectives:
-            prefix = "[COMPLETATO] " if obj.completed else "[ ] "
             progress = progress_text(state, obj) if obj.key in BOARD_KEYS else ""
-            self.objectives_list.addItem(f"{prefix}{obj.title}" + (f" — {progress}" if progress else ""))
+            item = QListWidgetItem(check_icon(obj.completed), obj.title + (f" — {progress}" if progress else ""))
+            if obj.completed:
+                item.setForeground(QColor(theme.TEXT_MUTED))
+            self.objectives_list.addItem(item)
         if state.fired:
             self.objectives_list.addItem("ESONERATO dal Board: la partita è finita.")
         elif state.board_failed_streak:
@@ -520,8 +575,9 @@ class DashboardTab(QWidget):
                 f"Attenzione: {state.board_failed_streak} stagione/i fallita/e di fila. "
                 f"Alla {BOARD_MAX_FAILED_STREAK}ª arriva l'esonero."
             )
+        self._fit_list_height(self.objectives_list)
 
-        sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)
+        sorted_athletes = sorted(state.main_squad, key=lambda a: a.overall, reverse=True)[: self.TOP_ATHLETES]
         self._top_athlete_ids = [a.id or -1 for a in sorted_athletes]
         self.top_table.clearSpans()
         self.top_table.setRowCount(len(sorted_athletes) or 1)
@@ -535,7 +591,6 @@ class DashboardTab(QWidget):
             vals = [
                 f"{a.name} ({a.gender})",
                 a.specialty.value,
-                a.personality.value,
                 str(a.overall),
                 str(a.form),
                 str(a.fatigue),
@@ -543,21 +598,30 @@ class DashboardTab(QWidget):
             ]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if col == 6:
+                item.setTextAlignment(
+                    (Qt.AlignmentFlag.AlignLeft if col == 0 else Qt.AlignmentFlag.AlignCenter) | Qt.AlignmentFlag.AlignVCenter
+                )
+                if col == 5:
                     if a.is_injured or a.doping_boost_weeks > 0:
-                        item.setForeground(QColor("#f87171"))
+                        level = "danger"
                     elif a.fatigue >= 75:
-                        item.setForeground(QColor("#fbbf24"))
+                        level = "warn"
                     else:
-                        item.setForeground(QColor("#34d399"))
+                        level = "ok"
+                    item.setData(BADGE_LEVEL_ROLE, level)
                 self.top_table.setItem(row, col, item)
+        header_h = self.top_table.horizontalHeader().height() or 34
+        self.top_table.setFixedHeight(header_h + self.TOP_ROW_H * self.top_table.rowCount() + 6)
 
         while self.actions_box.count():
             child = self.actions_box.takeAt(0)
-            if child.widget() is not None:
-                child.widget().deleteLater()
-        for text, severity, target_idx in _weekly_action_items(state, self.controller.free_agent_pool):
+            old_btn = child.widget()
+            if old_btn is not None:
+                old_btn.hide()  # senza questo il vecchio pulsante resta disegnato (e coprirebbe la scheda) fino al deleteLater
+                old_btn.setParent(None)
+                old_btn.deleteLater()
+        items = _weekly_action_items(state, self.controller.free_agent_pool)
+        for text, severity, target_idx in items:
             btn = QPushButton(text)
             btn.setObjectName("ActionItemButton")
             btn.setProperty("severity", severity)
@@ -565,12 +629,32 @@ class DashboardTab(QWidget):
             btn.style().polish(btn)
             btn.clicked.connect(lambda _c=False, idx=target_idx: self.navigate_requested.emit(idx))
             self.actions_box.addWidget(btn)
+        self._update_status(state, items)
 
         self.news_list.clear()
         for m in state.milestones[:6]:
             self.news_list.addItem(f"★ {m}")
         for entry in state.news_log[:18]:
             self.news_list.addItem(entry)
+
+    def _update_status(self, state: GameState, items: list) -> None:
+        """Semaforo: rosso se c'è un dilemma da risolvere o un'urgenza, ambra se c'è qualcosa da guardare, verde se tutto ok."""
+        danger = sum(1 for _t, sev, _i in items if sev == "danger")
+        warn = sum(1 for _t, sev, _i in items if sev == "warn")
+        if state.pending_dilemma is not None:
+            self.status_pill.set_level("danger", "Dilemma da risolvere")
+        elif danger:
+            self.status_pill.set_level("danger", f"{danger} urgenz{'a' if danger == 1 else 'e'}")
+        elif warn:
+            self.status_pill.set_level("warn", f"{warn} da guardare")
+        else:
+            self.status_pill.set_level("ok", "Tutto ok")
+
+    @staticmethod
+    def _fit_list_height(lst: QListWidget) -> None:
+        """Altezza della lista = somma delle righe, così la scheda non lascia vuoti né taglia le voci."""
+        total = 8 + sum(lst.sizeHintForRow(i) for i in range(lst.count()))
+        lst.setMinimumHeight(max(120, total))
 
 
 class RosterTab(QWidget):
