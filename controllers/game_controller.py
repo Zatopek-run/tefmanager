@@ -38,7 +38,9 @@ from models.entities import (
     RELAYS,
     Relay,
     coach_hire_cost,
+    ACADEMY_MAX_LEVEL,
     FACILITY_COSTS,
+    SCOUT_REGIONS,
     GYM_MAX_LEVEL,
     SCOUTING_FEES,
     SCOUTING_SEARCH_POINTS,
@@ -69,6 +71,14 @@ from models.entities import (
     stand_expansion_cost,
 )
 from models.facilities import facility_cost, facility_label, owns
+from models.scouting import (
+    academy_upgrade_cost,
+    apply_region_talent,
+    region_search_extras,
+    region_specialty,
+    scout_candidates,
+    scout_severance,
+)
 from models.agents import adjust_relation, assign_agent, ensure_agents, prune_idle_agents
 from models.market import Terms, is_valid_terms, opening_terms
 from models.generator import (
@@ -691,11 +701,24 @@ class GameController(QObject):
 
     # ------------------------------------------------------------------ youth academy
     def run_youth_scouting(
-        self, specialty: Optional[Specialty] = None, high_potential: bool = False
+        self, specialty: Optional[Specialty] = None, high_potential: bool = False, region: Optional[str] = None
     ) -> List[Athlete]:
-        """Spend weekly scouting points (2 + 1 per filter) and money to find 1-4 kids (14-17)."""
-        filters = (1 if specialty is not None else 0) + (1 if high_potential else 0)
-        points, fee = scouting_search_cost(self.state.scouting_points_used, filters)
+        """Spend weekly scouting points (2 + 1 per filter) and money to find 1-4 kids (14-17).
+
+        `region` (E.3, rete scouting globale): chiave di `SCOUT_REGIONS`; conta come un filtro in più, costa una quota fissa e
+        fissa la disciplina (annulla `specialty`). Con la regione ogni ragazzo ha la possibilità di essere un talento.
+        """
+        if region is not None:
+            if region not in SCOUT_REGIONS or (
+                self.state.game_mode == "vertical_slice" and region_specialty(region) == Specialty.THROWS
+            ):
+                self.status_message.emit("Regione non disponibile in questa modalità.")
+                return []
+            specialty = region_specialty(region)
+        extra_points, extra_fee = region_search_extras(region)
+        filters = (1 if specialty is not None and region is None else 0) + (1 if high_potential else 0)
+        points, fee = scouting_search_cost(self.state.scouting_points_used, filters + extra_points)
+        fee += extra_fee
         if points > self.state.scouting_points_left:
             self.status_message.emit(
                 f"Punti scouting insufficienti ({self.state.scouting_points_left} rimasti, servono {points})."
@@ -718,6 +741,9 @@ class GameController(QObject):
             existing_names={a.name for a in self.state.athletes},
             allowed_specialties=allowed,
         )
+        if region is not None:
+            for kid in kids:
+                apply_region_talent(kid, region, self.rng)
         self.state.scouting_points_used += points
         self.state.budget -= fee
         if fee > 0:
@@ -738,6 +764,55 @@ class GameController(QObject):
             f"Gli osservatori hanno segnalato {len(kids)} ragazzi (-{points} punti, -€{fee:,})."
         )
         return kids
+
+    def upgrade_academy(self) -> bool:
+        """Sale di una stella dell'Academy (E.3): +10% di crescita per i ragazzi del vivaio, una tantum."""
+        level = self.state.academy_level
+        if level >= ACADEMY_MAX_LEVEL:
+            self.status_message.emit("Academy già a cinque stelle.")
+            return False
+        if not self._pay(academy_upgrade_cost(level), f"Academy -> {level + 1} stelle", "Impianto"):
+            return False
+        self.state.academy_level = level + 1
+        self.state.news_log.insert(0, f"Sett. {self.state.week}: l'Academy sale a {self.state.academy_level} stelle.")
+        self._persist()
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"Academy a {self.state.academy_level} stelle.")
+        return True
+
+    def hire_scout(self, scout_id: int) -> bool:
+        """Assume un osservatore del catalogo (E.3). Se ce n'è già uno lo sostituisce pagandone la liquidazione."""
+        candidate = next((c for c in scout_candidates() if c.scout_id == scout_id), None)
+        if candidate is None:
+            return False
+        current = self.state.scout
+        if current is not None and current.scout_id == scout_id:
+            self.status_message.emit(f"{current.name} è già il tuo osservatore.")
+            return False
+        if current is not None and not self._pay(
+            scout_severance(current), f"Liquidazione osservatore {current.name}", "Staff"
+        ):
+            return False
+        self.state.scout = candidate
+        self.state.news_log.insert(0, f"Sett. {self.state.week}: {candidate.name} è il nuovo osservatore.")
+        self._persist()
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"{candidate.name} assunto come osservatore.")
+        return True
+
+    def fire_scout(self) -> bool:
+        """Licenzia l'osservatore (E.3): costa la liquidazione, come lo staff clinico."""
+        current = self.state.scout
+        if current is None:
+            return False
+        if not self._pay(scout_severance(current), f"Liquidazione osservatore {current.name}", "Staff"):
+            return False
+        self.state.scout = None
+        self.state.news_log.insert(0, f"Sett. {self.state.week}: {current.name} lascia gli osservatori.")
+        self._persist()
+        self.state_changed.emit(self.state)
+        self.status_message.emit(f"{current.name} licenziato.")
+        return True
 
     def sign_youth(self, prospect: Athlete) -> bool:
         if len(self.state.youth_squad) >= YOUTH_SQUAD_MAX:

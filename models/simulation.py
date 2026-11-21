@@ -101,6 +101,7 @@ from models.staff import (
     physio_heal_step_chance,
     physio_injury_recovery_bonus,
 )
+from models.scouting import academy_growth_multiplier
 from models.facilities import growth_multiplier, injury_weeks_with_medical_center
 from models.finances import (
     close_month_if_due,
@@ -389,6 +390,7 @@ def apply_weekly_training(
     pre_meet: bool = False,
     staff_attrs: Optional[StaffAttrs] = None,
     facilities: Optional[Dict[str, int]] = None,
+    academy_level: int = 0,
 ) -> Tuple[List[str], Optional[str], Optional[str], Optional[str]]:
     """
     Update a single athlete's stats, fatigue, form, and injury status for one week.
@@ -401,6 +403,7 @@ def apply_weekly_training(
     `hired_roles` vale il riferimento, cioè l'effetto di prima degli attributi.
     `facilities` (E.2): impianti avanzati posseduti (`GameState.facilities`); vuoto/None = come prima di E.2, nessuna
     estrazione in più dell'RNG.
+    `academy_level` (E.3): stelle dell'Academy; moltiplicano la crescita dei soli ragazzi del vivaio (0 = come prima).
 
     Returns:
         (stat_gains, injury_note, recovery_note, doping_scandal_note)
@@ -469,7 +472,7 @@ def apply_weekly_training(
     personality_growth = 1.15 if athlete.personality == Personality.PERFEZIONISTA else 1.0
     facility_growth = 1.0 + gym_level * GYM_TRAINING_BONUS_PER_LEVEL
     if athlete.in_youth_squad:
-        facility_growth *= YOUTH_TRAINING_MULT
+        facility_growth *= YOUTH_TRAINING_MULT * academy_growth_multiplier(academy_level)
     period_growth = {
         PeriodizationPhase.PREP_GENERALE: 1.05,
         PeriodizationPhase.PREP_SPECIFICA: 1.25,
@@ -1632,7 +1635,7 @@ def weekly_finances(state: GameState) -> Dict[str, int]:
     merchandising = merchandising_income(state)
     individual = sum(a.fans // 4 for a in state.main_squad if a.age >= 18)
     athlete_wages = sum(a.weekly_wage for a in state.main_squad)
-    staff_cost = sum(s.weekly_cost for s in state.staff if s.hired)
+    staff_cost = sum(s.weekly_cost for s in state.staff if s.hired) + (state.scout.weekly_cost if state.scout else 0)
     coach_cost = sum(c.weekly_wage for c in state.coaches)
     gym_upkeep = state.gym_level * GYM_UPKEEP_PER_LEVEL
     income = sponsor + individual + merchandising + state.member_fees_weekly
@@ -1825,6 +1828,7 @@ def advance_week(
             pre_meet=pre_meet,
             staff_attrs=staff_attrs,
             facilities=state.facilities,
+            academy_level=state.academy_level,
         )
         stat_gains.extend(gains)
         if injury_note:
@@ -1864,7 +1868,7 @@ def advance_week(
     if fin["athlete_wages"] > 0:  # senza atleti in Prima Squadra (avvio da zero) niente riga da zero nel libro mastro
         ledger(f"Rimborsi spese atleti ({len(state.main_squad)})", "Rimborsi Atleti", -fin["athlete_wages"])
     if fin["staff_cost"] > 0:
-        hired_count = sum(1 for s in state.staff if s.hired)
+        hired_count = sum(1 for s in state.staff if s.hired) + (1 if state.scout else 0)  # E.3: l'osservatore conta
         ledger(f"Compensi Staff ({hired_count} specialisti)", "Staff", -fin["staff_cost"])
     if fin["coach_cost"] > 0:
         ledger(f"Stipendi Allenatori ({len(state.coaches)})", "Allenatori", -fin["coach_cost"])

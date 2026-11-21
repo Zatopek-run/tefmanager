@@ -350,3 +350,22 @@ Quattro impianti **una tantum** (nessuna manutenzione: il piano non ne indica, a
 - **«%» = probabilità di crescita** (scelta dell'utente, 2026-11-21): il moltiplicatore entra in `chance` prima del tetto `min(0,95; …)`; nessuna estrazione in più.
 - **Centro medico, arrotondamento:** gli stop sono 1-3 settimane intere, quindi il taglio si arrotonda a caso (`injury_weeks_with_medical_center`): **una `r.random()` per infortunio, solo con il centro**. Con stop equiprobabili da 1 a 3 il taglio reale è ≈**12,5%** e non 15% (il minimo di 1 settimana mangia il resto: un infortunio di 1 sett. non cambia); su stop lunghi è 15%. Sui tempi: 2 sett. → 1,7 in media, 3 → 2,55.
 - Le giovanili (`in_youth_squad`) ricevono i bonus come tutti (il moltiplicatore non distingue la squadra).
+
+## T. Giovanili avanzate (PIANOLAVORO E.3, 2026-11-21) — EFFETTI DEL PIANO, COSTI PROVVISORI (QUESTIONS Q35)
+
+Academy a stelle, osservatore con attributi, rete scouting regionale. **Senza Academy, scout e regione il gioco è identico a prima di E.3** (stessa impronta SHA-256 di atleti, budget, notizie e RNG contro `e2c9c49`: 3 semi, 72 settimane, una ricerca di vivaio e un tesseramento). Costanti in `entities.py`, logica in `models/scouting.py` (senza Qt).
+
+| Cosa | Cifra | Costante | Stato |
+| --- | --- | --- | --- |
+| Academy · stelle | 0-5 (0 = il vivaio di prima), ×(1 + 0,10 × stelle) sulla probabilità di crescita dei **soli** ragazzi del vivaio (5 stelle = +50%, si somma al ×1,5 di base: ×2,25 in tutto) | `ACADEMY_MAX_LEVEL`, `ACADEMY_GROWTH_BONUS_PER_LEVEL` | del piano |
+| Academy · costo | stella N costa N × €4.000 (4k, 8k, 12k, 16k, 20k = €60.000 per le cinque), una tantum, nessuna gestione | `ACADEMY_UPGRADE_COST_STEP` | **provvisorio** |
+| Scout · attributi | `potenziale` e `attuale`, 1-20 | `SCOUT_ATTRIBUTES` | del piano |
+| Scout · fascia del potenziale | mezza larghezza 8 senza scout o con attributo 1 (la fascia di sempre), 2 con attributo 20, lineare; scarto del centro ±3 (ridotto se la fascia è più stretta, così contiene sempre il valore vero) | `SCOUT_POTENTIAL_BAND`, `SCOUT_POTENTIAL_BAND_MIN`, `SCOUT_BAND_OFFSET` | cifre mie |
+| Scout · fascia dell'OVR | mezza larghezza 5 senza scout, 0 (valore esatto) con attributo 20 | `SCOUT_CURRENT_BAND`, `SCOUT_CURRENT_BAND_MIN` | cifre mie |
+| Scout · candidati | Fabbri 8/8 €120, Costa 13/13 €260, Sartori 19/16 €440 a settimana; la liquidazione è `STAFF_SEVERANCE_WEEKS` (6) settimane | `models/scouting.py: SCOUT_CATALOGUE` | **provvisori** |
+| Rete regionale | filtro in più (+1 punto, quota €800); fissa la disciplina; ogni ragazzo ha 20% di essere un talento con la qualità tipica a 81-90 e potenziale non sotto quel valore; nazionalità della regione | `SCOUT_REGIONS`, `SCOUT_REGION_*` | 20% del piano; quota e regioni mie |
+
+Regioni: Giamaica (Velocità, `speed`), Kenya (Mezzofondo, `stamina`), Nigeria (Lanci, `strength`; non nel Prototipo, che non ha i lanci).
+
+- **Nota sul tetto 0,95:** la probabilità di crescita è limitata a 0,95 (`try_improve`): un ragazzo con molto margine di crescita (potenziale alto, qualità bassa) e cinque stelle può già saturare il tetto, e allora le stelle in più non servono; l'effetto pieno si vede dove la probabilità di partenza è sotto ~0,63.
+- **L'OVR e il Potenziale dei ragazzi segnalati si vedono ora come fasce**: cambia rispetto a prima di E.3 solo l'OVR (prima esatto, ora ±5 senza scout); la fascia del potenziale senza scout è identica a quella di sempre (`views.dialogs.potential_band_display`, che non è stata toccata e resta per mercato e scheda atleta). L'ordinamento per OVR e Potenziale nei risultati è disattivato (rivelerebbe il valore vero).

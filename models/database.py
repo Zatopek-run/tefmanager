@@ -16,7 +16,9 @@ from typing import Dict, Iterator, List, Optional, Tuple
 from models.generator import ensure_staff_market, generate_body, infer_gender
 from models.staff import normalize_attributes
 from models.facilities import facilities_from_json, facilities_to_json
+from models.scouting import scout_from_json, scout_to_json
 from models.entities import (
+    ACADEMY_MAX_LEVEL,
     AGENT_RELATION_START,
     Agent,
     AgentPersonality,
@@ -48,7 +50,7 @@ from models.entities import (
     WeatherCondition,
 )
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # Columns added in v3 (youth academy, facilities, race attitude, fans, club league).
 # Applied with ALTER TABLE so v2 saves survive the upgrade.
@@ -174,6 +176,13 @@ V22_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 V23_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "game_state": [("facilities_json", "TEXT NOT NULL DEFAULT '{}'")],
 }
+# Columns added in v24 (E.3: stelle dell'Academy, 0 = il vivaio di prima; osservatore capo, `{}` = nessuno).
+V24_COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+    "game_state": [
+        ("academy_level", "INTEGER NOT NULL DEFAULT 0"),
+        ("scout_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ],
+}
 MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     2: V3_COLUMNS,
     3: V4_COLUMNS,
@@ -196,6 +205,7 @@ MIGRATIONS: Dict[int, Dict[str, List[Tuple[str, str]]]] = {
     20: V21_COLUMNS,
     21: V22_COLUMNS,
     22: V23_COLUMNS,
+    23: V24_COLUMNS,
 }
 
 # Backup scritti prima di ogni migrazione: sottocartella `backups/` accanto allo slot, estensione
@@ -841,7 +851,9 @@ CREATE TABLE IF NOT EXISTS game_state (
     agents_json TEXT NOT NULL DEFAULT '[]',
     monthly_report_json TEXT NOT NULL DEFAULT '[]',
     prep_weeks INTEGER NOT NULL DEFAULT 0,
-    facilities_json TEXT NOT NULL DEFAULT '{}'
+    facilities_json TEXT NOT NULL DEFAULT '{}',
+    academy_level INTEGER NOT NULL DEFAULT 0,
+    scout_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS athletes (
@@ -1082,8 +1094,8 @@ class DatabaseManager:
                     news_log_json, pending_dilemma_json, event_attitude_json, gym_level,
                     stand_seats, fidelity, scouting_points_used, bankrupt, league_table_json,
                     relays_json, coach_hired_week, rivals_json, season_history_json,
-                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json, prep_weeks, facilities_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    event_lineup_f_json, club_records_f_json, relays_f_json, league_places_json, rng_state_json, race_strategy_json, ranking_pool_json, board_json, retired_json, agents_json, monthly_report_json, prep_weeks, facilities_json, academy_level, scout_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -1129,6 +1141,8 @@ class DatabaseManager:
                     _reports_to_json(state.monthly_reports),
                     state.prep_weeks,
                     facilities_to_json(state.facilities),
+                    state.academy_level,
+                    scout_to_json(state.scout),
                 ),
             )
 
@@ -1525,6 +1539,8 @@ class DatabaseManager:
                 monthly_reports=_reports_from_json(row["monthly_report_json"]),
                 prep_weeks=int(row["prep_weeks"]),
                 facilities=facilities_from_json(row["facilities_json"]),
+                academy_level=max(0, min(ACADEMY_MAX_LEVEL, int(row["academy_level"]))),
+                scout=scout_from_json(row["scout_json"]),
                 relays=relays,
                 coach_hired_week=row["coach_hired_week"],
                 rival_clubs=_rivals_from_json(row["rivals_json"]),

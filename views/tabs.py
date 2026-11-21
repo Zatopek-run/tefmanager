@@ -54,8 +54,12 @@ from models.entities import (
     Athlete,
     harmony_grade,
     EVENTS,
+    ACADEMY_MAX_LEVEL,
     FACILITY_LABELS,
     FACILITY_ORDER,
+    SCOUT_REGION_EXTRA_POINTS,
+    SCOUT_REGION_FEE,
+    SCOUT_REGIONS,
     GYM_MAX_LEVEL,
     GYM_TRAINING_BONUS_PER_LEVEL,
     GYM_UPKEEP_PER_LEVEL,
@@ -87,6 +91,17 @@ from models.entities import (
 )
 from controllers.game_controller import scouting_search_cost
 from models.facilities import FACILITY_EFFECTS, facility_cost, owns
+from models.scouting import (
+    academy_growth_multiplier,
+    academy_upgrade_cost,
+    current_band_text,
+    current_half_width,
+    potential_band_text,
+    potential_half_width,
+    region_search_extras,
+    region_specialty,
+    scout_candidates,
+)
 from models.staff import describe_attributes, hired_of_role, severance_pay
 from models.finances import recent_reports
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
@@ -94,7 +109,6 @@ from views.dialogs import (
     CompetitionResultsDialog,
     HireCoachDialog,
     RecruitAthleteDialog,
-    potential_band_display,
     release_question_text,
 )
 
@@ -1856,6 +1870,57 @@ class YouthTab(QWidget):
         root.addWidget(squad_panel, stretch=1)
         self._update_youth_buttons()
 
+        # Academy a stelle e osservatore capo (E.3)
+        advanced_row = QHBoxLayout()
+        advanced_row.setSpacing(12)
+        academy_card = QFrame()
+        academy_card.setObjectName("StatCard")
+        academy_layout = QVBoxLayout(academy_card)
+        academy_layout.setContentsMargins(14, 12, 14, 12)
+        self.academy_label = QLabel("Academy")
+        self.academy_label.setObjectName("SectionHeader")
+        self.academy_sub = QLabel("")
+        self.academy_sub.setObjectName("SubTitle")
+        self.academy_sub.setWordWrap(True)
+        self.academy_btn = QPushButton("Migliora Academy")
+        self.academy_btn.setObjectName("PrimaryButton")
+        self.academy_btn.clicked.connect(self.controller.upgrade_academy)
+        academy_layout.addWidget(self.academy_label)
+        academy_layout.addWidget(self.academy_sub)
+        academy_layout.addWidget(self.academy_btn)
+        advanced_row.addWidget(academy_card)
+
+        scout_card = QFrame()
+        scout_card.setObjectName("StatCard")
+        scout_card_layout = QVBoxLayout(scout_card)
+        scout_card_layout.setContentsMargins(14, 12, 14, 12)
+        self.scout_label = QLabel("Osservatore capo")
+        self.scout_label.setObjectName("SectionHeader")
+        self.scout_sub = QLabel("")
+        self.scout_sub.setObjectName("SubTitle")
+        self.scout_sub.setWordWrap(True)
+        scout_buttons = QHBoxLayout()
+        self.scout_combo = QComboBox()
+        for cand in scout_candidates():
+            self.scout_combo.addItem(
+                f"{cand.name} · potenziale {cand.potenziale}, attuale {cand.attuale} · €{cand.weekly_cost}/sett",
+                cand.scout_id,
+            )
+        scout_buttons.addWidget(self.scout_combo, stretch=1)
+        self.scout_hire_btn = QPushButton("Assumi")
+        self.scout_hire_btn.setObjectName("PrimaryButton")
+        self.scout_hire_btn.clicked.connect(self._hire_scout)
+        scout_buttons.addWidget(self.scout_hire_btn)
+        self.scout_fire_btn = QPushButton("Licenzia")
+        self.scout_fire_btn.setObjectName("DangerButton")
+        self.scout_fire_btn.clicked.connect(self.controller.fire_scout)
+        scout_buttons.addWidget(self.scout_fire_btn)
+        scout_card_layout.addWidget(self.scout_label)
+        scout_card_layout.addWidget(self.scout_sub)
+        scout_card_layout.addLayout(scout_buttons)
+        advanced_row.addWidget(scout_card, stretch=2)
+        root.addLayout(advanced_row)
+
         scout_panel = QFrame()
         scout_panel.setObjectName("SectionPanel")
         scout_layout = QVBoxLayout(scout_panel)
@@ -1881,6 +1946,14 @@ class YouthTab(QWidget):
             self.spec_combo.addItem(f"Solo {spec.value} (+1 punto)", spec)
         self.spec_combo.currentIndexChanged.connect(lambda _i: self._update_cost_label())
         controls.addWidget(self.spec_combo)
+        self.region_combo = QComboBox()
+        self.region_combo.addItem("Nessuna rete", None)
+        for key, (label, spec, _stat, _nat) in SCOUT_REGIONS.items():
+            self.region_combo.addItem(
+                f"Rete {label}: {spec.value} (+{SCOUT_REGION_EXTRA_POINTS} punto, €{SCOUT_REGION_FEE:,})", key
+            )
+        self.region_combo.currentIndexChanged.connect(lambda _i: self._update_cost_label())
+        controls.addWidget(self.region_combo)
         self.high_pot_check = QCheckBox("Solo alto potenziale ≥85 (+1 punto)")
         self.high_pot_check.toggled.connect(lambda _b: self._update_cost_label())
         controls.addWidget(self.high_pot_check)
@@ -1931,11 +2004,25 @@ class YouthTab(QWidget):
         spec = self.spec_combo.currentData()
         return (spec if isinstance(spec, Specialty) else None), self.high_pot_check.isChecked()
 
+    def _region(self) -> Optional[str]:
+        data = self.region_combo.currentData()
+        return data if isinstance(data, str) else None
+
+    def _hire_scout(self) -> None:
+        sid = self.scout_combo.currentData()
+        if isinstance(sid, int):
+            self.controller.hire_scout(sid)
+
     def _update_cost_label(self) -> None:
         state = self.controller.state
         spec, high = self._filters()
-        filters = (1 if spec is not None else 0) + (1 if high else 0)
-        points, fee = scouting_search_cost(state.scouting_points_used, filters)
+        region = self._region()
+        extra_points, extra_fee = region_search_extras(region)
+        # con una regione la disciplina è quella della regione: il filtro disciplina non si somma (come nel controller)
+        filters = (1 if spec is not None and region is None else 0) + (1 if high else 0)
+        points, fee = scouting_search_cost(state.scouting_points_used, filters + extra_points)
+        fee += extra_fee
+        self.spec_combo.setEnabled(region is None)
         enough = points <= state.scouting_points_left
         self.cost_label.setText(f"Costo: {points} punti · €{fee:,}")
         self.search_btn.setEnabled(enough and len(state.youth_squad) < YOUTH_SQUAD_MAX)
@@ -1947,6 +2034,43 @@ class YouthTab(QWidget):
         self.scout_title.setText(
             f"Osservatori — {state.scouting_points_left}/{WEEKLY_SCOUTING_POINTS} punti disponibili questa settimana"
         )
+        stars = state.academy_level
+        self.academy_label.setText(f"Academy — {'★' * stars}{'☆' * (ACADEMY_MAX_LEVEL - stars)}")
+        self.academy_sub.setText(
+            f"+{round((academy_growth_multiplier(stars) - 1) * 100)}% di crescita per i ragazzi del vivaio "
+            f"(oltre al +50% di base) · una tantum, nessuna gestione"
+        )
+        if stars >= ACADEMY_MAX_LEVEL:
+            self.academy_btn.setText("Cinque stelle")
+            self.academy_btn.setEnabled(False)
+        else:
+            self.academy_btn.setText(f"Passa a {stars + 1} stelle (€{academy_upgrade_cost(stars):,})")
+            self.academy_btn.setEnabled(True)
+        scout = state.scout
+        if scout is None:
+            self.scout_sub.setText(
+                "Nessun osservatore: i ragazzi segnalati si vedono con fasce larghe "
+                f"(potenziale ±{potential_half_width(None)}, qualità ±{current_half_width(None)}). "
+                "Un osservatore bravo le stringe; con 20 la qualità attuale è esatta."
+            )
+        else:
+            self.scout_label.setText(f"Osservatore capo — {scout.name}")
+            self.scout_sub.setText(
+                f"Giudizio potenziale {scout.potenziale}/20 (fascia ±{potential_half_width(scout)}) · "
+                f"Giudizio attuale {scout.attuale}/20 (fascia ±{current_half_width(scout)}) · €{scout.weekly_cost}/sett"
+            )
+        if scout is None:
+            self.scout_label.setText("Osservatore capo")
+        self.scout_fire_btn.setEnabled(scout is not None)
+        self.scout_hire_btn.setText("Assumi" if scout is None else "Sostituisci")
+
+        # La rete in Nigeria (lanci) non c'è nel Prototipo, che non ha quella disciplina
+        region_view = self.region_combo.view()
+        for i in range(self.region_combo.count()):
+            key = self.region_combo.itemData(i)
+            if isinstance(key, str):
+                hidden = state.game_mode == "vertical_slice" and region_specialty(key) == Specialty.THROWS
+                region_view.setRowHidden(i, hidden)
 
         # Hide disciplines that are not played in the prototype
         allowed = (
@@ -2021,8 +2145,9 @@ class YouthTab(QWidget):
         self._results_list = results
         self.results_table.setRowCount(len(results))
         for row, k in enumerate(results):
+            scout = state.scout  # E.3: senza scout la fascia del potenziale è quella di sempre (±8)
             vals = [f"{k.name} ({k.gender})", str(k.age), k.specialty.value, k.personality.value,
-                    str(k.overall), potential_band_display(k), str(k.resilience)]
+                    current_band_text(k, scout), potential_band_text(k, scout), str(k.resilience)]
             for col, text in enumerate(vals):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2049,16 +2174,16 @@ class YouthTab(QWidget):
         self.refresh(self.controller.state)
 
     def _on_results_header_clicked(self, col: int) -> None:
-        if col == 5:  # "Potenziale": mostra solo una fascia, ordinare per il valore vero la svelerebbe
+        if col in (4, 5):  # OVR e Potenziale: mostrano solo una fascia, ordinare per il valore vero la svelerebbe
             return
         self._results_sort_active, self._results_sort_col, self._results_sort_desc = _toggle_sort(
-            self._results_sort_active, self._results_sort_col, self._results_sort_desc, col, desc_cols={4, 6}
+            self._results_sort_active, self._results_sort_col, self._results_sort_desc, col, desc_cols={6}
         )
         self.refresh(self.controller.state)
 
     def _run_search(self) -> None:
         spec, high = self._filters()
-        self.controller.run_youth_scouting(specialty=spec, high_potential=high)
+        self.controller.run_youth_scouting(specialty=spec, high_potential=high, region=self._region())
 
     def _sign_selected(self) -> None:
         rows = self.results_table.selectionModel().selectedRows()

@@ -90,7 +90,7 @@ atleta per evento e divisione; ogni atleta al massimo in 2 gare individuali + 1 
 i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagionali**, i traguardi (`milestones`), il registro notizie
 (`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
-(`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
+(`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`, `facilities`, `academy_level` 0-5, `scout`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
 `coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1); gli ex atleti (`retired`, C.3), gli **agenti** (`agents`, D.1) e i **bilanci mensili** (`monthly_reports`, D.3).
 
 ### 3.2 `Athlete`
@@ -225,6 +225,7 @@ Uscite settimanali: **rimborsi spese atleti** (prima squadra, infortunati inclus
 Il **vivaio** ospita fino a 8 ragazzi di 14-17 anni che non gareggiano e non costano rimborsi spese, ma si allenano ×1,5. A 18 anni passano da soli in prima squadra (in Carriera, perché l'età cresce solo al cambio stagione);
 prima si possono promuovere a mano. Ogni settimana si hanno **8 punti scouting**: una ricerca costa 2 punti (+1 per filtro: disciplina, potenziale ≥85) e un costo in denaro crescente con i punti già spesi.
 I ragazzi segnalati e non presi se ne vanno a fine settimana.
+Dal lotto **E.3** (2026-11-21, effetti del piano, costi provvisori, Q35) le giovanili hanno tre leve nella tab «Vivaio & Osservatori»: **Academy a stelle** (0-5, stella N costa N × €4.000, una tantum: ogni stella +10% di probabilità di crescita per i ragazzi del vivaio, 5 stelle = +50% oltre al ×1,5 di base); un **osservatore capo** con due attributi 1-20 (*Giudizio potenziale* e *Giudizio attuale*; tre candidati, compenso settimanale €120-440, liquidazione di 6 settimane come lo staff) che stringe le **fasce d'incertezza** con cui si vedono i ragazzi segnalati (potenziale da ±8 a ±2, qualità attuale da ±5 fino al valore esatto con 20; senza osservatore le fasce sono larghe); e la **rete scouting globale**: una regione (Giamaica velocisti, Kenya mezzofondisti, Nigeria lanciatori) è un filtro in più (+1 punto, €800) in cui ogni ragazzo ha il 20% di essere un talento con la qualità tipica oltre 80 (`models/scouting.py`, `BALANCE.md` §T).
 
 ### 5.9 Mercato (agenti liberi) e contratti
 

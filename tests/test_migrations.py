@@ -1011,6 +1011,8 @@ class TestMigrationV22StaffAttributes(_TmpCase):
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v21: senza la colonna
             conn.execute("ALTER TABLE staff DROP COLUMN attributes_json")
             conn.execute("ALTER TABLE game_state DROP COLUMN facilities_json")  # v23, successiva
+            conn.execute("ALTER TABLE game_state DROP COLUMN academy_level")  # v24, successiva
+            conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")  # v24, successiva
             conn.execute("PRAGMA user_version = 21")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v21 → v22
@@ -1101,6 +1103,8 @@ class TestMigrationV23Facilities(_TmpCase):
         DatabaseManager(db_path=path).save_game(state)
         with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v22: senza la colonna
             conn.execute("ALTER TABLE game_state DROP COLUMN facilities_json")
+            conn.execute("ALTER TABLE game_state DROP COLUMN academy_level")  # v24, successiva
+            conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")  # v24, successiva
             conn.execute("PRAGMA user_version = 22")
             conn.commit()
         loaded = DatabaseManager(db_path=path).load_game()  # migra v22 → v23
@@ -1130,6 +1134,72 @@ class TestMigrationV23Facilities(_TmpCase):
         before = sha(path)
         broken = {"game_state": [("facilities_json", "TEXT NOT NULL DEFAULT '{}'"), ("rotta", "SYNTAX ((")]}
         with mock.patch.dict(MIGRATIONS, {22: broken}):
+            with self.assertRaises(dbm.SaveMigrationError):
+                DatabaseManager(db_path=path)
+        self.assertEqual(sha(path), before)
+
+
+class TestMigrationV24Giovanili(_TmpCase):
+    """v23 → v24 (E.3): `game_state.academy_level` (0 = il vivaio di prima) e `scout_json` (`'{}'` = nessuno scout)."""
+
+    def test_v23_save_gets_both_columns_with_defaults_and_a_verified_backup(self) -> None:
+        self.assertGreaterEqual(SCHEMA_VERSION, 24)
+        self.assertIn(23, MIGRATIONS)
+        path = make_save(self.slot("v23"), 23)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertNotIn("academy_level", column_names(conn, "game_state"))  # la fixture è davvero v23
+            self.assertIn("facilities_json", column_names(conn, "game_state"))
+        db = DatabaseManager(db_path=path)
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertIn(("academy_level", "INTEGER", 1, "0", 0), columns(conn, "game_state"))
+            self.assertIn(("scout_json", "TEXT", 1, "'{}'", 0), columns(conn, "game_state"))
+        sentinel_ok(self, path, 23)
+        backup = self.backups("v23")[0]
+        self.assertEqual(db.last_backup_path, backup)
+        self.assertEqual(user_version(backup), 23)
+        with closing(sqlite3.connect(backup)) as conn:
+            self.assertNotIn("scout_json", column_names(conn, "game_state"))
+        sentinel_ok(self, backup, 23)
+
+    def test_old_save_loads_without_academy_or_scout_and_both_roundtrip(self) -> None:
+        from models.scouting import scout_candidates
+        from tests.test_assignments import make_state
+
+        path = self.slot("v23")
+        DatabaseManager(db_path=path).save_game(make_state(3))
+        with closing(sqlite3.connect(path)) as conn:  # lo riporta a com'era un salvataggio v23: senza le colonne
+            conn.execute("ALTER TABLE game_state DROP COLUMN academy_level")
+            conn.execute("ALTER TABLE game_state DROP COLUMN scout_json")
+            conn.execute("PRAGMA user_version = 23")
+            conn.commit()
+        loaded = DatabaseManager(db_path=path).load_game()  # migra v23 → v24
+        self.assertEqual(user_version(path), SCHEMA_VERSION)
+        self.assertEqual((loaded.academy_level, loaded.scout), (0, None))
+        loaded.academy_level = 3
+        loaded.scout = scout_candidates()[2]
+        DatabaseManager(db_path=path).save_game(loaded)
+        again = DatabaseManager(db_path=path).load_game()
+        self.assertEqual((again.academy_level, again.scout), (3, scout_candidates()[2]))
+
+    def test_corrupt_scout_and_out_of_range_academy_load_as_safe_values(self) -> None:
+        from tests.test_assignments import make_state
+
+        path = self.slot("v24")
+        DatabaseManager(db_path=path).save_game(make_state(3))
+        for raw in ("non json", "[1]", '{"id": "x"}', '{"id": 1}'):
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute("UPDATE game_state SET scout_json = ?, academy_level = 99", (raw,))
+                conn.commit()
+            loaded = DatabaseManager(db_path=path).load_game()
+            self.assertIsNone(loaded.scout, raw)
+            self.assertEqual(loaded.academy_level, 5)  # fuori scala: portato al massimo, mai oltre
+
+    def test_failed_v23_migration_leaves_the_save_untouched(self) -> None:
+        path = make_save(self.slot("v23"), 23)
+        before = sha(path)
+        broken = {"game_state": [("academy_level", "INTEGER NOT NULL DEFAULT 0"), ("rotta", "SYNTAX ((")]}
+        with mock.patch.dict(MIGRATIONS, {23: broken}):
             with self.assertRaises(dbm.SaveMigrationError):
                 DatabaseManager(db_path=path)
         self.assertEqual(sha(path), before)

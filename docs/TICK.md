@@ -30,7 +30,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 10 | `_update_relay_harmony` (usa gli infortuni **dopo** il passo 4) | `:1362`; `:240-258` | no |
 | 11 | `progress_rivals`: deriva settimanale di tutti i rivali di tutte le categorie; ogni 4 sett. snapshot `history` | `:1363`; `:639-650` | sì |
 | 12 | Usura pista `−randint(1,3)` | `:1365-1366` | sì |
-| 13 | Fedeltà `+2` (max 100); `scouting_points_used = 0` | `:1368-1370` | no |
+| 13 | Fedeltà `+2` (max 100); `scouting_points_used = 0`. **E.3:** gli atleti del vivaio crescono con ×(1 + 0,10 × stelle Academy) nel passo 4 (nessuna chiamata in più); il compenso dell'osservatore è dentro `staff_cost` (passi 6-7, riga «Compensi Staff» del libro mastro) | `:1368-1370` | no |
 | 14 | **`state.week += 1`** | `:1372` | no |
 | 15 | Solo Carriera e `state.is_phase_start(week)` (posizione nel ciclo ∈ {0, `prep_weeks`, +12, +24}; con `prep_weeks` = 0 è `(week − 1) % 12 == 0` come prima): ruota la fase **[Preparazione →] Outdoor → Cross → Indoor** (`season_cycle`). Q32 | `:1374-1378` | no |
 | 16 | Se la nuova fase è la **prima del ciclo** (Preparazione se `prep_weeks` > 0, altrimenti Outdoor: fine stagione; Q32): `close_season` (verdetto), `season_number += 1`, **azzera `league_table`**, età +1 a **tutti** gli atleti, `renew_rivals_for_season` | `:1379-1386`; `close_season :1167-1210` | sì (rinnovo rivali) |
@@ -80,7 +80,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga |
 | ---: | --- | --- |
-| C3 | Azzera `scouting_results` e `free_agent_pool` (in memoria); poi `prune_idle_agents` (D.1: toglie gli agenti senza clienti e con relazione neutra, i candidati non presi) | `game_controller.py:845-846` |
+| C3 | (E.3: una **ricerca di vivaio con regione**, fuori dal tick, fa in più una `rng.random()` per ragazzo segnalato e una `rng.randint(81, 90)` per ciascun talento, dopo la generazione dei ragazzi; senza regione l'ordine è invariato.) Azzera `scouting_results` e `free_agent_pool` (in memoria); poi `prune_idle_agents` (D.1: toglie gli agenti senza clienti e con relazione neutra, i candidati non presi) | `game_controller.py:845-846` |
 | C4 | `save_game` (DELETE + INSERT in una transazione) | `game_controller.py:847`; `database.py:575-581` |
 | C5 | Segnali: `state_changed`, `week_advanced` | `:848-849` |
 | C6 | Se gara: `competition_completed` → dialog modali (visualizzatore + risultati) | `:851-857`; `main_window.py:332-336` |

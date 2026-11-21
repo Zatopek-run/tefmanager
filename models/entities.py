@@ -270,6 +270,33 @@ INJURY_MIN_WEEKS = 1
 VIDEO_CENTER_TECHNIQUE_BONUS = 0.05
 WEIGHTS_ROOM_STRENGTH_BONUS = 0.10
 ALTITUDE_CAMP_STAMINA_BONUS = 0.10  # solo atleti di Mezzofondo
+
+# Giovanili avanzate (PIANOLAVORO E.3). CIFRE DI COSTO PROVVISORIE (il piano non le indica, Q35); gli effetti sono del piano.
+# Academy a stelle 0-5 (0 = il vivaio di prima): ogni stella +10% di crescita ai ragazzi del vivaio, quindi 5 stelle = +50%.
+ACADEMY_MAX_LEVEL = 5
+ACADEMY_GROWTH_BONUS_PER_LEVEL = 0.10
+ACADEMY_UPGRADE_COST_STEP = 4000  # salire alla stella N costa N × passo: 4.000, 8.000, 12.000, 16.000, 20.000
+# Scout (un solo osservatore capo, attributi 1-20 come lo staff): restringe la fascia d'incertezza con cui si vedono i ragazzi
+# segnalati. Senza scout la fascia del potenziale è quella di sempre (±8, `potential_band_display`) e la qualità attuale
+# (OVR) si vede come fascia di ±5. Con l'attributo 20 la fascia si stringe a ±SCOUT_*_BAND_MIN (OVR: esatto).
+SCOUT_ATTRIBUTES: Tuple[Tuple[str, str], ...] = (("potenziale", "Giudizio potenziale"), ("attuale", "Giudizio attuale"))
+SCOUT_POTENTIAL_BAND = 8
+SCOUT_POTENTIAL_BAND_MIN = 2
+SCOUT_CURRENT_BAND = 5
+SCOUT_CURRENT_BAND_MIN = 0
+SCOUT_BAND_OFFSET = 3  # scarto deterministico del centro della fascia (come `potential_band_display`)
+# Rete scouting globale: una regione è un filtro in più della ricerca (+1 punto e una quota fissa). Chiave → (nome,
+# disciplina, qualità, nazionalità). Ogni ragazzo segnalato ha REGION_STAR_CHANCE di avere quella qualità tra i due estremi.
+SCOUT_REGIONS: Dict[str, Tuple[str, Specialty, str, str]] = {
+    "giamaica": ("Giamaica", Specialty.SPRINTS, "speed", "Giamaica"),
+    "kenya": ("Kenya", Specialty.MIDDLE_DISTANCE, "stamina", "Kenya"),
+    "nigeria": ("Nigeria", Specialty.THROWS, "strength", "Nigeria"),
+}
+SCOUT_REGION_STAR_CHANCE = 0.20
+SCOUT_REGION_STAR_STAT_MIN = 81
+SCOUT_REGION_STAR_STAT_MAX = 90
+SCOUT_REGION_EXTRA_POINTS = 1
+SCOUT_REGION_FEE = 800
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
@@ -1143,6 +1170,17 @@ class SeasonEndResult:
 
 
 @dataclass
+class Scout:
+    """Osservatore capo (E.3): due attributi 1-20 (`SCOUT_ATTRIBUTES`) e un compenso settimanale."""
+
+    scout_id: int
+    name: str
+    weekly_cost: int
+    potenziale: int
+    attuale: int
+
+
+@dataclass
 class StaffMember:
     """Club staff specialist providing bonuses at a weekly salary."""
 
@@ -1335,6 +1373,8 @@ class GameState:
     gym_level: int = 0
     # Impianti avanzati posseduti (E.2): chiave di `FACILITY_ORDER` → livello (1 = posseduto). Vuoto = nessuno.
     facilities: Dict[str, int] = field(default_factory=dict)
+    academy_level: int = 0  # stelle dell'Academy 0-5 (E.3); 0 = il vivaio di prima
+    scout: Optional[Scout] = None  # osservatore capo assunto (E.3); None = nessuno
     stand_seats: int = 500
     fidelity: int = 100  # 0-100: drops with transfers, sponsors value stable squads
     scouting_points_used: int = 0
