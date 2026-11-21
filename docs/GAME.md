@@ -88,7 +88,7 @@ Contiene: nome società, modalità, `budget`, `week`, `season_number`, `season_p
 gli **allenatori** (`coaches`) e lo **staff** (`staff`); le **convocazioni** per evento (`event_lineup` M, `event_lineup_f` F, un solo
 atleta per evento e divisione; ogni atleta al massimo in 2 gare individuali + 1 staffetta, e gli under 20 non gareggiano in «Finale Oro / Coppa Europa»), gli atteggiamenti di gara per evento (`event_attitude`), le **staffette** (`relays` M, `relays_f` F),
 i **record sociali** (`club_records`, `club_records_f`), gli **obiettivi stagionali**, i traguardi (`milestones`), il registro notizie
-(`news_log`, max 70), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
+(`news_log`, max 70; dal lotto F.1 anche notizie dinamiche, vedi §5.13), le **transazioni** (libro mastro, max 400), la **storia delle gare** (`competition_history`, cresce senza limite),
 i **rivali** (`rivals`), la classifica di lega (`league_table`), la storia delle stagioni (`season_history`), il dilemma pendente
 (`pending_dilemma`), impianti (`gym_level` 0-5, `stand_seats`, `facilities`, `academy_level` 0-5, `scout`), `fidelity` (fedeltà sponsor), `scouting_points_used`,
 `coach_hired_week`, `bankrupt`, `board_failed_streak` e `fired` (Board, C.2); il campo mondiale di atleti sintetici del ranking (`ranking_pool`, C.1); gli ex atleti (`retired`, C.3), gli **agenti** (`agents`, D.1) e i **bilanci mensili** (`monthly_reports`, D.3).
@@ -470,3 +470,7 @@ Le decisioni di design aperte (parte delle 22 domande, es. «che cosa è il fall
 - Non cambiare esiti di gara nelle viste; non introdurre comandi interattivi in gara; non toccare `MIGRATIONS`/`SCHEMA_VERSION` senza migrazione e test; non fare refactor o «già che ci sono».
 - Un difetto trovato per strada si annota in `docs/AUDIT.md`; una scelta di design si chiede all'utente (`docs/QUESTIONS.md`).
 - Commit in italiano e descrittivi; sviluppo sul branch indicato; non aprire PR se non richiesto.
+
+### 5.13 Notizie dinamiche (F.1)
+
+Dal lotto **F.1** (2026-11-21, Q36) a ogni **chiusura di mese** (quattro settimane, quando si scrive il bilancio mensile) il giornale racconta, **al più una riga per tipo**, nel feed della Dashboard: **«Allenatore del Mese»** se il club ha vinto il meeting del mese; **«La stampa critica la tua gestione»** se i conti sono in rosso, il Board ha già bocciato una stagione o il club è ultimo nell'ultimo meeting (in quest'ordine di priorità); **«Tensione nello spogliatoio»** per l'atleta di Prima Squadra il cui agente ha una relazione con te ≤ 30. Sono solo cronaca (nessun effetto su morale o reputazione: arrivano con le conferenze stampa, F.2); la frase tra tre varianti si sceglie in modo deterministico, senza RNG. Niente notizie senza atleti in Prima Squadra né nella stagione di fondazione. I record sociali, i primati personali, gli infortuni e il resto del registro notizie c'erano già e non sono cambiati (`models/narrative.py`).

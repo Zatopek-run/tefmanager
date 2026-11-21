@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 from models.entities import (
+    MONTH_WEEKS,
     SPONSOR_MISS_PENALTY,
     SPONSOR_TOP_N,
     AGENT_RELATION_NOT_RENEWED,
@@ -102,6 +103,7 @@ from models.staff import (
     physio_injury_recovery_bonus,
 )
 from models.scouting import academy_growth_multiplier
+from models.narrative import monthly_news
 from models.facilities import growth_multiplier, injury_weeks_with_medical_center
 from models.finances import (
     close_month_if_due,
@@ -1965,7 +1967,9 @@ def advance_week(
     if dilemma is not None:
         state.pending_dilemma = dilemma
 
-    close_month_if_due(state)  # D.3: bilancio del mese appena finito (dopo ogni movimento del tick, bonus promozione compreso)
+    if close_month_if_due(state):  # D.3: bilancio del mese appena finito (dopo ogni movimento del tick, bonus promozione compreso)
+        # F.1: le notizie del mese appena chiuso; senza RNG, dopo tutto il resto del tick
+        state.news_log[0:0] = monthly_news(state, state.week - MONTH_WEEKS, state.week - 1)
 
     state.news_log = state.news_log[:70]
     state.milestones = state.milestones[:40]

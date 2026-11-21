@@ -47,6 +47,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 | 20 | `_evaluate_objectives` (seconda volta: la prima è in `simulate_competition`) | `:1407` | no |
 | 21 | `maybe_generate_dilemma` (con `state.week` **già incrementata**); se `pending_dilemma` è già valorizzato non fa nulla e non consuma RNG | `:1408-1410`; `generator.py:662-699` | sì (se non pendente e settimana ∉ {3,7}) |
 | 21b | **Bilancio mensile** (D.3): se la nuova settimana apre un mese (`(week − 1) % 4 == 0`, `week > 4`), `close_month_if_due` somma per categoria le voci del libro mastro delle 4 settimane appena chiuse (capitale iniziale escluso) e mette il resoconto in testa a `monthly_reports` (al più 36). Va **dopo** ogni movimento del tick e **prima** del troncamento del passo 22 (che tiene 400 voci). **Non usa `r`** | `finances.py` | no |
+| 21c | **Notizie dinamiche** (F.1, 2026-11-21): **solo se il passo 21b ha chiuso un mese**, `monthly_news(state, week − 4, week − 1)` scrive in testa a `news_log` al più una riga per tipo (premio «Allenatore del Mese», stampa critica, tensione nello spogliatoio), in quest'ordine. **Non usa `r`** (le varianti di frase si scelgono con `crc32`): l'ordine delle estrazioni dell'RNG non cambia. Va **dopo** 21b e **prima** del troncamento del passo 22 (70 notizie). Nessuna notizia senza atleti in Prima Squadra né nella stagione di fondazione | `narrative.py` | no |
 | 22 | Troncamento liste: notizie 70, traguardi 40, transazioni 400 | `:1412-1414` | no |
 | 23 | Restituisce `WeekAdvanceReport` | `:1416-1430` | no |
 

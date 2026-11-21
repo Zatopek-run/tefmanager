@@ -491,3 +491,16 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Limiti dichiarati:** non misurato in una partita lunga (né il costo delle stelle né il valore dei talenti); **non provato con il mouse reale** (solo test offscreen e uno screenshot); il tetto 0,95 della crescita limita l'effetto delle stelle sui ragazzi con molto margine; nessun effetto della nazionalità regionale oltre alla bandierina.
 
 **Da decidere:** (a) i costi; (b) l'OVR come fascia anche senza scout va bene, o preferisci tenerlo esatto e dare agli scout solo il potenziale? (c) rinnovo del mercato degli osservatori a fine stagione come per lo staff? (d) altre regioni (Etiopia, Brasile…) o una per disciplina in più? (e) la fascia del mercato e della scheda atleta deve seguire lo scout?
+
+
+## Q36 — Notizie dinamiche (PIANOLAVORO F.1) — 🟡 IN CORSO dal 2026-11-21, **soglie e tipi da confermare**
+
+**Cosa c'è** (nessuna modifica allo schema): `models/narrative.py` (senza Qt e senza RNG) genera a ogni chiusura di mese al più una riga per tipo: **Allenatore del Mese** (vittoria del meeting del mese), **stampa critica** (conti in rosso; oppure Board con una stagione fallita; oppure ultimo posto nell'ultimo meeting) e **tensione nello spogliatoio** (relazione con l'agente ≤ `NARRATIVE_TENSION_RELATION` = 30). Agganciato al tick dopo il bilancio mensile (`TICK.md` 21c). Test: `test_narrative.py` (20, senza Qt).
+
+**Mie scelte, da confermare:** (a) il **cadenzamento mensile** e la regola «al più una riga per tipo», per non riempire il registro (tetto 70) e non servire uno stato di «già annunciata»; (b) la soglia 30 come «insoddisfatto», perché non esiste un morale per atleta; (c) le tre cause della stampa critica e la loro priorità; (d) «Allenatore del Mese» = vittoria del meeting del mese, senza premio; (e) varianti di frase scelte con `crc32` (nessuna estrazione dell'RNG: nessun test o equilibrio spostato, i 712 test precedenti passano invariati); (f) il record sociale del piano non è stato duplicato, esiste già.
+
+**Scostamento dal piano:** il piano chiede un «feed notizie nella dashboard» in `views/tabs.py`: la Dashboard ha già il feed (`news_list`), quindi non ho toccato la vista.
+
+**Limiti dichiarati:** vedi AUDIT R33; **non provato con il mouse reale**; le notizie nuove non sono state lette in una partita lunga (solo test e un tick di prova).
+
+**Da decidere:** (a) altri eventi da raccontare (stagione, infortuni gravi, ritiri, contratti in scadenza)? (b) la notizia deve ripetersi ogni mese finché dura la condizione? (c) «Allenatore del Mese» deve dare un piccolo bonus di reputazione (con F.2)?

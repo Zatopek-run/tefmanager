@@ -297,6 +297,10 @@ SCOUT_REGION_STAR_STAT_MIN = 81
 SCOUT_REGION_STAR_STAT_MAX = 90
 SCOUT_REGION_EXTRA_POINTS = 1
 SCOUT_REGION_FEE = 800
+
+# Notizie dinamiche (PIANOLAVORO F.1): a ogni chiusura di mese (`MONTH_WEEKS`) il generatore di `models/narrative.py` scrive al
+# più una riga per tipo, senza RNG. Soglia sotto la quale la relazione con l'agente è «insoddisfazione» (la neutra è 50).
+NARRATIVE_TENSION_RELATION = 30
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
 # esistenti tengono i rimborsi già scritti (mai rivisti dopo la creazione, vedi AUDIT R14).
