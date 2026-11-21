@@ -14,13 +14,16 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("TEF_NO_GODOT", "1")
 
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel
+from unittest import mock
+
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
 
 from controllers.game_controller import GameController
 from tests.support import start_game
 from models.agents import agent_by_id
 from models.database import DatabaseManager
 from models.entities import (
+    AGENT_REFUSE_BELOW,
     AGENT_RELATION_RELEASED,
     AGENT_RELATION_START,
     MIN_NEGOTIATED_FEE,
@@ -290,6 +293,39 @@ class TestRecruitDialogUsesTheNegotiation(_Base):
         dlg._on_sign()
         self.assertEqual(dlg.selected_prospect, pool[0])
         self.assertIsNone(dlg.selected_terms)
+
+
+class TestAgentRefusal(_Base):
+    """Q29c: un agente con la relazione sotto soglia non tratta."""
+
+    def test_the_controller_refuses_and_charges_nothing(self) -> None:
+        athlete, agent = self.prospect(relation=AGENT_REFUSE_BELOW - 1)
+        before, squad = self.state.budget, len(self.state.athletes)
+        messages = []
+        self.ctrl.status_message.connect(messages.append)
+        self.assertFalse(self.ctrl.recruit_athlete(athlete))
+        self.assertFalse(self.ctrl.recruit_athlete(athlete, terms=opening_terms(athlete, agent)))
+        self.assertEqual((self.state.budget, len(self.state.athletes)), (before, squad))
+        self.assertIn("rifiuta", messages[0])
+
+    def test_at_the_threshold_the_agent_still_deals(self) -> None:
+        athlete, _agent = self.prospect(relation=AGENT_REFUSE_BELOW)
+        self.assertTrue(self.ctrl.recruit_athlete(athlete))
+
+    def test_the_dialog_does_not_open_the_negotiation_and_says_so(self) -> None:
+        pool = self.ctrl.get_free_agent_market(count=4)
+        agent = agent_by_id(self.state, pool[0].agent_id)
+        agent.relation = AGENT_REFUSE_BELOW - 1
+        dlg = RecruitAthleteDialog(pool, self.state.budget, roster=self.state.main_squad, agents=self.state.agents)
+        self.addCleanup(dlg.close)
+        dlg._negotiate = lambda prospect, ag: self.fail("l'agente rifiuta: non si tratta")
+        self.assertIn("RIFIUTA", dlg._agent_text(agent))
+        dlg.table.selectRow(0)
+        with mock.patch.object(QMessageBox, "warning") as warning:
+            dlg._on_sign()
+        warning.assert_called_once()
+        self.assertIsNone(dlg.selected_prospect)
+        self.assertNotEqual(dlg.result(), QDialog.DialogCode.Accepted)
 
 
 class TestAthleteCard(_Base):

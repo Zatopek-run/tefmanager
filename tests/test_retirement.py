@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List
 
 from models.career import (
+    ex_champion_coaches,
     REASON_AGE,
     REASON_INJURIES,
     age_retirement_chance,
@@ -21,6 +22,7 @@ from models.career import (
 )
 from models.database import DatabaseManager
 from models.entities import (
+    EX_CHAMPION_FAN_BONUS,
     COACH_BASE_SKILL,
     COACH_STATS,
     MAX_RETIRED_LIST,
@@ -33,13 +35,14 @@ from models.entities import (
     RETIREMENT_INJURY_MIN_AGE,
     RETIREMENT_MIN_AGE,
     Athlete,
+    Coach,
     RetiredAthlete,
     SeasonPhase,
     Specialty,
 )
 from models.generator import SPECIALTY_COACH_FOCUS, generate_initial_roster
 from models.personal_bests import record_best
-from models.simulation import advance_week, apply_weekly_training, retire_veterans
+from models.simulation import advance_week, apply_weekly_training, ex_champion_fans, retire_veterans
 from tests.test_assignments import make_state
 
 
@@ -310,6 +313,64 @@ class TestSeasonChangeTick(unittest.TestCase):
             return [r.name for r in s.retired]
 
         self.assertEqual(run(), run())
+
+
+class TestExChampionCoach(unittest.TestCase):
+    """Q28c: l'ex campione allenatore porta fan agli atleti che allena."""
+
+    def setUp(self) -> None:
+        self.state = make_state(3)
+        self.ex = RetiredAthlete(
+            name="Ex Campione", gender="M", specialty=Specialty.SPRINTS, age=35, season=1, reason=REASON_AGE,
+            coach_skills={"speed": 70, "technique": 60}, became_coach=True,
+        )
+        self.state.retired = [self.ex]
+        self.coach = Coach(id=77, name="Ex Campione", specialty=Specialty.SPRINTS, skills={"speed": 70, "technique": 60})
+        self.state.coaches.append(self.coach)
+        self.a, self.b = self.state.athletes[0], self.state.athletes[1]
+        self.a.coach_id, self.b.coach_id = 77, None
+        self.a.fans = self.b.fans = 100
+
+    def test_only_athletes_of_the_ex_champion_gain_fans(self) -> None:
+        notes = ex_champion_fans(self.state)
+        self.assertEqual((self.a.fans, self.b.fans), (100 + EX_CHAMPION_FAN_BONUS, 100))
+        self.assertEqual(len(notes), 1)
+
+    def test_no_bonus_if_the_coach_was_fired(self) -> None:
+        self.state.coaches.remove(self.coach)
+        self.assertEqual(ex_champion_fans(self.state), [])
+        self.assertEqual(self.a.fans, 100)
+
+    def test_no_bonus_for_an_ex_athlete_who_did_not_become_coach(self) -> None:
+        self.ex.became_coach = False
+        self.assertEqual(ex_champion_coaches(self.state.retired, self.state.coaches), [])
+        self.assertEqual(ex_champion_fans(self.state), [])
+
+    def test_no_bonus_for_an_ordinary_coach(self) -> None:
+        self.state.retired = []
+        self.assertEqual(ex_champion_fans(self.state), [])
+        self.assertEqual(self.a.fans, 100)
+
+    def test_season_change_applies_it_once_in_the_tick(self) -> None:
+        def run(with_ex: bool):
+            state = make_state(3)
+            state.week, state.season_phase = 36, SeasonPhase.INDOOR
+            for a in state.athletes:
+                a.age, a.coach_id, a.fans = 24, None, 0
+            if with_ex:
+                state.retired = [dataclasses.replace(self.ex)]
+                state.coaches.append(dataclasses.replace(self.coach))
+                state.athletes[0].coach_id = 77
+            report = advance_week(state, rng=random.Random(4))
+            self.assertIsNotNone(report.season_end)
+            return state
+
+        with_ex, control = run(True), run(False)
+        # Stesso seme, stesse gare: la sola differenza è il bonus, una volta sola (non a ogni settimana).
+        self.assertEqual(with_ex.athletes[0].fans, control.athletes[0].fans + EX_CHAMPION_FAN_BONUS)
+        self.assertEqual(with_ex.athletes[1].fans, control.athletes[1].fans)
+        self.assertTrue(any("ex campione" in line for line in with_ex.news_log))
+        self.assertFalse(any("ex campione" in line for line in control.news_log))
 
 
 class TestPersistence(unittest.TestCase):

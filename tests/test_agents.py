@@ -23,12 +23,14 @@ from models.agents import (
     penalize_idle_athletes,
     prune_idle_agents,
     raced_names,
+    refusal_text,
 )
 from models.database import DatabaseManager
 from models.entities import (
     AGENT_FEE_MARKUP,
     AGENT_MAX_IDLE,
     AGENT_PERSONALITY_WEIGHTS,
+    AGENT_REFUSE_BELOW,
     AGENT_RELATION_FEE_SPAN,
     AGENT_RELATION_IDLE,
     AGENT_RELATION_NOT_RENEWED,
@@ -230,6 +232,35 @@ class TestRelation(unittest.TestCase):
         state.event_lineup_f = {e: None for e in state.event_lineup_f}
         advance_week(state, rng=random.Random(5))
         self.assertTrue(all(ag.relation == 40 for ag in state.agents))
+
+
+class TestRefusal(unittest.TestCase):
+    """Q29c: sotto `AGENT_REFUSE_BELOW` l'agente non tratta."""
+
+    def test_threshold_is_strict(self) -> None:
+        self.assertTrue(agent(REA, AGENT_REFUSE_BELOW - 1).refuses_to_deal)
+        self.assertFalse(agent(REA, AGENT_REFUSE_BELOW).refuses_to_deal)
+        self.assertFalse(agent(REA).refuses_to_deal)
+
+    def test_it_does_not_depend_on_personality(self) -> None:
+        self.assertTrue(all(agent(p, 0).refuses_to_deal for p in (AGG, REA, LOY)))
+
+    def test_releasing_clients_can_get_there_and_the_drift_brings_the_agent_back(self) -> None:
+        state = GameState(agents=[agent(REA, AGENT_RELATION_START)])
+        for _ in range(4):  # 50 → 10 con 4 svincoli (-10 ciascuno)
+            adjust_relation(state, 1, -10)
+        self.assertTrue(state.agents[0].refuses_to_deal)
+        seasons = 0
+        while state.agents[0].refuses_to_deal:
+            drift_relations(state)
+            seasons += 1
+        self.assertEqual(seasons, 1)  # 10 → 20 (un quarto di 40, per eccesso)
+
+    def test_the_message_names_the_agent_and_the_athlete(self) -> None:
+        a = make_state(1).athletes[0]
+        text = refusal_text(agent(REA, 5), a)
+        self.assertIn("Gigi Agente", text)
+        self.assertIn(a.name, text)
 
 
 class TestDrift(unittest.TestCase):

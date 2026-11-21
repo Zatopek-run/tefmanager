@@ -453,6 +453,9 @@ RETIRED_COACH_SKILL_MIN = 55  # abilità principale e secondaria dall'attributo 
 RETIRED_COACH_SKILL_MAX = 85
 RETIRED_COACH_SECONDARY_GAP = 10  # la secondaria vale meno della principale, come in `coach_hire_skills`
 MAX_RETIRED_LIST = 100  # ex atleti ricordati (i più recenti)
+# Ex campione allenatore (Q28c, 2026-11-21): a ogni cambio stagione ogni atleta allenato da un ex atleta della società
+# (assunto da «Ex atleti») riceve questi fan in più. CIFRA PROVVISORIA mia. Nessun RNG.
+EX_CHAMPION_FAN_BONUS = 20
 # Agenti (D.1). CIFRE PROVVISORIE (QUESTIONS Q29). Un agente cura più atleti (relazione condivisa, 0-100, parte da 50).
 # La richiesta sull'ingaggio al tesseramento è un +% secondo la personalità, spostato dalla relazione: a 50 nessuna
 # modifica, a 100 −AGENT_RELATION_FEE_SPAN, a 0 +AGENT_RELATION_FEE_SPAN (punti percentuali, non relativi).
@@ -477,6 +480,9 @@ FIRST_OUTDOOR_DATE = date(2026, 4, 6)  # data della prima settimana di Outdoor: 
 # A ogni cambio stagione la relazione si avvicina a quella neutra di questa frazione della distanza: senza, in autopilota
 # (podi e rinnovi automatici) tutti gli agenti arrivavano a 100 entro la quarta stagione e la relazione non diceva più nulla.
 AGENT_RELATION_DRIFT = 0.25
+# Q29c (2026-11-21): sotto questa relazione l'agente RIFIUTA di trattare con la società (nessun tesseramento di un suo atleta dal
+# mercato). La deriva verso 50 a ogni cambio stagione lo fa tornare disponibile. CIFRA PROVVISORIA mia.
+AGENT_REFUSE_BELOW = 15
 # Trattative (D.2). CIFRE PROVVISORIE (QUESTIONS Q30). L'agente apre con la sua richiesta (D.1) e accetta un'offerta fino a
 # una soglia sotto di essa; la flessibilità dipende dalla personalità (`AGENT_FLEXIBILITY`) e dalla relazione. Un solo giro di
 # controfferta, nessuna estrazione casuale.
@@ -1064,6 +1070,11 @@ class Agent:
         """Frazione da aggiungere all'ingaggio standard: personalità + relazione (a 100 −15 punti, a 0 +15)."""
         trust = (AGENT_RELATION_START - self.relation) / AGENT_RELATION_START
         return AGENT_FEE_MARKUP[self.personality] + AGENT_RELATION_FEE_SPAN * trust
+
+    @property
+    def refuses_to_deal(self) -> bool:
+        """Con una relazione sotto `AGENT_REFUSE_BELOW` l'agente non tratta più (Q29c)."""
+        return self.relation < AGENT_REFUSE_BELOW
 
     @property
     def relation_label(self) -> str:

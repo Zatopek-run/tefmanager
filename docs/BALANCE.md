@@ -239,6 +239,7 @@ Misura in autopilota (30 partite, Provinciale): piazzamento centrato 0%, bilanci
 | `RETIRED_COACH_SKILL_MIN` / `_MAX` | 55-85: abilità principale e secondaria dagli attributi dell'atleta | `entities.py` |
 | `RETIRED_COACH_SECONDARY_GAP` | 10: la secondaria vale 10 meno della principale (come `coach_hire_skills`) | `entities.py` |
 | `MAX_RETIRED_LIST` | 100 ex atleti ricordati | `entities.py` |
+| `EX_CHAMPION_FAN_BONUS` | +20 fan a ogni atleta allenato da un ex campione della società, a ogni cambio stagione (Q28c, cifra mia) | `entities.py` |
 
 Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 16 a 3-8 atleti, 8-13 ritirati, 0-1 offerte da allenatore vive per stagione (Q28, AUDIT R24).
 
@@ -256,6 +257,7 @@ Misura in autopilota (6 partite, 8 stagioni, nessun acquisto): Prima Squadra da 
 | `AGENT_RELATION_NOT_RENEWED` | −5 per atleta non rinnovato che lascia | `entities.py` |
 | `AGENT_RELATION_IDLE` | −2 per atleta della Prima Squadra mai convocato in una stagione («resta fermo»): né gara individuale né staffetta in formazione | `entities.py` |
 | `SEASON_WEEKS` | 36 settimane per stagione (3 fasi da 12; la settimana è continua): serve a ritrovare le gare di una stagione nello storico | `entities.py` |
+| `AGENT_REFUSE_BELOW` | 15: sotto questa relazione l'agente rifiuta di trattare (tesseramento dal mercato; Q29c, cifra mia) | `entities.py` |
 | `AGENT_RELATION_DRIFT` | 0,25: a ogni cambio stagione la relazione chiude un quarto della distanza da 50 (passo minimo 1 punto: arrotondato per eccesso) | `entities.py` |
 | `AGENT_NEW_SLOTS` | 2: un atleta nuovo va a un agente noto o ne ha uno nuovo con probabilità slot/(agenti+slot) | `entities.py` |
 | `AGENT_MAX_IDLE` | 20 agenti senza clienti ricordati al massimo | `entities.py` |

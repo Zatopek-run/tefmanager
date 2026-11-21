@@ -294,6 +294,7 @@ nella lista **«Ex atleti»** della scheda *Albo & Record* (gli ultimi 100, con 
 pulsante **«Assumi come allenatore»** lo ingaggia a **€750** (ridotto: ex atleta della casa; un allenatore di livello 1 ne costa 1.500), con le solite regole (un allenatore a settimana, massimo 6 specializzati). Le sue
 abilità vengono dagli **attributi che aveva da atleta**, non dal PB: principale e secondaria della sua disciplina (come per gli altri allenatori) limitate a 55-85, la secondaria 10 punti sotto, le altre al livello base 25.
 L'offerta **scade al cambio stagione successivo**.
+**Ex campione allenatore (Q28c):** a ogni cambio stagione ogni atleta allenato da un ex atleta della società riceve **+20 fan** (`EX_CHAMPION_FAN_BONUS`, una notizia); se lo si licenzia il bonus finisce. Il legame è il nome (nessuno schema nuovo).
 
 **Conseguenza di gioco:** nessuno rimpiazza chi si ritira da solo; si rimpiazza con il vivaio (promozione a 18 anni), lo scouting e il mercato. Un club in autopilota (nessun acquisto, 6 partite, 8 stagioni) passa da
 16 atleti a 3-8 (AUDIT R24).
@@ -307,6 +308,8 @@ giocatore con l'agente, non con il singolo atleta. L'agente ha nome di fantasia 
 **Dove agisce oggi:** solo sull'**ingaggio una tantum** del Mercato svincolati (`negotiated_fee` = ingaggio standard × (1 + personalità + relazione)). La finestra del mercato mostra una colonna **Agente** (nome, personalità, relazione;
 il tooltip dà la percentuale chiesta) e il costo già con la richiesta dell'agente. Il rimborso spese settimanale non cambia (R14), e il vivaio non ha ingaggio. La scheda atleta mostra l'agente nella riga **Agente**.
 Con D.2 la stessa richiesta è l'apertura della trattativa (§5.18).
+
+**Rifiuto (Q29c):** con una relazione **sotto 15** l'agente **rifiuta di trattare**: dal Mercato svincolati non si può tesserare nessun suo atleta (la colonna Agente dice «RIFIUTA», il pulsante mostra un avviso e non apre la trattativa). Si recupera con rinnovi e podi dei suoi altri atleti e con la deriva verso 50 a ogni cambio stagione. Non vale per il vivaio e per i ragazzi dello scouting (gratuiti) né per i rinnovi automatici.
 
 **Come cambia la relazione:** **+3** per ogni suo atleta che alla scadenza del contratto viene rinnovato, **+1** per ogni **podio** (1°-3°) in una gara individuale di un suo atleta (le staffette non contano); **−10** se si
 **svincola** un atleta della Prima Squadra (peggiora anche con i suoi altri assistiti), **−5** per ogni atleta non rinnovato che lascia la società, **−2** per ogni atleta della Prima Squadra che **resta fermo** (mai convocato

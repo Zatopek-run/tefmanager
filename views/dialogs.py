@@ -52,7 +52,7 @@ from models.entities import (
     coach_hire_skills,
     coach_weekly_wage,
 )
-from models.agents import negotiated_fee
+from models.agents import negotiated_fee, refusal_text
 from models.generator import LAZIO_PROVINCES
 from models.market import Negotiation, NegotiationState, Terms
 from models.glory import GloryMoment
@@ -512,7 +512,8 @@ class RecruitAthleteDialog(QDialog):
     def _agent_text(agent: Optional[Agent]) -> str:
         if agent is None:
             return "—"
-        return f"{agent.name} · {agent.personality.value} ({agent.relation})"
+        text = f"{agent.name} · {agent.personality.value} ({agent.relation})"
+        return text + " · RIFIUTA" if agent.refuses_to_deal else text
 
     @staticmethod
     def _agent_tooltip(prospect: Athlete, agent: Agent) -> str:
@@ -520,6 +521,7 @@ class RecruitAthleteDialog(QDialog):
         return (
             f"Agente {agent.name}: {agent.personality.value}, relazione {agent.relation}/100 ({agent.relation_label}).\n"
             f"Chiede il {pct:+d}% sull'ingaggio standard di {prospect.name}."
+            + ("\nRifiuta di trattare finché la relazione resta sotto la soglia." if agent.refuses_to_deal else "")
         )
 
     def _update_comparison(self) -> None:
@@ -562,6 +564,9 @@ class RecruitAthleteDialog(QDialog):
             return
         prospect = self.prospects[rows[0].row()]
         agent = self._agent(prospect)
+        if agent is not None and agent.refuses_to_deal:  # Q29c: relazione troppo bassa, non si apre nemmeno la trattativa
+            QMessageBox.warning(self, "Agente indisponibile", refusal_text(agent, prospect))
+            return
         if agent is not None:  # D.2: con un agente si tratta (richiesta, offerta, controfferta)
             terms = self._negotiate(prospect, agent)
             if terms is None:

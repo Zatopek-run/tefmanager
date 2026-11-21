@@ -81,7 +81,7 @@ from models.scouting import (
     scout_candidates,
     scout_severance,
 )
-from models.agents import adjust_relation, assign_agent, ensure_agents, prune_idle_agents
+from models.agents import adjust_relation, assign_agent, ensure_agents, prune_idle_agents, refusal_text
 from models.market import Terms, is_valid_terms, opening_terms
 from models.generator import (
     build_default_lineup,
@@ -569,6 +569,9 @@ class GameController(QObject):
         """Tessera un atleta del mercato. Senza `terms` si paga la richiesta dell'agente (D.1); con le condizioni di una
         trattativa (D.2: ingaggio e bonus record) si verifica che siano davvero ottenibili da quell'agente."""
         agent = assign_agent(self.state, prospect)
+        if agent.refuses_to_deal:  # Q29c: relazione troppo bassa, l'agente non tratta
+            self.status_message.emit(refusal_text(agent, prospect))
+            return False
         if terms is None:
             terms = opening_terms(prospect, agent)  # D.1: ingaggio chiesto dall'agente, nessun bonus
         elif not is_valid_terms(prospect, agent, terms):

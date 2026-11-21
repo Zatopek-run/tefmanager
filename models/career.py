@@ -13,7 +13,7 @@ le estrazioni le fa `simulation.retire_veterans`, qui ci sono solo le regole pur
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 from models.entities import (
     COACH_BASE_SKILL,
@@ -28,6 +28,7 @@ from models.entities import (
     RETIREMENT_INJURY_MIN_AGE,
     RETIREMENT_MIN_AGE,
     Athlete,
+    Coach,
     RetiredAthlete,
 )
 from models.personal_bests import summary_text
@@ -86,3 +87,14 @@ def make_retired(athlete: Athlete, season: int, reason: str, coach_offer: bool) 
         coach_skills=coach_skills_from_athlete(athlete) if coach_offer else {},
         coach_offer=coach_offer,
     )
+
+
+def ex_champion_coaches(retired: List[RetiredAthlete], coaches: List[Coach]) -> List[Coach]:
+    """Gli allenatori in forza che sono ex atleti della società (assunti da «Ex atleti»).
+
+    Il legame è il nome: `Coach` non porta un riferimento all'ex atleta (nessun cambio di schema). Se l'allenatore
+    è stato licenziato non è più in `coaches` e non conta; un omonimo di un altro allenatore conterebbe, ma i nomi
+    dei candidati vengono dal generatore e un ex atleta ha il nome del suo `Athlete`.
+    """
+    names = {r.name for r in retired if r.became_coach}
+    return [c for c in coaches if c.name in names]

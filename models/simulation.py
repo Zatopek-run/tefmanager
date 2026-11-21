@@ -22,6 +22,7 @@ from models.entities import (
     COACH_COMFORT_LOAD,
     COACH_NO_COACH_MULT,
     MAX_RETIRED_LIST,
+    EX_CHAMPION_FAN_BONUS,
     RETIRED_COACH_CHANCE,
     RetiredAthlete,
     RELAY_DQ_MARK,
@@ -121,7 +122,7 @@ from models.finances import (
     tv_rights_income,
 )
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
-from models.career import make_retired, retirement_chance
+from models.career import ex_champion_coaches, make_retired, retirement_chance
 from models.diamond import diamond_meet_name, is_diamond_meet
 from models.personal_bests import best_value, is_improvement, record_best
 from models.ranking import (
@@ -1783,6 +1784,18 @@ def retire_veterans(state: GameState, rng: random.Random) -> List[str]:
     return notes
 
 
+def ex_champion_fans(state: GameState) -> List[str]:
+    """Q28c, al cambio stagione dopo `retire_veterans`: ogni atleta allenato da un ex campione della società riceve
+    `EX_CHAMPION_FAN_BONUS` fan. Nessun RNG. Ritorna la notizia (una sola, vuota se nessuno ne beneficia)."""
+    ids = {c.id for c in ex_champion_coaches(state.retired, state.coaches)}
+    boosted = [a for a in state.athletes if a.coach_id in ids]
+    for a in boosted:
+        a.fans += EX_CHAMPION_FAN_BONUS
+    if not boosted:
+        return []
+    return [f"Sett. {state.week}: l'allenatore ex campione porta nuovi tifosi a {len(boosted)} atleti (+{EX_CHAMPION_FAN_BONUS} ciascuno)."]
+
+
 def _remove_athletes_from_assignments(
     state: GameState, leaving: List[Athlete], announce: bool = True
 ) -> List[str]:
@@ -1967,6 +1980,7 @@ def advance_week(
             drift_relations(state)  # D.1: le relazioni con gli agenti si raffreddano verso il neutro (nessun RNG)
             penalize_idle_athletes(state, state.season_number - 1)  # D.1: chi non ha mai gareggiato (nessun RNG)
             state.news_log[0:0] = retire_veterans(state, r)  # ritiro e post-carriera (C.3)
+            state.news_log[0:0] = ex_champion_fans(state)  # Q28c: fan degli atleti dell'ex campione allenatore (nessun RNG)
             state.news_log[0:0] = renew_expiring_contracts(state)
             for line in renew_rivals_for_season(state, r):
                 state.news_log.insert(0, line)

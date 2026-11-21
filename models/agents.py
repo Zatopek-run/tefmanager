@@ -113,6 +113,14 @@ def negotiated_fee(athlete: Athlete, agent: Optional[Agent]) -> int:
     return max(1, round(base * (1 + agent.fee_modifier)))
 
 
+def refusal_text(agent: Agent, prospect: Athlete) -> str:
+    """Messaggio quando l'agente rifiuta di trattare (Q29c)."""
+    return (
+        f"{agent.name} rifiuta di trattare per {prospect.name}: la relazione è troppo bassa ({agent.relation}/100). "
+        "Si ricuce con rinnovi e podi dei suoi atleti, e si raffredda verso il neutro a ogni cambio stagione."
+    )
+
+
 def adjust_relation(state: GameState, agent_id: Optional[int], delta: int) -> Optional[Agent]:
     """Sposta la relazione con un agente, tra 0 e 100. Non fa nulla se l'agente non esiste."""
     agent = agent_by_id(state, agent_id)
