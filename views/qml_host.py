@@ -56,7 +56,7 @@ def theme_tokens(animations: Optional[bool] = None) -> Dict[str, Any]:
         "bg": theme.BG, "bgRaised": theme.BG_RAISED, "surface": theme.SURFACE, "surface2": theme.SURFACE_2,
         "border": theme.BORDER, "borderStrong": theme.BORDER_STRONG, "text": theme.TEXT, "textMuted": theme.TEXT_MUTED,
         "textFaint": theme.TEXT_FAINT, "accent": theme.ACCENT, "accentDim": theme.ACCENT_DIM, "good": theme.GOOD,
-        "warn": theme.WARN, "bad": theme.BAD, "info": theme.INFO,
+        "warn": theme.WARN, "bad": theme.BAD, "info": theme.INFO, "orange": theme.ORANGE,
         "fsXs": theme.FS_XS, "fsSm": theme.FS_SM, "fsMd": theme.FS_MD, "fsLg": theme.FS_LG, "fsXl": theme.FS_XL, "fsXxl": theme.FS_XXL,
         "sp1": theme.SP_1, "sp2": theme.SP_2, "sp3": theme.SP_3, "sp4": theme.SP_4, "sp5": theme.SP_5, "sp6": theme.SP_6,
         "radiusSm": theme.RADIUS_SM, "radiusMd": theme.RADIUS_MD, "radiusLg": theme.RADIUS_LG,

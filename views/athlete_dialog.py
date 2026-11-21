@@ -29,6 +29,7 @@ from models.entities import RANKING_HOME_NATION, RANKING_WORLD_SIZE, Athlete, Pe
 from models.ranking import athlete_rankings
 from models.relationships import is_friend, is_rival, relation_label, relations_of
 from models.simulation import body_fit_score
+from views.athlete_stats_qml import AthleteStatsView
 from views.dialogs import release_question_text
 
 SPECIALTY_COLORS = {
@@ -105,7 +106,7 @@ class AthleteDetailDialog(QDialog):
         self.controller = controller
         self.athlete_id = athlete_id
         self.released = False
-        self.setMinimumSize(860, 780)  # la scheda anagrafica ha 17 righe (agente e clausola comprese)
+        self.setMinimumSize(1080, 780)  # la scheda anagrafica ha 17 righe (agente e clausola comprese)
 
         athlete = self._athlete()
         self.setWindowTitle(f"Scheda Atleta — {athlete.name if athlete else ''}")
@@ -155,6 +156,7 @@ class AthleteDetailDialog(QDialog):
         actions.addStretch()
         root.addLayout(actions)
 
+        self._stats_view = AthleteStatsView(self)  # G.2: parte grafica in QML, una sola per dialogo (riusata a ogni refresh)
         self.refresh()
 
     # ------------------------------------------------------------------ dati
@@ -333,9 +335,14 @@ class AthleteDetailDialog(QDialog):
         left.addWidget(info)
         left_w = QWidget()
         left_w.setLayout(left)
-        left_w.setFixedWidth(250)
+        left_w.setFixedWidth(300)  # con Inter (più largo del font di prima) 250 tagliava i valori lunghi, come «Contratto»
         body.addWidget(left_w)
 
+        if not self._stats_view.failed:  # G.2: radar, potenziale, condizione, caratteristiche, ultime gare, confronto (QML)
+            self._stats_view.set_athlete(self.controller.state, a)
+            body.addWidget(self._stats_view, stretch=1)
+            return page
+        # ripiego (QML non parte): le tre colonne di prima
         # tre colonne di caratteristiche
         body.addWidget(
             _StatColumn(

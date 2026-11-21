@@ -27,6 +27,7 @@ GOOD = "#34d399"
 WARN = "#fbbf24"
 BAD = "#f87171"
 INFO = "#60a5fa"
+ORANGE = "#fb923c"  # terzo livello delle caratteristiche (tra giallo e rosso)
 
 # ---- Scala tipografica (pixel) e pesi
 FONT_FAMILY = "Inter"

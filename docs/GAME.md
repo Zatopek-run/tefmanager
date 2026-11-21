@@ -364,6 +364,11 @@ Cinque eventi aprono un **popup celebrativo** (finestra dorata con dissolvenza d
 
 La **Dashboard** («Panoramica») si ridisegna con il design system del Lotto G (`views/theme.py`, font Inter incluso) ed è ora in **QML** (`views/qml/`; animazioni di ingresso, linea del grafico che si disegna, suggerimenti a comparsa; con ripiego sulla versione QWidget se QML non parte). In alto un **semaforo** (rosso: dilemma da risolvere o urgenza; ambra: c'è da guardare; verde: tutto ok) e i quattro indicatori; poi il **grafico di forma e fatica medie della Prima Squadra** (ultime 12 settimane, con valori al passaggio del mouse), gli obiettivi con spunte vere, la **timeline della stagione** (una casella per settimana, gare in rilievo, Preparazione tratteggiata, «oggi», contratti in scadenza), la **heat map** dei migliori 8 atleti sulle gare della fase (punteggio atteso, anello sulla specialità), le priorità, la tabella dei migliori con stato a «pillola» e la cronaca. Lo **storico** che alimenta i grafici (forma, fatica e ultime 10 gare per atleta) si scrive a fine tick e a ogni gara individuale, **senza RNG e senza effetti sul gioco**; le partite già in corso lo riempiono giocando. `models/history.py`, `models/dashboard.py`, `views/widgets.py`.
 
+
+### 5.25 Scheda atleta potenziata (G.2, 2026-11-21; `QUESTIONS.md` Q40)
+
+La tab «Panoramica» della **Scheda Atleta** ha una parte grafica in QML: **radar** delle cinque caratteristiche (con la media dei compagni di disciplina tratteggiata), **barra verso il potenziale** («mancano N punti»), **condizione** (forma, fatica, sonno, alimentazione) e **caratteristiche** a barre colorate per livello (verde da 80, giallo da 65, arancione da 45, rosso sotto; la fatica si legge al contrario), **ultime 10 gare** come linea del piazzamento (vittorie, primati e ritiri segnati) e **confronto** con gli atleti della stessa disciplina in rosa. L'anagrafica a sinistra e le azioni in basso sono QWidget come prima. Solo presentazione: nessun effetto sul gioco. `models/athlete_view.py`.
+
 ---
 
 ## 6. Categorie: parametri principali

@@ -422,3 +422,5 @@ Nessun RNG e nessuna modifica allo schema. Costanti in `entities.py`, logica in 
 | `HEATMAP_SCORE_LOW` / `HEATMAP_SCORE_HIGH` | 40 / 80 | punteggio atteso che colora la cella di freddo / di caldo (scala dei rivali: 42 provinciale, 56 regionale, 70 nazionale, 84 internazionale) |
 | `HEATMAP_ATHLETES` | 8 | righe della heat map: i migliori per valore complessivo |
 
+| `STAT_LEVEL_GREAT` / `STAT_LEVEL_GOOD` / `STAT_LEVEL_MID` | 80 / 65 / 45 | scheda atleta (G.2): soglie dei livelli di una caratteristica (verde / giallo / arancione / rosso), le stesse del badge di prima; la fatica si legge al contrario |
+

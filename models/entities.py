@@ -344,6 +344,11 @@ HISTORY_WEEKS = 12
 HEATMAP_SCORE_LOW = 40.0
 HEATMAP_SCORE_HIGH = 80.0
 HEATMAP_ATHLETES = 8
+# Scheda atleta (G.2, solo presentazione): soglie dei livelli di una caratteristica 0-100 (stesse del badge a colori di prima: 80 / 65 / 45).
+# Il livello decide il colore della barra: `great` verde, `good` giallo, `mid` arancione, `low` rosso. Per la fatica (meno è meglio) si inverte.
+STAT_LEVEL_GREAT = 80
+STAT_LEVEL_GOOD = 65
+STAT_LEVEL_MID = 45
 HISTORY_RESULTS = 10
 # Rimborso spese settimanale di un atleta di Prima Squadra: base + overall × WAGE_PER_OVERALL, tra WAGE_MIN e WAGE_MAX.
 # (prima 100|80 + overall × 4,2, tra 95 e 950: -45%). Vale per gli atleti creati o promossi da ora: i salvataggi
