@@ -446,14 +446,15 @@ Anche le azioni UI (scouting, mercato, allenatori) consumano lo stesso RNG. Rego
 ## 11. Test e comandi
 
 ```bash
-.venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller
+.venv/bin/pip install -r requirements.txt                                   # PyQt6, pyinstaller, qtawesome
 .venv/bin/python main.py                                                    # avvia l'app (o ./TrackAndFieldManager.sh)
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 829 test, ~39 s su Linux
-PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m -v   # 99 test, SENZA PyQt6
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v # 970 test, ~75 s su Linux
+PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments tests.test_contracts tests.test_event_800m tests.test_history tests.test_dashboard_data tests.test_dashboard_snapshot tests.test_athlete_view -v   # 162 test, SENZA PyQt6
 ```
 
 `python` non è nel PATH dell'ambiente di sviluppo (si usa `.venv/bin/python`, Python 3.14.4). I test GUI usano `QT_QPA_PLATFORM=offscreen` e **non chiamano mai `exec()` di dialoghi modali** (bloccherebbero per sempre).
 `test_migrations.py` genera fixture programmaticamente (una per ogni versione v2…v8), verifica migrazione, backup, rollback su fallimento a metà (E1), rifiuto delle versioni ignote (E2).
+Le viste QML hanno test che falliscono su **qualunque avviso del motore QML** (`QmlHost.warnings` e messaggi Qt da file `.qml`): `test_dashboard_qml.py`, `test_athlete_qml.py`, `test_race_live.py`. Il backend di Qt Quick in offscreen è quello software (niente effetti a shader) e `Canvas` carica la texture in modo asincrono: prima di `grab()` serve `QTest.qWait(300)`. `test_design_system.py` controlla stile dai token, icone e adattamento delle tabelle.
 `test_game.py` copre simulazione, curve di movimento, viste in ogni stato (intercetta eccezioni di disegno, **non** giudica l'aspetto), migrazioni dei vecchi salvataggi e il click su uno slot non supportato (in un processo a parte: fallisce se l'app muore).
 
 ---
@@ -467,6 +468,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
   Q20 DQ 4x400m, Q21 bonus Picco, Q22 € / rimborsi / contratti (schema v10 e v11). La Q19 (punteggi tabellari WA) è rinviata.
 - ✅ **Lotti A e B** del piano di gameplay (`PIANOLAVORO.md`) e **C.1** (ranking, 2026-11-20; resta **C.1b**, gli inviti Diamond League, da decidere). **C.2** (obiettivi del Board ed esonero, 2026-11-20; cifre da confermare, Q27). **C.3** (ritiro e post-carriera, 2026-11-20; cifre da confermare, Q28). **D.1** (agenti con personalità e relazione, 2026-11-20; cifre da confermare, Q29). **D.2** (trattative, clausola rescissoria, bonus per record, 2026-11-20; cifre da confermare, Q30). **D.3** (finanze dettagliate: bilancio mensile, merchandising, sponsor con obiettivo, diritti TV, 2026-11-20; cifre da confermare, Q31): **lotto D chiuso**. Prossimo: lotto E (staff e impianti).
 - ✅ **Lotto E** (2026-11-20/21): **E.1** staff con attributi e mercato dello staff (Q33), **E.2** impianti avanzati (schema v23, Q34), **E.3** Academy, osservatore e rete scouting (schema v24, Q35). **Lotto F** (chiuso, con i limiti di Q39): **F.1** notizie dinamiche (Q36), **F.2** conferenze stampa (Q37), **F.3** relazioni tra atleti (Q38, schema v25) e **F.4** momenti di gloria (Q39). Cifre provvisorie in `BALANCE.md` §R-§U.
+- ✅ **Lotto G** (UI/UX, 2026-11-21): **G.1** Dashboard (storico per atleta, schema v26, passo 21d del tick), **G.2** Scheda Atleta (parte grafica), **G.3** tabellone live della gara (**replay in PyQt non fatto**) e **design system esteso a tutta l'interfaccia** (foglio di stile dai token, icone, tabelle adattate). Scelta dell'utente: **viste QML** per le schermate da colpo d'occhio, tabelle e moduli di gestione restano QWidget; nuove dipendenze ammesse (aggiunta `qtawesome`). `QUESTIONS.md` Q40, `AUDIT.md` R37-R41.
 - ⏳ **1.3** il tick non lascia stato a metà (snapshot e ripristino su eccezione, riepilogo del tick fallito): proposto, in attesa di decisione dell'utente su 5 punti.
 - Fatti il 2026-11-20 dentro `PIANOLAVORO.md` (lotto A): **1.4** protezione dal doppio click (A.5), **3.1** dilemma chiuso senza scelta (A.4) e **3.3** spareggio (A.2). **2.1/2.2** RNG salvato e niente `hash()` (A.3). Poi: 3.x regole (spareggio, debito azzerato dai dilemmi…); 4.x economia; 5.x (modulo di bilanciamento `models/balance.py`, test di simulazione senza Qt, `race_export` senza dipendere da `views/`); 6.x UI.
 
@@ -491,6 +493,7 @@ PYTHONPATH=. python3 -m unittest tests.test_migrations tests.test_assignments te
 | Mercato (R18) | Pool e scouting solo in memoria. |
 | `hash()` (R17) | Salato per processo nella fascia del potenziale mostrata nel mercato. |
 | Tick (T1-T11) | Dettaglio dei punti d'ordine sospetti in `TICK.md` §E. |
+| Interfaccia G (R37-R41) | QML provato solo su Wayland+OpenGL e offscreen (Windows/macOS no); animazioni e mouse reale non visti; due Dashboard da mantenere (QML + ripiego QWidget); pacchetto PyInstaller non provato (font, `views/qml`, `qtawesome`); replay in PyQt non fatto; stili inline residui nelle schede. |
 
 Le decisioni di design aperte (parte delle 22 domande, es. «che cosa è il fallimento», «dove vivono le costanti di bilanciamento») sono in `docs/QUESTIONS.md` e **spettano all'utente**.
 

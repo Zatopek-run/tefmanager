@@ -134,4 +134,5 @@ Ordine: 1 sicurezza save → 2 determinismo → 3 ambiguità di regole → 4 eco
 - **File:** `views/tabs.py`, `views/main_window.py`: soglia di fatica 75 (5 punti) e «36 settimane» (`tabs.py:396-397`) da costanti del modello. **Rischio:** basso. **Accettazione:** nessun letterale duplicato.
 
 ### Lotto 6.3 — Aggiornare il README
+- ✅ **Aggiornato in parte il 2026-11-21** (struttura, dipendenze, schema v26, interfaccia del Lotto G, comandi di PyInstaller); le sezioni sulle divisioni M/F, multi-slot e ingaggio non sono state riviste.
 - **Obiettivo:** allineare il README al codice (versione v9, struttura, divisioni M/F, multi-slot, ingaggio vs stipendio, Cross/Indoor come etichette). **Rischio:** nullo, ma **fuori** da questa sessione di ricognizione. **Dipende da:** QUESTIONS 14.

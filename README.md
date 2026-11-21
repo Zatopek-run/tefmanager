@@ -7,7 +7,9 @@ A standalone desktop athletics management simulation built with **Python**, **Py
 ```text
 tefmanager/
 ├── main.py                        # Application entry point
-├── requirements.txt               # Dependencies (PyQt6, PyInstaller)
+├── requirements.txt               # Dependencies (PyQt6, PyInstaller, qtawesome)
+├── assets/fonts/                  # Inter (SIL OFL) + licenza
+├── docs/                          # GAME, AUDIT, TICK, BALANCE, QUESTIONS, PLAN, PIANOLAVORO
 ├── models/
 │   ├── __init__.py
 │   ├── entities.py                # GameState, Athlete, Events, Tiers, Enums
@@ -19,13 +21,20 @@ tefmanager/
 │   └── game_controller.py         # Qt signal controller coordinating Model & Views
 ├── views/
 │   ├── __init__.py
-│   ├── styles.py                  # Dark sports-management QSS theme
+│   ├── theme.py                   # Design system: colori, tipografia, spaziature, font Inter (unica fonte)
+│   ├── styles.py                  # Foglio di stile GENERATO dai token di theme.py
+│   ├── icons.py, table_fit.py     # Icone (qtawesome) e colonne delle tabelle adattate al contenuto
+│   ├── widgets.py                 # Widget grafici QPainter (grafico, heat map, timeline, badge)
+│   ├── qml_host.py, qml/          # Viste QML: ospite, token, componenti (Card, TrendChart, HeatMap, Radar, RaceBoard…)
+│   ├── dashboard_qml.py           # Dashboard in QML (ripiego: versione QWidget)
+│   ├── athlete_stats_qml.py       # Parte grafica della Scheda Atleta in QML
+│   ├── race_live.py, race_board_qml.py  # Tabellone live della gara in pista
 │   ├── dialogs.py                 # Risultati gara, Fine Stagione, Mercato, Assumi Allenatore, Dilemmi Etici, Nuova Partita
 │   ├── athlete_dialog.py          # Scheda Atleta (caratteristiche a colonne, allenamento, gare)
 │   ├── tabs.py                    # Dashboard, Rosa, Vivaio, Calendario & Gare, Staffette, Rivali, Staff & Impianto, Finanze
 │   └── main_window.py             # QMainWindow & HUD
 └── tests/
-    └── test_game.py               # Unit and offscreen PyQt6 smoke tests
+    └── test_*.py                  # 970 test: simulazione senza Qt, viste con QT_QPA_PLATFORM=offscreen
 ```
 
 ## Modalità Prototipo (Slice Verticale) & Carriera Completa
@@ -55,7 +64,9 @@ Meccaniche da gestionale di atletica online, adattate alla scala del gioco:
 
 - **Carriera e mercato (lotti C e D, cifre provvisorie)**: ranking mondiale, nazionale e delle società; obiettivi del Board (due stagioni fallite di fila = esonero); atleti che si ritirano a 33-35 anni o per infortuni e possono tornare come allenatori; **agenti** con personalità e relazione, **trattative** con un giro di controfferta, bonus per record e clausola rescissoria; **finanze** con bilancio mensile, merchandising, taglio dello sponsor dopo una stagione fuori dai primi 5 e diritti TV in Internazionale. Descrizione completa in `docs/GAME.md`.
 
-I salvataggi delle versioni precedenti (da v2 a v20) vengono migrati in automatico allo schema v21 (schema SQLite esteso con `ALTER TABLE`, con un backup verificato prima di ogni migrazione), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri e le partite senza rivali ricevono le società rivali.
+- **Interfaccia (lotto G)**: design system unico (`views/theme.py`: colori, tipografia Inter inclusa, spaziature) da cui nasce tutto il foglio di stile; barra laterale con icone; tabelle con colonne adattate al contenuto. **Dashboard** (semaforo delle notifiche, forma e fatica della rosa nelle ultime 12 settimane, timeline della stagione, heat map atleti × gare), **Scheda Atleta** (radar con la media dei compagni, barra verso il potenziale, ultime 10 gare, confronto nella disciplina) e **tabellone live** delle corse in pista (classifica che si riordina, velocità, distacchi) sono in **QML**. Se QML non parte la Dashboard ripiega sulla versione QWidget; `TEF_NO_QML=1` lo forza. Descrizione completa in `docs/GAME.md` (5.24-5.26).
+
+I salvataggi delle versioni precedenti (da v2 a v25) vengono migrati in automatico allo schema v26 (schema SQLite esteso con `ALTER TABLE`, con un backup verificato prima di ogni migrazione), senza perdere la partita; i vecchi coach "a ruolo" dello staff diventano allenatori veri e le partite senza rivali ricevono le società rivali.
 
 ## How to Run
 
@@ -80,8 +91,11 @@ I salvataggi delle versioni precedenti (da v2 a v20) vengono migrati in automati
 Run from the project root (`e:\Apps\tefmanager`):
 
 ```bash
-pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.py
+pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" \
+  --add-data "assets/fonts:assets/fonts" --add-data "views/qml:views/qml" main.py
 ```
+
+(su Windows `;` al posto di `:` in `--add-data`; **non verificato**: senza `assets/fonts` manca il font Inter, senza `views/qml` la Dashboard ripiega sulla versione QWidget, senza i font di `qtawesome` le icone sono vuote.)
 
 - `--onefile`: Bundles Python, PyQt6, and all modules into one `.exe` inside `dist/`.
 - `--windowed` (or `--noconsole`): Prevents a terminal console window from opening alongside the GUI.
@@ -91,5 +105,6 @@ pyinstaller --noconfirm --onefile --windowed --name "TrackAndFieldManager" main.
 If you prefer faster startup without onefile extraction overhead:
 
 ```bash
-pyinstaller --noconfirm --onedir --windowed --name "TrackAndFieldManager" main.py
+pyinstaller --noconfirm --onedir --windowed --name "TrackAndFieldManager" \
+  --add-data "assets/fonts:assets/fonts" --add-data "views/qml:views/qml" main.py
 ```
