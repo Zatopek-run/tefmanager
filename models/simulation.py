@@ -12,7 +12,6 @@ from models.entities import (
     DIAMOND_PRIZE_MULT,
     MONTH_WEEKS,
     SPONSOR_MISS_PENALTY,
-    SPONSOR_TOP_N,
     AGENT_RELATION_NOT_RENEWED,
     AGENT_RELATION_PODIUM,
     AGENT_RELATION_RENEWED,
@@ -119,6 +118,7 @@ from models.finances import (
     close_month_if_due,
     merchandising_income,
     sponsor_after_cut,
+    sponsor_target,
     tv_rights_income,
 )
 from models.board import note_club_record, refresh_board_objectives, settle_season, start_new_season
@@ -1907,7 +1907,7 @@ def advance_week(
 
     ledger(
         f"Sponsor Società ({state.tier.display_name}, Rep {state.reputation}%, Fedeltà {state.fidelity}%)"
-        + (f" · −{SPONSOR_MISS_PENALTY:.0%}: stagione scorsa fuori dai primi {SPONSOR_TOP_N}" if fin["sponsor_cut"] else ""),
+        + (f" · −{SPONSOR_MISS_PENALTY:.0%}: stagione scorsa fuori dai primi {sponsor_target(state)}" if fin["sponsor_cut"] else ""),
         "Sponsor",
         fin["sponsor"],
     )

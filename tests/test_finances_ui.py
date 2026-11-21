@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import QApplication
 from controllers.game_controller import GameController
 from tests.support import start_game
 from models.database import DatabaseManager
-from models.entities import MONTH_WEEKS, SPONSOR_TOP_N, MonthlyReport, SeasonEndResult, SeasonOutcome, CompetitionTier
+from models.entities import MONTH_WEEKS, SPONSOR_TOP_N_BY_TIER, MonthlyReport, SeasonEndResult, SeasonOutcome, CompetitionTier
 from views.finance_chart import MonthlyBarsWidget
 from views.tabs import FinancesTab
 
@@ -90,11 +90,11 @@ class TestFinancesTab(unittest.TestCase):
     def test_the_cards_show_merchandising_and_the_sponsor_cut(self) -> None:
         state = self.ctrl.state
         state.prestige = 400
-        state.season_history = [SeasonEndResult(1, CompetitionTier.PROVINCIALE, SPONSOR_TOP_N + 2, SeasonOutcome.STAYED)]
+        state.season_history = [SeasonEndResult(1, CompetitionTier.PROVINCIALE, SPONSOR_TOP_N_BY_TIER[CompetitionTier.PROVINCIALE] + 2, SeasonOutcome.STAYED)]
         self.tab.refresh(state)
         text = self.tab.sponsor_sub.text()
         self.assertIn("Merch €", text)
-        self.assertIn(f"fuori dai primi {SPONSOR_TOP_N}", text)
+        self.assertIn(f"fuori dai primi {SPONSOR_TOP_N_BY_TIER[CompetitionTier.PROVINCIALE]}", text)
 
     def test_no_cut_note_when_the_season_was_good(self) -> None:
         state = self.ctrl.state

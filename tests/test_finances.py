@@ -18,7 +18,7 @@ from models.entities import (
     MONTH_WEEKS,
     SEASON_WEEKS,
     SPONSOR_MISS_PENALTY,
-    SPONSOR_TOP_N,
+    SPONSOR_TOP_N_BY_TIER,
     TV_RIGHTS_PER_HOME_MEET,
     CompetitionTier,
     MonthlyReport,
@@ -35,6 +35,8 @@ from models.finances import (
     recent_reports,
     sponsor_after_cut,
     sponsor_cut_active,
+    sponsor_target,
+    sponsor_top_n,
     tv_rights_income,
 )
 from models.simulation import advance_week, weekly_finances
@@ -179,16 +181,40 @@ class TestSponsorObjective(unittest.TestCase):
         self.assertEqual(weekly_finances(state)["sponsor_cut"], 0)
 
     def test_top_five_keeps_the_full_sponsor_and_sixth_loses_twenty_percent(self) -> None:
-        self.assertEqual((SPONSOR_TOP_N, SPONSOR_MISS_PENALTY), (5, 0.20))
+        top = SPONSOR_TOP_N_BY_TIER[CompetitionTier.PROVINCIALE]
+        self.assertEqual((top, SPONSOR_MISS_PENALTY), (5, 0.20))
         state = fresh()
-        state.season_history = [season_result(SPONSOR_TOP_N)]
+        state.season_history = [season_result(top)]
         full = weekly_finances(state)
         self.assertEqual(full["sponsor_cut"], 0)
-        state.season_history = [season_result(SPONSOR_TOP_N + 1)]
+        state.season_history = [season_result(top + 1)]
         cut = weekly_finances(state)
         self.assertEqual(cut["sponsor"] + cut["sponsor_cut"], full["sponsor"])
         self.assertEqual(cut["sponsor_cut"], round(full["sponsor"] * 0.20))
         self.assertEqual(cut["net"], full["net"] - cut["sponsor_cut"])
+
+    def test_the_target_scales_with_the_level_of_the_closed_season(self) -> None:
+        self.assertEqual(
+            [sponsor_top_n(t) for t in CompetitionTier],
+            [5, 5, 4, 3],  # Provinciale, Regionale, Nazionale, Internazionale (Q31b)
+        )
+        for tier, top in zip(CompetitionTier, (5, 5, 4, 3)):
+            state = fresh()
+            state.season_history = [SeasonEndResult(1, tier, top, SeasonOutcome.STAYED)]
+            self.assertFalse(sponsor_cut_active(state), tier)
+            state.season_history = [SeasonEndResult(1, tier, top + 1, SeasonOutcome.STAYED)]
+            self.assertTrue(sponsor_cut_active(state), tier)
+            self.assertEqual(sponsor_target(state), top)
+
+    def test_a_4th_place_cuts_the_sponsor_in_the_top_level_but_not_in_the_provincial_one(self) -> None:
+        state = fresh()
+        state.season_history = [SeasonEndResult(1, CompetitionTier.INTERNAZIONALE, 4, SeasonOutcome.STAYED)]
+        self.assertTrue(sponsor_cut_active(state))
+        state.season_history = [SeasonEndResult(1, CompetitionTier.PROVINCIALE, 4, SeasonOutcome.STAYED)]
+        self.assertFalse(sponsor_cut_active(state))
+
+    def test_no_history_no_target(self) -> None:
+        self.assertEqual(sponsor_target(fresh()), 0)
 
     def test_a_good_season_restores_the_sponsor(self) -> None:
         state = fresh()
@@ -229,7 +255,7 @@ class TestSponsorObjective(unittest.TestCase):
         state.pending_dilemma = None
         advance_week(state, rng=random.Random(4))
         self.assertEqual(state.season_number, 2)
-        self.assertGreater(state.season_history[0].placement, SPONSOR_TOP_N)
+        self.assertGreater(state.season_history[0].placement, sponsor_top_n(state.season_history[0].tier))
         self.assertTrue(sponsor_cut_active(state))
 
 

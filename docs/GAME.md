@@ -215,7 +215,7 @@ ambiziose e crescono più in fretta; quelle che ti staccano molto si rilassano. 
 
 ### 5.7 Economia
 
-Entrate settimanali: **sponsor società** (funzione di categoria, reputazione e fedeltà; −20% dopo una stagione fuori dai primi 5, §5.19), **sponsor individuali** (fan/4 per atleta maggiorenne in prima squadra), **merchandising** (fan e prestigio, §5.19), **quote tesserati** (450 fisse).
+Entrate settimanali: **sponsor società** (funzione di categoria, reputazione e fedeltà; −20% dopo una stagione fuori dai primi N del livello, §5.19), **sponsor individuali** (fan/4 per atleta maggiorenne in prima squadra), **merchandising** (fan e prestigio, §5.19), **quote tesserati** (450 fisse).
 Uscite settimanali: **rimborsi spese atleti** (prima squadra, infortunati inclusi, mai rivisti), **staff** (secondo lo specialista scelto: Fisioterapista 180-460, Medico 200-520, Preparatore Mentale 140-340; gli originali 300, 340, 220), **stipendi allenatori**
 (`40 + 2,2 × Σ max(0, abilità−40)`), **gestione palestra** (40 × livello). Per gara: premi e biglietti (casa) o trasferta (fuori). Una tantum: ingaggi (atleti, allenatori), scouting, recupero, pista, ampliamenti.
 **Debito**: con saldo negativo interessi del 5% a settimana; sotto −20.000 fallimento. **Bilanciamento dell'avvio** (A.1, 2026-11-20): sponsor società e montepremi sono saliti del 40% e del 25%, i rimborsi spese degli atleti sono scesi del 45% (`WAGE_*` in `entities.py`) e la promozione di categoria dà un bonus una tantum di 5.000 € (`PROMOTION_BONUS`). In autopilota (nessuna spesa) la Carriera chiude le prime 12 settimane tra +4.700 e +15.300 € e le prime 36 tra +300 e +23.800 € (8 seed); i rimborsi vecchi restano nei salvataggi esistenti. Cifre complete: `BALANCE.md`.
@@ -344,7 +344,7 @@ dettaglio per categoria del mese scelto) e **Libro mastro** (i movimenti, come p
 
 **Merchandising.** Incasso settimanale (libro mastro «Merchandising», incluso nelle entrate settimanali): **fan della Prima Squadra ÷ 40 + prestigio ÷ 20** (zero a inizio partita; in autopilota circa €100-150 a settimana dopo una stagione, il 5-10% delle entrate).
 
-**Sponsor con obiettivo.** Se l'ultima stagione è finita **fuori dai primi 5** della lega, lo **sponsor società** della stagione che comincia vale **−20%**; chiudere tra i primi 5 lo ripristina. Si legge dal verdetto dell'ultima stagione (`season_history`): nessun dato in più da salvare.
+**Sponsor con obiettivo.** Se l'ultima stagione è finita **fuori dai primi N** della lega del suo livello (**5** in Provinciale e Regionale, **4** in Nazionale, **3** in Internazionale: Q31b), lo **sponsor società** della stagione che comincia vale **−20%**; chiudere tra i primi N lo ripristina (attenzione: è più severo del Board, che in Nazionale e Internazionale chiede il 5° posto). Si legge dal verdetto dell'ultima stagione (`season_history`): nessun dato in più da salvare.
 Taglia solo lo sponsor società (non gli individuali, il merchandising o le quote). La carta «Entrate settimanali» e la riga del libro mastro dicono il motivo. In autopilota (nessuna azione) 7 partite su 8 chiudono la prima stagione fuori dai primi 5.
 
 **Diritti TV.** Solo per i meeting **in casa** del livello **Internazionale**: **€3.000** a meeting (libro mastro «Diritti TV»). Negli altri livelli e in trasferta nulla.

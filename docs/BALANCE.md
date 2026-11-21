@@ -289,8 +289,8 @@ Esempio (atleta con ingaggio standard €1.770, agente Ragionevole a relazione 5
 | `MAX_MONTHLY_REPORTS` | 36 bilanci mensili ricordati (quattro stagioni) | `entities.py` |
 | `MERCH_FANS_DIVISOR` / `MERCH_PRESTIGE_DIVISOR` | merchandising settimanale = fan Prima Squadra ÷ 40 + prestigio ÷ 20 | `entities.py` |
 | `TV_RIGHTS_PER_HOME_MEET` | €3.000 a meeting in casa, solo livello Internazionale | `entities.py` |
-| `SPONSOR_TOP_N` | 5: chiudere la stagione nei primi 5 della lega tiene lo sponsor società intero | `entities.py` |
-| `SPONSOR_MISS_PENALTY` | 0,20: fuori dai primi 5 lo sponsor società della stagione dopo vale −20% | `entities.py` |
+| `SPONSOR_TOP_N_BY_TIER` | per livello (Q31b, 2026-11-21, cifre mie): Provinciale 5 · Regionale 5 · Nazionale 4 · Internazionale 3; chiudere la stagione nei primi N della lega **del livello in cui si è giocato** tiene lo sponsor società intero (prima: 5 per tutti) | `entities.py` |
+| `SPONSOR_MISS_PENALTY` | 0,20: fuori dai primi N lo sponsor società della stagione dopo vale −20% | `entities.py` |
 
 Misura in autopilota (8 partite, Carriera, nessuna azione): dopo 12 settimane +€6.400/+13.700 (prima di D.3: +€4.700/+15.300, A.1), dopo 36 settimane +€7.000/+19.200, dopo 72 settimane +€12.100/+46.400; il taglio dello sponsor è attivo dopo la prima stagione in 7 partite su 8 (nessuno
 arriva tra i primi 5 senza giocare). Il merchandising pesa il 5-10% delle entrate settimanali (Q31, AUDIT R28).

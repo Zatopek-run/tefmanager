@@ -508,9 +508,14 @@ MERCH_FANS_DIVISOR = 40
 MERCH_PRESTIGE_DIVISOR = 20
 # Diritti TV: solo per i meeting IN CASA del livello Internazionale.
 TV_RIGHTS_PER_HOME_MEET = 3000
-# Sponsor con obiettivo: chiudere la stagione fuori dai primi SPONSOR_TOP_N della lega taglia lo sponsor società della stagione
-# successiva del SPONSOR_MISS_PENALTY (si ripristina chiudendo nei primi N).
-SPONSOR_TOP_N = 5
+# Sponsor con obiettivo: chiudere la stagione fuori dai primi N della lega (N per livello, Q31b: scelta dell'utente 2026-11-21, cifre
+# mie) taglia lo sponsor società della stagione successiva del SPONSOR_MISS_PENALTY (si ripristina chiudendo nei primi N).
+SPONSOR_TOP_N_BY_TIER: Dict[CompetitionTier, int] = {
+    CompetitionTier.PROVINCIALE: 5,
+    CompetitionTier.REGIONALE: 5,
+    CompetitionTier.NAZIONALE: 4,
+    CompetitionTier.INTERNAZIONALE: 3,
+}
 SPONSOR_MISS_PENALTY = 0.20
 
 

@@ -96,7 +96,6 @@ from models.entities import (
     RelayChange,
     FIELD_STRATEGY_EVENTS,
     STRATEGY_EVENTS,
-    SPONSOR_TOP_N,
     SeasonOutcome,
     Specialty,
     TrainingFocus,
@@ -119,7 +118,7 @@ from models.scouting import (
     scout_candidates,
 )
 from models.staff import describe_attributes, hired_of_role, severance_pay
-from models.finances import recent_reports
+from models.finances import recent_reports, sponsor_target
 from models.simulation import expected_event_score, relay_leg_score, weekly_finances
 from views.dialogs import (
     CompetitionResultsDialog,
@@ -1758,7 +1757,7 @@ class FinancesTab(QWidget):
         self.sponsor_sub.setText(
             f"Società €{fin['sponsor']:,} + Individuali €{fin['individual_sponsors']:,} "
             f"+ Merch €{fin['merchandising']:,} + Quote €{fin['member_fees']:,}"
-            + (f" · sponsor −€{fin['sponsor_cut']:,} (stagione scorsa fuori dai primi {SPONSOR_TOP_N})" if fin["sponsor_cut"] else "")
+            + (f" · sponsor −€{fin['sponsor_cut']:,} (stagione scorsa fuori dai primi {sponsor_target(state)})" if fin["sponsor_cut"] else "")
         )
 
         self.payroll_val.setText(f"-€{fin['expenses']:,}")

@@ -411,7 +411,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) **l'agente rompe la trattativa** sotto una soglia: `AGENT_BREAK_FRACTION` = 0,7 della soglia dell'agente (non della richiesta: scala con personalità e relazione) e `AGENT_RELATION_BROKEN` = −3, cifre mie provvisorie; nuovo stato `NegotiationState.BROKEN`, nessuna controfferta, la finestra si chiude con un avviso; l'agente è l'oggetto condiviso con `GameState` e la sua relazione cala nel modello (`Negotiation.offer`), quindi si salva al prossimo `_persist`. **Resta:** chi offre appena sopra la rottura (non mostrata) paga comunque la soglia (R27); ripetute rotture portano sotto relazione 15 e al rifiuto di Q29c. (c) il bonus resta con lo sconto uguale e i record individuali di oggi; (d) il rinnovo resta automatico (Q22).
 
 
-## Q31 — Finanze dettagliate (PIANOLAVORO D.3) — 🟡 IN CORSO dal 2026-11-20, **cifre da confermare**
+## Q31 — Finanze dettagliate (PIANOLAVORO D.3) — ✅ FATTA il 2026-11-21: cifre confermate, (b) obiettivo di sponsor per livello, (c) solo a fine stagione, (d) TV solo Internazionale
 
 **Decisioni dell'utente (2026-11-20), date prima di scrivere codice:** (1) lo **sponsor con obiettivo** si valuta **a fine stagione** e vale per la successiva (fuori dai primi 5 della lega → −20% dello sponsor società); (2) merchandising e diritti TV con **cifre piccole**
 (extra del 5-15%: fan ÷ 40 + prestigio ÷ 20; TV €3.000 a meeting in casa Internazionale); (3) grafici **disegnati con QPainter**, nessuna dipendenza nuova.
@@ -426,9 +426,9 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Misura (autopilota, 8 partite):** economia positiva come dopo A.1 (BALANCE §P); taglio sponsor attivo dopo la 1ª stagione in 7 partite su 8 (AUDIT R28).
 
-**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen, screenshot e lettura di tabelle); (2) un solo obiettivo di sponsor, sempre «top 5» anche nei livelli alti; (3) niente confronto tra stagioni nel grafico (12 mesi); (4) i bilanci mensili sono solo per la società del giocatore.
+**Limiti dichiarati:** (1) **non provato con il mouse reale** (solo test offscreen, screenshot e lettura di tabelle); (2) un solo obiettivo di sponsor (ora per livello, Q31b); (3) niente confronto tra stagioni nel grafico (12 mesi); (4) i bilanci mensili sono solo per la società del giocatore.
 
-**Da decidere:** (a) confermare le cifre; (b) se «top 5» debba cambiare con il livello (in Finale Oro la lega è la stessa di 8 club); (c) se il taglio debba scattare anche a metà stagione; (d) se i diritti TV debbano esistere anche in Nazionale.
+**Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) **l'obiettivo di sponsor scala con il livello**: `SPONSOR_TOP_N_BY_TIER` = Provinciale 5 · Regionale 5 · Nazionale 4 · Internazionale 3 (cifre mie, sull'esempio dell'utente «top 5 ai livelli bassi, top 4 in Finale Argento, top 3 in Finale Oro»); si usa il livello della stagione chiusa (`SeasonEndResult.tier`), `finances.sponsor_top_n` e `sponsor_target`. **Incoerenza da tenere d'occhio:** il Board (Q27) chiede il 3°/4°/5°/5° posto, quindi nei livelli alti lo sponsor è più severo del Board (un 4° in Finale Oro soddisfa il Board ma taglia lo sponsor); (c) il taglio resta solo a fine stagione; (d) i diritti TV restano solo per i meeting in casa del club Internazionale.
 
 ## Q32 — Avvio della Carriera senza atleti (richiesta dell'utente, 2026-11-20) — 🟡 IN CORSO, **cifre da confermare**
 
