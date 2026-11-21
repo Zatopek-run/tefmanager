@@ -64,21 +64,28 @@ def set_relation(a: Athlete, b: Athlete, value: int) -> None:
 
 
 def ensure_relationships(state: GameState) -> int:
+    """Come `new_relationships`, ma ritorna solo quante coppie nuove ha creato (anche a valore 0: la voce a 0 dice «già incontrati»)."""
+    return len(new_relationships(state))
+
+
+def new_relationships(state: GameState) -> List[Tuple[Athlete, Athlete, int]]:
     """Dà una relazione a ogni coppia della Prima Squadra che non ne ha ancora una e toglie quelle verso atleti che non ci sono più.
-    Una coppia già presente in uno dei due atleti non si ricalcola. Ritorna quante coppie nuove ha creato (anche a valore 0: la voce a 0 dice «già incontrati»)."""
+    Una coppia già presente in uno dei due atleti non si ricalcola. Ritorna le coppie create `(a, b, valore)`, anche a valore 0
+    (la voce a 0 dice «già incontrati»): servono alla notizia di una nuova amicizia o rivalità (Q38c)."""
     squad = [a for a in state.main_squad if a.id is not None]
     present = {a.id for a in state.athletes}
     for a in state.athletes:
         for other in [k for k in a.relationships if k not in present]:
             del a.relationships[other]
-    created = 0
+    created: List[Tuple[Athlete, Athlete, int]] = []
     for a, b in combinations(squad, 2):
         if b.id in a.relationships or a.id in b.relationships:
             if a.relationships.get(b.id) != b.relationships.get(a.id):  # asimmetria (vecchio dato): vince il valore di `a`
                 set_relation(a, b, a.relationships.get(b.id, b.relationships.get(a.id, 0)))
             continue
-        set_relation(a, b, initial_value(a.id, b.id))
-        created += 1
+        value = initial_value(a.id, b.id)
+        set_relation(a, b, value)
+        created.append((a, b, value))
     return created
 
 

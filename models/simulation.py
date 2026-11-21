@@ -106,11 +106,11 @@ from models.staff import (
     physio_injury_recovery_bonus,
 )
 from models.scouting import academy_growth_multiplier
-from models.narrative import coach_award, monthly_news
+from models.narrative import coach_award, monthly_news, new_relation_news
 from models.history import record_result, record_weekly
 from models.relationships import (
     bond_relay_teammates,
-    ensure_relationships,
+    new_relationships,
     relay_chemistry_bonus,
     team_chemistry_form_bonus,
 )
@@ -1852,7 +1852,10 @@ def advance_week(
     travel_cost = 0
     season_end: Optional[SeasonEndResult] = None
 
-    ensure_relationships(state)  # F.3: le coppie nuove della Prima Squadra ricevono la relazione di nascita (senza RNG)
+    born = new_relationships(state)  # F.3: le coppie nuove della Prima Squadra ricevono la relazione di nascita (senza RNG)
+    relation_line = new_relation_news(state, born)  # Q38c: al più una riga a tick sull'amicizia o rivalità più forte tra le nuove
+    if relation_line:
+        state.news_log.insert(0, f"Sett. {state.week}: {relation_line}")
     if state.is_competition_week:
         comp_summary = simulate_competition(state, rng=r)
         travel_cost = comp_summary.travel_cost

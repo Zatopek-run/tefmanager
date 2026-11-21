@@ -18,7 +18,7 @@ Settimana «completata» = `completed_week = state.week` (`:1265`); dopo il pass
 
 | # | Passo | File:riga | Usa RNG |
 | ---: | --- | --- | :-: |
-| 0 | **Relazioni** (F.3, 2026-11-21): `ensure_relationships(state)` dà il valore di nascita alle coppie nuove della Prima Squadra e toglie i legami verso atleti usciti. **Non usa `r`** (crc32 degli id); va **prima** di ogni gara e allenamento, e dal passo 4 al passo C-8 la chimica di squadra (`team_chemistry_form_bonus`, ±3) sposta il bersaglio di forma di tutti | `relationships.py` | no |
+| 0 | **Relazioni** (F.3, 2026-11-21): `new_relationships(state)` dà il valore di nascita alle coppie nuove della Prima Squadra e toglie i legami verso atleti usciti. **Non usa `r`** (crc32 degli id); va **prima** di ogni gara e allenamento, e dal passo 4 al passo C-8 la chimica di squadra (`team_chemistry_form_bonus`, ±3) sposta il bersaglio di forma di tutti **Q38c (2026-11-21):** subito dopo `new_relation_news` scrive **al più una riga** in testa a `news_log` sull'amicizia o rivalità più forte tra le coppie nate in questo tick (nessuna se nessuna lo è; nessun RNG). | `relationships.py` | no |
 | 1 | Se `is_competition_week` (sett. % 4 == 0 **e non in Preparazione**, `GameState.is_race_week`): `simulate_competition` (sotto-sequenza in §C) | `:1270-1272`; `entities.py:923-926` | sì |
 | 2 | Ruoli staff assunti, presenza di un Leader sano | `:1274-1277` | no |
 | 3 | Carichi allenatore `coach_load` calcolati **una volta** | `:1284` | no |

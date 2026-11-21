@@ -518,7 +518,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 **Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) solo dopo la gara, niente conferenza pre-gara; (c) **un piccolo effetto sulla forma**: la risposta alla prima domanda che alza la reputazione dà `PRESS_FORM_BONUS` = +1 di forma a tutta la Prima Squadra (cifra mia, nessun malus; resta nessun morale per atleta: è un'eccezione minima alla scelta 1 di F.3); (d) **terza domanda sul record**: `PRESS_RECORD_FANS` / `PRESS_RECORD_RELATION` (cifre mie: «campione» +10 fan e +2 relazione, «gruppo» +4 e 0, «normale» 0 e −2), posta solo se un atleta di Prima Squadra ha battuto un record sociale individuale (`press.record_athlete_of`; con più record, il nome alfabeticamente primo; le staffette non contano). Nessun RNG, nessuno schema nuovo: fan e forma sono già salvati con gli atleti.
 
 
-## Q38 — Relazioni tra atleti (PIANOLAVORO F.3) — 🟡 IN CORSO dal 2026-11-21, **cifre da confermare**
+## Q38 — Relazioni tra atleti (PIANOLAVORO F.3) — ✅ FATTA il 2026-11-21: cifre confermate, nessun evento, una riga di notizia sulle nuove coppie, nessun morale per atleta
 
 **Decisione dell'utente (2026-11-21):** **opzione 1**, senza un morale per atleta: le amicizie e le rivalità agiscono sull'affiatamento di staffetta e, come chimica di squadra, sulla forma di tutti. Insieme: **le partite esistenti sono sacrificabili** (registrato in `CLAUDE.md` e nella memoria dell'assistente): niente vincolo di neutralità o compatibilità per le novità.
 
@@ -530,7 +530,7 @@ molto costoso (AUDIT R27) e può bloccarlo per mancanza di fondi; (5) il bonus v
 
 **Limiti dichiarati:** vedi AUDIT R35; **non provato con il mouse reale** (solo test offscreen e uno screenshot); l'effetto in partite lunghe non è misurato.
 
-**Da decidere:** (a) le cifre; (b) relazioni che nascono da eventi (compagni di allenatore, stesso vivaio, risultati) e che si rompono; (c) citare amicizie e rivalità nelle notizie (F.1) e nelle conferenze (F.2); (d) un morale per atleta (opzione 2), se la chimica deve diventare più di un bonus di forma.
+**Deciso il 2026-11-21 (utente):** (a) cifre confermate; (b) le relazioni restano la nascita deterministica più il +2 delle staffette, nessun evento che le crei o le rompa; (c) **le notizie (F.1) raccontano le nuove amicizie e rivalità**, non le conferenze: `relationships.new_relationships` (nuova, ritorna le coppie create) e `narrative.new_relation_news` scrivono **una sola riga** per tick sulla coppia nuova più forte (|valore| massimo, a parità i nomi in ordine); evento e non mensile, perché non c'è memoria di «già annunciato» e così ogni coppia nasce una volta sola; con una rosa nuova nascono decine di coppie ma la riga è una (le altre esistono, non sono raccontate); (d) nessun morale per atleta: basta la chimica di squadra. Nessun RNG, nessuno schema nuovo.
 
 
 ## Q39 — Momenti di gloria (PIANOLAVORO F.4) — 🟡 IN CORSO dal 2026-11-21, **regole da confermare**

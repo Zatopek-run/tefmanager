@@ -9,14 +9,16 @@ salvataggio racconta sempre le stesse notizie. Le righe sono cronaca, con una so
 from __future__ import annotations
 
 import zlib
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from models.agents import agent_of
+from models.relationships import is_friend, is_rival
 from models.entities import (
     NARRATIVE_COACH_REPUTATION,
     NARRATIVE_TENSION_RELATION,
     RETIREMENT_INJURIES_PER_SEASON,
     RETIREMENT_INJURY_MIN_AGE,
+    Athlete,
     CompetitionSummary,
     GameState,
 )
@@ -100,6 +102,32 @@ def press_news(state: GameState, meet: Optional[CompetitionSummary]) -> Optional
         ],
         state, "stampa", reason,
     )
+
+
+def new_relation_news(state: GameState, pairs: List[Tuple[Athlete, Athlete, int]]) -> Optional[str]:
+    """Q38c: la notizia di una amicizia o rivalità appena nata. Tra le coppie nuove (`relationships.new_relationships`) sceglie
+    quella più forte (a parità, i nomi in ordine alfabetico) e scrive **una sola riga** per tick, anche se ne nascono molte (con una
+    rosa nuova sono decine). Nessuna riga se nessuna coppia è un'amicizia o una rivalità."""
+    notable = [(a, b, v) for a, b, v in pairs if is_friend(v) or is_rival(v)]
+    if not notable:
+        return None
+    a, b, value = min(notable, key=lambda t: (-abs(t[2]), sorted((t[0].name, t[1].name))))
+    first, second = sorted((a.name, b.name))
+    if is_friend(value):
+        variants = [
+            f"Nasce un'amicizia in squadra: {first} e {second} vanno d'accordo, anche in staffetta.",
+            f"{first} e {second} legano subito: in spogliatoio si parla già di una bella coppia.",
+            f"Sintonia perfetta tra {first} e {second}: il gruppo ci guadagna.",
+        ]
+        kind = "amicizia"
+    else:
+        variants = [
+            f"Attrito in squadra: {first} e {second} non si sopportano. Meglio non metterli nella stessa staffetta.",
+            f"Rivalità aperta tra {first} e {second}: lo spogliatoio se ne è accorto.",
+            f"Tra {first} e {second} è gelo: la convivenza in squadra non sarà facile.",
+        ]
+        kind = "rivalita"
+    return _pick(variants, state, kind, f"{first}|{second}")
 
 
 def coach_award(state: GameState, first_week: int, last_week: int) -> bool:

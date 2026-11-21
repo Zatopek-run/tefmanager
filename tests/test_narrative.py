@@ -26,8 +26,10 @@ from models.narrative import (
     injuries_news,
     locker_room_news,
     monthly_news,
+    new_relation_news,
     press_news,
 )
+from models.relationships import new_relationships, set_relation
 from models.simulation import advance_week
 from tests.test_assignments import make_state
 
@@ -183,6 +185,76 @@ class TestInjuriesNews(unittest.TestCase):
         self.assertIn(a.name, lines[2])
         self.assertIn(str(RETIREMENT_INJURIES_PER_SEASON), lines[2])  # è la riga degli infortuni, non quella dello spogliatoio
         self.assertNotIn("agente", lines[2])
+
+
+class TestNewRelationNews(unittest.TestCase):
+    """Q38c: una riga sull'amicizia o rivalità appena nata."""
+
+    def trio(self):
+        state = state_with_agents()
+        a, b, c = state.main_squad[:3]
+        return state, a, b, c
+
+    def test_no_news_without_a_notable_pair(self) -> None:
+        state, a, b, _ = self.trio()
+        self.assertIsNone(new_relation_news(state, []))
+        self.assertIsNone(new_relation_news(state, [(a, b, 0), (a, b, 10), (a, b, -10)]))  # sotto le soglie
+
+    def test_a_friendship_names_both_athletes(self) -> None:
+        state, a, b, _ = self.trio()
+        text = new_relation_news(state, [(a, b, 60)])
+        self.assertIn(a.name, text)
+        self.assertIn(b.name, text)
+
+    def test_a_rivalry_is_told_differently_from_a_friendship(self) -> None:
+        state, a, b, _ = self.trio()
+        friend = new_relation_news(state, [(a, b, 60)])
+        rival = new_relation_news(state, [(a, b, -60)])
+        self.assertNotEqual(friend, rival)
+        self.assertIn(b.name, rival)
+
+    def test_only_the_strongest_pair_is_told_even_with_many(self) -> None:
+        state, a, b, c = self.trio()
+        text = new_relation_news(state, [(a, b, 45), (a, c, -80), (b, c, 50)])
+        self.assertIn(a.name, text)
+        self.assertIn(c.name, text)  # la rivalità −80 è la più forte
+        self.assertNotIn(b.name, text)
+
+    def test_it_is_deterministic_and_symmetric_in_the_pair(self) -> None:
+        state, a, b, _ = self.trio()
+        self.assertEqual(new_relation_news(state, [(a, b, 60)]), new_relation_news(state, [(b, a, 60)]))
+
+    def test_in_the_tick_many_new_pairs_make_one_line_and_a_settled_squad_none(self) -> None:
+        from copy import deepcopy
+
+        state = state_with_agents()
+        for a in state.athletes:
+            a.relationships = {}
+        state.week = 1
+        state.pending_dilemma = None
+        probe = deepcopy(state)
+        expected = f"Sett. 1: {new_relation_news(probe, new_relationships(probe))}"
+        advance_week(state, rng=random.Random(4))
+        self.assertEqual(state.news_log.count(expected), 1)  # decine di coppie nuove, una sola riga
+        # La squadra è assestata: nessuna coppia nuova, quindi nessuna riga di questo tipo.
+        self.assertEqual(new_relationships(state), [])
+        before = list(state.news_log)
+        state.pending_dilemma = None
+        advance_week(state, rng=random.Random(5))
+        fresh = state.news_log[: len(state.news_log) - len(before)] if len(state.news_log) > len(before) else []
+        self.assertFalse([n for n in fresh if n.startswith("Sett. 2:") and ("amicizia" in n or "Attrito" in n)])
+
+    def test_new_relationships_returns_the_created_pairs_with_their_values(self) -> None:
+        state = state_with_agents()
+        for a in state.athletes:
+            a.relationships = {}
+        n = len(state.main_squad)
+        created = new_relationships(state)
+        self.assertEqual(len(created), n * (n - 1) // 2)
+        for a, b, value in created:
+            self.assertEqual(a.relationships[b.id], value)
+            self.assertEqual(b.relationships[a.id], value)
+        self.assertEqual(new_relationships(state), [])  # già incontrati: nessuna coppia nuova
 
 
 class TestCoachAward(unittest.TestCase):
